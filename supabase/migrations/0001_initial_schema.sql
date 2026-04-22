@@ -1,7 +1,6 @@
 -- AI Listings Platform — Initial Schema
 
--- Extensions
-create extension if not exists "uuid-ossp";
+-- No extension needed; gen_random_uuid() is built into Postgres 13+
 
 -- SKU generation
 create table sku_counters (
@@ -34,7 +33,7 @@ $$;
 
 -- listings
 create table listings (
-  id                    uuid primary key default uuid_generate_v4(),
+  id                    uuid primary key default gen_random_uuid(),
   sku                   text unique,
   status                text not null default 'intake'
                           check (status in ('intake','id_gate','in_loop','finalizing','published','archived')),
@@ -82,7 +81,7 @@ create trigger listings_updated_at
 
 -- photos
 create table photos (
-  id              uuid primary key default uuid_generate_v4(),
+  id              uuid primary key default gen_random_uuid(),
   listing_id      uuid not null references listings(id) on delete cascade,
   type            text not null check (type in ('intake','processed','auth_card','studio')),
   raw_url         text not null,
@@ -96,7 +95,7 @@ create index photos_listing_id_idx on photos(listing_id);
 
 -- pricing_comps
 create table pricing_comps (
-  id                    uuid primary key default uuid_generate_v4(),
+  id                    uuid primary key default gen_random_uuid(),
   listing_id            uuid not null references listings(id) on delete cascade,
   source                text not null check (source in ('ebay','poshmark','therealreal','google')),
   title                 text not null,
@@ -113,7 +112,7 @@ create index pricing_comps_listing_id_idx on pricing_comps(listing_id);
 
 -- conversations
 create table conversations (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   listing_id        uuid not null references listings(id) on delete cascade,
   role              text not null check (role in ('user','assistant')),
   content           text not null,
