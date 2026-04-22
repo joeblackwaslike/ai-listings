@@ -1,24 +1,21 @@
-import { eventType, Inngest, staticSchema } from 'inngest'
+import { Inngest } from 'inngest'
 
-type PhotoUploadedData = {
-  listingId: string
-  photoUrl: string
-  uploadedAt: string
+export const inngest = new Inngest({ id: 'ai-listings' })
+
+// Typed event payload interfaces — used in function files to cast event.data
+export interface PhotoUploadedEvent {
+  name: 'photo/uploaded'
+  data: {
+    listingId: string
+    photoUrl: string
+    uploadedAt: string
+  }
 }
 
-type PipelineRetryStepData = {
-  listingId: string
-  step: number
+export interface PipelineRetryStepEvent {
+  name: 'pipeline/retry-step'
+  data: {
+    listingId: string
+    step: number
+  }
 }
-
-export const photoUploaded = eventType('photo/uploaded', {
-  schema: staticSchema<PhotoUploadedData>(),
-})
-
-export const pipelineRetryStep = eventType('pipeline/retry-step', {
-  schema: staticSchema<PipelineRetryStepData>(),
-})
-
-export const inngest = new Inngest({
-  id: 'ai-listings',
-})

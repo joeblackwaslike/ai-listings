@@ -1,4 +1,4 @@
-import { inngest, photoUploaded } from '../client'
+import { inngest, type PhotoUploadedEvent } from '../client'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 function getSupabaseAdmin() {
@@ -12,11 +12,11 @@ export const intakePipeline = inngest.createFunction(
   {
     id: 'intake-pipeline',
     name: 'Intake Pipeline',
-    triggers: [{ event: photoUploaded }],
+    triggers: [{ event: 'photo/uploaded' }],
     retries: 3,
   },
   async ({ event, step }) => {
-    const { listingId } = event.data
+    const { listingId } = (event as unknown as PhotoUploadedEvent).data
 
     await step.run('product-id', async () => {
       return { ok: true, listingId, step: 1 }
