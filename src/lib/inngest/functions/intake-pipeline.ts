@@ -1,12 +1,12 @@
-import { inngest, type PhotoUploadedEvent } from '../client'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-
-function getSupabaseAdmin() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
+import { inngest } from '../client'
+import type { PhotoUploadedEvent } from '../client'
+import { runStep1ProductId } from '@/lib/pipeline/step1-product-id'
+import { runStep2VisionAnalysis } from '@/lib/pipeline/step2-vision-analysis'
+import { runStep3PricingResearch } from '@/lib/pipeline/step3-pricing-research'
+import { runStep4aDraftListing } from '@/lib/pipeline/step4a-draft-listing'
+import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
+import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
+import { getSupabaseAdmin, pushPipelineStep } from '@/lib/pipeline/supabase-push'
 
 export const intakePipeline = inngest.createFunction(
   {
@@ -14,35 +14,106 @@ export const intakePipeline = inngest.createFunction(
     name: 'Intake Pipeline',
     triggers: [{ event: 'photo/uploaded' }],
     retries: 3,
+    onFailure: async ({ error, event }) => {
+      const { listingId } = (event as unknown as PhotoUploadedEvent).data
+      const reason = error.message || 'Unknown pipeline error'
+
+      const stepMatch = reason.match(/^(step\d+\w*):/i)
+      const stepLabel = stepMatch ? stepMatch[1] : 'pipeline'
+
+      const supabase = getSupabaseAdmin()
+      await supabase
+        .from('listings')
+        .update({
+          status: 'in_loop',
+          agent_blocked: true,
+          agent_blocked_reason: `${stepLabel} failed after retries — ${reason.substring(0, 200)}`,
+        })
+        .eq('id', listingId)
+    },
   },
   async ({ event, step }) => {
-    const { listingId } = (event as unknown as PhotoUploadedEvent).data
-
-    await step.run('product-id', async () => {
-      return { ok: true, listingId, step: 1 }
-    })
-
-    await step.run('vision-analysis', async () => {
-      return { ok: true, step: 2 }
-    })
-
-    await step.run('pricing-research', async () => {
-      return { ok: true, step: 3 }
-    })
-
-    await step.run('draft-and-process', async () => {
-      return { ok: true, step: 4 }
-    })
-
-    await step.run('auth-plan', async () => {
-      return { ok: true, step: 5 }
-    })
+    const { listingId, photoUrl } = (event as unknown as PhotoUploadedEvent).data
 
     const supabase = getSupabaseAdmin()
-    await supabase
+    const { data: photoRow } = await supabase
+      .from('photos')
+      .select('id')
+      .eq('listing_id', listingId)
+      .eq('type', 'intake')
+      .single()
+    const intakePhotoId: string = photoRow?.id ?? ''
+
+    const step1Result = await step.run('product-id', () =>
+      runStep1ProductId(listingId, photoUrl)
+    )
+
+    let step2Result = await step.run('vision-analysis', () =>
+      runStep2VisionAnalysis(listingId, photoUrl, step1Result, null)
+    )
+
+    let gateAttempt = 0
+    while (gateAttempt < 3) {
+      const confirmation = await step.waitForEvent(`id-gate-confirm-${gateAttempt}`, {
+        event: 'pipeline/id-confirmed',
+        timeout: '7d',
+        match: 'data.listingId',
+      })
+
+      if (confirmation === null) break
+
+      if (
+        (confirmation as unknown as { data: { confirmed: boolean } }).data.confirmed
+      ) {
+        break
+      }
+
+      const corrections = (
+        confirmation as unknown as { data: { corrections: string | null } }
+      ).data.corrections
+
+      step2Result = await step.run(`re-identify-${gateAttempt}`, () =>
+        runStep2VisionAnalysis(listingId, photoUrl, step1Result, corrections)
+      )
+
+      gateAttempt++
+    }
+
+    const titleForComps = step2Result.notableFeatures.slice(0, 3).join(' ')
+    await step.run('pricing-research', () =>
+      runStep3PricingResearch(listingId, step2Result, titleForComps)
+    )
+
+    const { data: listingAfterStep3 } = await supabase
       .from('listings')
-      .update({ status: 'in_loop' })
+      .select('suggested_price_cents')
       .eq('id', listingId)
+      .single()
+    const suggestedPriceCents: number | null =
+      listingAfterStep3?.suggested_price_cents ?? null
+
+    await Promise.all([
+      step.run('draft-listing', () =>
+        runStep4aDraftListing(listingId, step2Result, suggestedPriceCents)
+      ),
+      step.run('photoroom-process', () =>
+        runStep4bPhotoRoom(listingId, photoUrl, intakePhotoId)
+      ),
+    ])
+
+    if (step2Result.isLuxury) {
+      await step.run('auth-plan', () =>
+        runStep5AuthPlan(listingId, step2Result, suggestedPriceCents)
+      )
+    }
+
+    const totalSteps = step2Result.isLuxury ? 5 : 4
+    await pushPipelineStep(listingId, {
+      status: 'in_loop',
+      pipeline_total: totalSteps,
+      agent_blocked: false,
+      agent_blocked_reason: null,
+    })
 
     return { ok: true, listingId, status: 'in_loop' }
   }
