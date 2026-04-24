@@ -19,3 +19,21 @@ export interface PipelineRetryStepEvent {
     step: number
   }
 }
+
+export interface PipelineIdConfirmedEvent {
+  name: 'pipeline/id-confirmed'
+  data: {
+    listingId: string
+    confirmed: boolean
+    corrections: string | null
+  }
+}
+
+export interface StudioUploadedEvent {
+  name: 'studio/uploaded'
+  data: {
+    listingId: string
+    photoId: string
+    photoUrl: string
+  }
+}
