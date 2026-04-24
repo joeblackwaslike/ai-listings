@@ -15,7 +15,9 @@ export const intakePipeline = inngest.createFunction(
     triggers: [{ event: 'photo/uploaded' }],
     retries: 3,
     onFailure: async ({ error, event }) => {
-      const { listingId } = (event as unknown as PhotoUploadedEvent).data
+      const { listingId } = (
+        event as unknown as { data: { event: PhotoUploadedEvent } }
+      ).data.event.data
       const reason = error.message || 'Unknown pipeline error'
 
       const stepMatch = reason.match(/^(step\d+\w*):/i)
