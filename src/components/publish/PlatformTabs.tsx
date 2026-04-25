@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Copy, Check, ExternalLink } from 'lucide-react'
 import { CopyField } from './CopyField'
 import type { Listing, ListingStatus } from '@/types/listings'
@@ -59,6 +59,8 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
   const [saving, setSaving] = useState<Platform | null>(null)
   const [markingPublished, setMarkingPublished] = useState(false)
   const [copyAllDone, setCopyAllDone] = useState(false)
+
+  useEffect(() => { setCopyAllDone(false) }, [activeTab])
 
   const hasAnyUrl = savedUrls.ebay || savedUrls.poshmark
 
