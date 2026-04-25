@@ -1,11 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
-
-function getAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
+import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import type { Listing } from '@/types/listings'
 
 export async function PATCH(
   req: Request,
@@ -13,14 +7,30 @@ export async function PATCH(
 ) {
   const { id } = await params
 
-  let body: { platform?: string; listing_url?: string; mark_published?: boolean }
+  let raw: unknown
   try {
-    body = await req.json() as typeof body
+    raw = await req.json()
   } catch {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { platform, listing_url, mark_published } = body
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return Response.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+
+  const obj = raw as Record<string, unknown>
+
+  if (
+    ('listing_url' in obj && obj.listing_url !== undefined && typeof obj.listing_url !== 'string') ||
+    ('mark_published' in obj && obj.mark_published !== undefined && typeof obj.mark_published !== 'boolean') ||
+    ('platform' in obj && obj.platform !== undefined && typeof obj.platform !== 'string')
+  ) {
+    return Response.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+
+  const listing_url = obj.listing_url as string | undefined
+  const mark_published = obj.mark_published as boolean | undefined
+  const platform = obj.platform as string | undefined
 
   if (!listing_url && !mark_published) {
     return Response.json({ error: 'No action specified' }, { status: 400 })
@@ -42,7 +52,7 @@ export async function PATCH(
     }
   }
 
-  const supabase = getAdmin()
+  const supabase = getSupabaseAdmin()
 
   const { data: current, error: fetchError } = await supabase
     .from('listings')
@@ -54,7 +64,7 @@ export async function PATCH(
     return Response.json({ error: 'Listing not found' }, { status: 404 })
   }
 
-  const updates: Record<string, unknown> = {}
+  const updates: Partial<Pick<Listing, 'listing_urls' | 'status'>> = {}
 
   if (listing_url && platform) {
     const existing = (current.listing_urls as Record<string, string> | null) ?? {}
@@ -74,6 +84,10 @@ export async function PATCH(
 
   if (updateError) {
     return Response.json({ error: updateError.message }, { status: 500 })
+  }
+
+  if (!updated) {
+    return Response.json({ error: 'Update failed' }, { status: 500 })
   }
 
   return Response.json({ ok: true, status: updated.status, listing_urls: updated.listing_urls })
