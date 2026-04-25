@@ -66,6 +66,8 @@ export async function streamAgentResponse(
         (b): b is ToolUseBlock => b.type === 'tool_use'
       )
 
+      if (toolUseBlocks.length === 0) break
+
       const toolResults: MessageParam['content'] = []
 
       for (const toolUse of toolUseBlocks) {
@@ -73,7 +75,7 @@ export async function streamAgentResponse(
         const result = await executeTool(toolUse.name, listingId, input)
         const ok = typeof result === 'object' && result !== null && 'ok' in result
           ? (result as { ok: boolean }).ok
-          : true
+          : false
 
         emit({ type: 'tool_result', name: toolUse.name, ok })
 
