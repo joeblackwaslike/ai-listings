@@ -134,8 +134,10 @@ export const photoQualityGate = inngest.createFunction(
       throw new Error(`photo-quality-gate: PhotoRoom HTTP ${prResponse.status}`)
     }
 
-    const prData = (await prResponse.json()) as { result_b64: string }
-    const processedBuffer = Buffer.from(prData.result_b64, 'base64')
+    const prContentType = prResponse.headers.get('content-type') ?? ''
+    const processedBuffer = prContentType.startsWith('image/')
+      ? Buffer.from(await prResponse.arrayBuffer())
+      : Buffer.from(((await prResponse.json()) as { result_b64: string }).result_b64, 'base64')
     const storagePath = `studio/${listingId}/processed-${photoId}.jpg`
 
     await supabase.storage.from('photos').upload(storagePath, processedBuffer, {

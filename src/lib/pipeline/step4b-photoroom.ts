@@ -44,8 +44,23 @@ export async function runStep4bPhotoRoom(
     throw new Error(`step4b: PhotoRoom returned HTTP ${photoroomResponse.status} — ${errText}`)
   }
 
-  const prData = (await photoroomResponse.json()) as PhotoRoomResponse
-  const processedBuffer = Buffer.from(prData.result_b64, 'base64')
+  const contentType = photoroomResponse.headers.get('content-type') ?? ''
+  let processedBuffer: Buffer
+  let photoroomMeta: Record<string, unknown> = {}
+
+  if (contentType.startsWith('image/')) {
+    processedBuffer = Buffer.from(await photoroomResponse.arrayBuffer())
+  } else {
+    const prData = (await photoroomResponse.json()) as PhotoRoomResponse
+    processedBuffer = Buffer.from(prData.result_b64, 'base64')
+    photoroomMeta = {
+      foreground_top: prData.foreground_top,
+      foreground_left: prData.foreground_left,
+      foreground_width: prData.foreground_width,
+      foreground_height: prData.foreground_height,
+    }
+  }
+
   const processedFilePath = `intake/${listingId}/processed.jpg`
 
   const { error: uploadError } = await supabase.storage
@@ -69,12 +84,7 @@ export async function runStep4bPhotoRoom(
     .from('photos')
     .update({
       processed_url: processedUrl,
-      photoroom_meta: {
-        foreground_top: prData.foreground_top,
-        foreground_left: prData.foreground_left,
-        foreground_width: prData.foreground_width,
-        foreground_height: prData.foreground_height,
-      },
+      photoroom_meta: photoroomMeta,
     })
     .eq('id', intakePhotoId)
 
