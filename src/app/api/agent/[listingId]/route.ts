@@ -6,7 +6,13 @@ export async function POST(
   { params }: { params: Promise<{ listingId: string }> }
 ) {
   const { listingId } = await params
-  const body = await req.json() as { message?: string }
+
+  let body: { message?: string }
+  try {
+    body = await req.json() as { message?: string }
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
 
   if (!body.message || typeof body.message !== 'string' || body.message.trim() === '') {
     return Response.json({ error: 'message is required' }, { status: 400 })
@@ -17,10 +23,13 @@ export async function POST(
 
   const stream = new ReadableStream({
     async start(controller) {
-      await streamAgentResponse(listingId, message, (event) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
-      })
-      controller.close()
+      try {
+        await streamAgentResponse(listingId, message, (event) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+        })
+      } finally {
+        controller.close()
+      }
     },
   })
 
