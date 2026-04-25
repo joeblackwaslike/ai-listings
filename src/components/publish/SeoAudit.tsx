@@ -84,8 +84,8 @@ export function SeoAudit({ listing }: SeoAuditProps) {
         </span>
       </div>
       <ul className="space-y-1.5">
-        {checks.map((check, i) => (
-          <li key={i} className="flex items-center gap-2">
+        {checks.map((check) => (
+          <li key={check.label} className="flex items-center gap-2">
             {check.pass ? (
               <CheckCircle2 className="w-3.5 h-3.5 flex-none text-emerald-500" />
             ) : (
