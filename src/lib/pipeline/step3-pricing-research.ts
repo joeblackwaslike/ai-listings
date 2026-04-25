@@ -1,12 +1,17 @@
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { Step2Result } from './step2-vision-analysis'
 
-interface EbayItem {
+interface SerpEbayResult {
   title: string
-  price: string
-  condition: string
-  url: string
-  sold_date?: string
+  price?: { raw: string; extracted: number }
+  condition?: string
+  link: string
+  extensions?: string[]
+}
+
+interface SerpEbayResponse {
+  organic_results?: SerpEbayResult[]
+  error?: string
 }
 
 interface SerpShoppingResult {
@@ -22,31 +27,27 @@ interface SerpApiShoppingResponse {
   error?: string
 }
 
-async function fetchEbayComps(
+async function fetchSerpEbayComps(
   brand: string,
   category: string,
   model: string
-): Promise<EbayItem[]> {
+): Promise<SerpEbayResult[]> {
   const query = `${brand} ${model} ${category}`
+  const url = new URL('https://serpapi.com/search')
+  url.searchParams.set('engine', 'ebay')
+  url.searchParams.set('_nkw', query)
+  url.searchParams.set('LH_Sold', '1')
+  url.searchParams.set('LH_Complete', '1')
+  url.searchParams.set('api_key', process.env.SERPAPI_API_KEY!)
 
-  const response = await fetch(
-    `https://api.apify.com/v2/acts/dtrungtin~ebay-items-scraper/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}&memory=256`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        search: query,
-        maxItems: 20,
-        completed: true,
-      }),
-    }
-  )
+  const response = await fetch(url.toString())
 
   if (!response.ok) {
-    throw new Error(`step3: Apify returned HTTP ${response.status}`)
+    throw new Error(`step3: SerpAPI eBay returned HTTP ${response.status}`)
   }
 
-  return (await response.json()) as EbayItem[]
+  const data = (await response.json()) as SerpEbayResponse
+  return data.organic_results ?? []
 }
 
 async function fetchSerpComps(
@@ -68,11 +69,6 @@ async function fetchSerpComps(
 
   const data = (await response.json()) as SerpApiShoppingResponse
   return data.shopping_results ?? []
-}
-
-function parsePriceCents(priceStr: string): number {
-  const num = parseFloat(priceStr.replace(/[^0-9.]/g, ''))
-  return isNaN(num) ? 0 : Math.round(num * 100)
 }
 
 function conditionDelta(
@@ -125,7 +121,7 @@ export async function runStep3PricingResearch(
   const supabase = getSupabaseAdmin()
 
   const [ebayItems, serpResults] = await Promise.all([
-    fetchEbayComps(step2.brand, step2.category, model),
+    fetchSerpEbayComps(step2.brand, step2.category, model),
     step2.isLuxury ? fetchSerpComps(step2.brand, model) : Promise.resolve([]),
   ])
 
@@ -142,17 +138,18 @@ export async function runStep3PricingResearch(
   }> = []
 
   for (const item of ebayItems) {
-    const priceCents = parsePriceCents(item.price)
+    const priceCents = item.price?.extracted ? Math.round(item.price.extracted * 100) : 0
     if (priceCents === 0) continue
-    const delta = conditionDelta(step2.condition, item.condition)
+    const condition = item.condition ?? 'Not specified'
+    const delta = conditionDelta(step2.condition, condition)
     compRows.push({
       listing_id: listingId,
       source: 'ebay',
       title: item.title,
       sale_price_cents: priceCents,
-      condition: item.condition,
-      sold_at: item.sold_date ?? null,
-      listing_url: item.url,
+      condition,
+      sold_at: null,
+      listing_url: item.link,
       condition_delta: delta,
       adjusted_price_cents: adjustForCondition(priceCents, delta),
     })
