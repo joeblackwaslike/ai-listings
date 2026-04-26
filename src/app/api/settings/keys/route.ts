@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-
-const VALID_PROVIDERS = ['anthropic', 'serpapi', 'photoroom'] as const
+import { VALID_PROVIDER_IDS } from '@/lib/providers'
 
 export async function PATCH(req: Request) {
   const supabase = await createClient()
@@ -16,7 +15,7 @@ export async function PATCH(req: Request) {
 
   const { provider, api_key } = body
 
-  if (typeof provider !== 'string' || !(VALID_PROVIDERS as readonly string[]).includes(provider)) {
+  if (typeof provider !== 'string' || !VALID_PROVIDER_IDS.includes(provider)) {
     return Response.json({ error: 'provider must be one of: anthropic, serpapi, photoroom' }, { status: 400 })
   }
 

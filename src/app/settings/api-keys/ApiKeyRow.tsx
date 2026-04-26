@@ -1,19 +1,23 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
+import type { ProviderId } from '@/lib/providers'
 
 interface ApiKeyRowProps {
-  provider: string
+  provider: ProviderId
   label: string
   placeholder: string
   maskedValue: string | null
 }
 
 export function ApiKeyRow({ provider, label, placeholder, maskedValue }: ApiKeyRowProps) {
+  const router = useRouter()
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState(false)
 
   async function save() {
     if (!value.trim()) return
@@ -24,9 +28,14 @@ export function ApiKeyRow({ provider, label, placeholder, maskedValue }: ApiKeyR
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, api_key: value.trim() }),
       })
-      if (!res.ok) return
+      if (!res.ok) {
+        setError(true)
+        setTimeout(() => setError(false), 2000)
+        return
+      }
       setValue('')
       setSaved(true)
+      router.refresh()
       setTimeout(() => setSaved(false), 2000)
     } finally {
       setSaving(false)
@@ -54,7 +63,7 @@ export function ApiKeyRow({ provider, label, placeholder, maskedValue }: ApiKeyR
         className="flex-none flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {saved ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : null}
-        {saving ? 'Saving…' : saved ? 'Saved' : 'Save'}
+        {saving ? 'Saving…' : error ? <span className="text-red-400">Failed</span> : saved ? 'Saved' : 'Save'}
       </button>
     </div>
   )

@@ -1,12 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ApiKeyRow } from './ApiKeyRow'
-
-const PROVIDERS = [
-  { id: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-api03-...' },
-  { id: 'serpapi',   label: 'SerpAPI',   placeholder: 'serpapi key' },
-  { id: 'photoroom', label: 'PhotoRoom', placeholder: 'photoroom key' },
-] as const
+import { PROVIDERS } from '@/lib/providers'
 
 export default async function ApiKeysPage() {
   const supabase = await createClient()
