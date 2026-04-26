@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
-import type { Step2Result } from './step2-vision-analysis'
+import type { VisionAnalysis } from './step2-vision-analysis'
+import type { ApiKeys } from '@/lib/user-api-keys'
 
 interface DraftOutput {
   canonical_title: string
@@ -19,10 +20,11 @@ interface DraftOutput {
 
 export async function runStep4aDraftListing(
   listingId: string,
-  step2: Step2Result,
-  suggestedPriceCents: number | null
+  step2: VisionAnalysis,
+  suggestedPriceCents: number | null,
+  apiKeys: ApiKeys
 ): Promise<void> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const client = new Anthropic({ apiKey: apiKeys.anthropic })
   const supabase = getSupabaseAdmin()
 
   const { data: comps } = await supabase

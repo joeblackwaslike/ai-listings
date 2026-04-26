@@ -1,5 +1,6 @@
 import type { ListingCategory } from '@/types/listings'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
+import type { ApiKeys } from '@/lib/user-api-keys'
 
 interface LensMatch {
   title: string
@@ -21,7 +22,7 @@ interface SerpApiLensResponse {
   error?: string
 }
 
-export interface Step1Result {
+export interface ProductIdData {
   ok: true
   title: string
   brand: string
@@ -88,12 +89,13 @@ function inferBrand(matches: LensMatch[]): string {
 
 export async function runStep1ProductId(
   listingId: string,
-  photoUrl: string
-): Promise<Step1Result> {
+  photoUrl: string,
+  apiKeys: ApiKeys
+): Promise<ProductIdData> {
   const url = new URL('https://serpapi.com/search')
   url.searchParams.set('engine', 'google_lens')
   url.searchParams.set('url', photoUrl)
-  url.searchParams.set('api_key', process.env.SERPAPI_API_KEY!)
+  url.searchParams.set('api_key', apiKeys.serpapi)
 
   const response = await fetch(url.toString())
 

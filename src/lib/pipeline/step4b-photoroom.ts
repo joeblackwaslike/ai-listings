@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from './supabase-push'
+import type { ApiKeys } from '@/lib/user-api-keys'
 
 interface PhotoRoomResponse {
   result_b64: string
@@ -12,7 +13,8 @@ interface PhotoRoomResponse {
 export async function runStep4bPhotoRoom(
   listingId: string,
   photoUrl: string,
-  intakePhotoId: string
+  intakePhotoId: string,
+  apiKeys: ApiKeys
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
 
@@ -34,7 +36,7 @@ export async function runStep4bPhotoRoom(
   const photoroomResponse = await fetch('https://sdk.photoroom.com/v1/segment', {
     method: 'POST',
     headers: {
-      'x-api-key': process.env.PHOTOROOM_API_KEY!,
+      'x-api-key': apiKeys.photoroom,
     },
     body: formData,
   })

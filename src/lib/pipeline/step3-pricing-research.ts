@@ -1,5 +1,6 @@
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
-import type { Step2Result } from './step2-vision-analysis'
+import type { VisionAnalysis } from './step2-vision-analysis'
+import type { ApiKeys } from '@/lib/user-api-keys'
 
 interface SerpEbayResult {
   title: string
@@ -30,7 +31,8 @@ interface SerpApiShoppingResponse {
 async function fetchSerpEbayComps(
   brand: string,
   category: string,
-  model: string
+  model: string,
+  apiKey: string
 ): Promise<SerpEbayResult[]> {
   const query = `${brand} ${model} ${category}`
   const url = new URL('https://serpapi.com/search')
@@ -38,7 +40,7 @@ async function fetchSerpEbayComps(
   url.searchParams.set('_nkw', query)
   url.searchParams.set('LH_Sold', '1')
   url.searchParams.set('LH_Complete', '1')
-  url.searchParams.set('api_key', process.env.SERPAPI_API_KEY!)
+  url.searchParams.set('api_key', apiKey)
 
   const response = await fetch(url.toString())
 
@@ -52,13 +54,14 @@ async function fetchSerpEbayComps(
 
 async function fetchSerpComps(
   brand: string,
-  model: string
+  model: string,
+  apiKey: string
 ): Promise<SerpShoppingResult[]> {
   const query = `${brand} ${model} resale sold price site:poshmark.com OR site:therealreal.com`
   const url = new URL('https://serpapi.com/search')
   url.searchParams.set('engine', 'google_shopping')
   url.searchParams.set('q', query)
-  url.searchParams.set('api_key', process.env.SERPAPI_API_KEY!)
+  url.searchParams.set('api_key', apiKey)
   url.searchParams.set('num', '10')
 
   const response = await fetch(url.toString())
@@ -115,14 +118,15 @@ function calcConfidenceScore(compCount: number): number {
 
 export async function runStep3PricingResearch(
   listingId: string,
-  step2: Step2Result,
-  model: string
+  step2: VisionAnalysis,
+  model: string,
+  apiKeys: ApiKeys
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
 
   const [ebayItems, serpResults] = await Promise.all([
-    fetchSerpEbayComps(step2.brand, step2.category, model),
-    step2.isLuxury ? fetchSerpComps(step2.brand, model) : Promise.resolve([]),
+    fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi),
+    step2.isLuxury ? fetchSerpComps(step2.brand, model, apiKeys.serpapi) : Promise.resolve([]),
   ])
 
   const compRows: Array<{

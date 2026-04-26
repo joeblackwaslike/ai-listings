@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { pushPipelineStep } from './supabase-push'
-import type { Step2Result } from './step2-vision-analysis'
+import type { VisionAnalysis } from './step2-vision-analysis'
 import type { AuthStep } from '@/types/listings'
+import type { ApiKeys } from '@/lib/user-api-keys'
 
 interface AuthPlanOutput {
   steps: Array<{
@@ -14,10 +15,11 @@ interface AuthPlanOutput {
 
 export async function runStep5AuthPlan(
   listingId: string,
-  step2: Step2Result,
-  suggestedPriceCents: number | null
+  step2: VisionAnalysis,
+  suggestedPriceCents: number | null,
+  apiKeys: ApiKeys
 ): Promise<void> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const client = new Anthropic({ apiKey: apiKeys.anthropic })
 
   const priceNote =
     suggestedPriceCents && suggestedPriceCents >= 50000

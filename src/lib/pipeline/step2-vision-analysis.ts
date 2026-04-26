@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { ListingCategory, ConditionValue, PhotoShot, Inclusion } from '@/types/listings'
-import type { Step1Result } from './step1-product-id'
+import type { ProductIdData } from './step1-product-id'
 import { pushPipelineStep } from './supabase-push'
+import type { ApiKeys } from '@/lib/user-api-keys'
 
 const LUXURY_BRANDS = new Set([
   'Chanel',
@@ -21,7 +22,7 @@ const LUXURY_BRANDS = new Set([
   'Givenchy',
 ])
 
-export interface Step2Result {
+export interface VisionAnalysis {
   ok: true
   brand: string
   category: ListingCategory
@@ -53,10 +54,11 @@ type VisionOutput = {
 export async function runStep2VisionAnalysis(
   listingId: string,
   photoUrl: string,
-  step1: Step1Result,
-  corrections: string | null = null
-): Promise<Step2Result> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  step1: ProductIdData,
+  corrections: string | null = null,
+  apiKeys: ApiKeys
+): Promise<VisionAnalysis> {
+  const client = new Anthropic({ apiKey: apiKeys.anthropic })
 
   const correctionContext = corrections
     ? `\n\nUSER CORRECTION: The previous identification was wrong. The user says: "${corrections}". Prioritize this correction.`
