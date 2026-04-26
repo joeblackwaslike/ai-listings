@@ -5,6 +5,7 @@ import { runStep4aDraftListing } from '@/lib/pipeline/step4a-draft-listing'
 import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { getUserApiKeys } from '@/lib/user-api-keys'
 
 export const retryStep = inngest.createFunction(
   {
@@ -22,7 +23,7 @@ export const retryStep = inngest.createFunction(
     const { data: listing } = await supabase
       .from('listings')
       .select(
-        'category, brand, condition, is_luxury, suggested_price_cents, intake_meta'
+        'user_id, category, brand, condition, is_luxury, suggested_price_cents, intake_meta'
       )
       .eq('id', listingId)
       .single()
@@ -30,6 +31,10 @@ export const retryStep = inngest.createFunction(
     if (!listing) {
       throw new Error(`retry-step: listing ${listingId} not found`)
     }
+
+    const apiKeys = await step.run('fetch-api-keys', () =>
+      getUserApiKeys(listing.user_id as string | null)
+    )
 
     const { data: photoRow } = await supabase
       .from('photos')
@@ -55,7 +60,7 @@ export const retryStep = inngest.createFunction(
 
     if (stepNum === 3) {
       await step.run('retry-pricing-research', () =>
-        runStep3PricingResearch(listingId, step2Partial as unknown as Parameters<typeof runStep3PricingResearch>[1], '')
+        runStep3PricingResearch(listingId, step2Partial as unknown as Parameters<typeof runStep3PricingResearch>[1], '', apiKeys)
       )
     } else if (stepNum === 4) {
       await Promise.all([
@@ -63,11 +68,12 @@ export const retryStep = inngest.createFunction(
           runStep4aDraftListing(
             listingId,
             step2Partial as unknown as Parameters<typeof runStep4aDraftListing>[1],
-            listing.suggested_price_cents as number | null
+            listing.suggested_price_cents as number | null,
+            apiKeys
           )
         ),
         step.run('retry-photoroom', () =>
-          runStep4bPhotoRoom(listingId, photoUrl, intakePhotoId)
+          runStep4bPhotoRoom(listingId, photoUrl, intakePhotoId, apiKeys)
         ),
       ])
     } else if (stepNum === 5) {
@@ -75,7 +81,8 @@ export const retryStep = inngest.createFunction(
         runStep5AuthPlan(
           listingId,
           step2Partial as unknown as Parameters<typeof runStep5AuthPlan>[1],
-          listing.suggested_price_cents as number | null
+          listing.suggested_price_cents as number | null,
+          apiKeys
         )
       )
     } else {

@@ -7,6 +7,7 @@ import { runStep4aDraftListing } from '@/lib/pipeline/step4a-draft-listing'
 import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
 import { getSupabaseAdmin, pushPipelineStep } from '@/lib/pipeline/supabase-push'
+import { getUserApiKeys } from '@/lib/user-api-keys'
 
 export const intakePipeline = inngest.createFunction(
   {
@@ -46,12 +47,21 @@ export const intakePipeline = inngest.createFunction(
       .single()
     const intakePhotoId: string = photoRow?.id ?? ''
 
+    const apiKeys = await step.run('fetch-api-keys', async () => {
+      const { data: listingRow } = await supabase
+        .from('listings')
+        .select('user_id')
+        .eq('id', listingId)
+        .single()
+      return getUserApiKeys(listingRow?.user_id ?? null)
+    })
+
     const step1Result = await step.run('product-id', () =>
-      runStep1ProductId(listingId, photoUrl)
+      runStep1ProductId(listingId, photoUrl, apiKeys)
     )
 
     let step2Result = await step.run('vision-analysis', () =>
-      runStep2VisionAnalysis(listingId, photoUrl, step1Result, null)
+      runStep2VisionAnalysis(listingId, photoUrl, step1Result, null, apiKeys)
     )
 
     let gateAttempt = 0
@@ -75,7 +85,7 @@ export const intakePipeline = inngest.createFunction(
       ).data.corrections
 
       step2Result = await step.run(`re-identify-${gateAttempt}`, () =>
-        runStep2VisionAnalysis(listingId, photoUrl, step1Result, corrections)
+        runStep2VisionAnalysis(listingId, photoUrl, step1Result, corrections, apiKeys)
       )
 
       gateAttempt++
@@ -83,7 +93,7 @@ export const intakePipeline = inngest.createFunction(
 
     const titleForComps = step2Result.notableFeatures.slice(0, 3).join(' ')
     await step.run('pricing-research', () =>
-      runStep3PricingResearch(listingId, step2Result, titleForComps)
+      runStep3PricingResearch(listingId, step2Result, titleForComps, apiKeys)
     )
 
     const { data: listingAfterStep3 } = await supabase
@@ -96,16 +106,16 @@ export const intakePipeline = inngest.createFunction(
 
     await Promise.all([
       step.run('draft-listing', () =>
-        runStep4aDraftListing(listingId, step2Result, suggestedPriceCents)
+        runStep4aDraftListing(listingId, step2Result, suggestedPriceCents, apiKeys)
       ),
       step.run('photoroom-process', () =>
-        runStep4bPhotoRoom(listingId, photoUrl, intakePhotoId)
+        runStep4bPhotoRoom(listingId, photoUrl, intakePhotoId, apiKeys)
       ),
     ])
 
     if (step2Result.isLuxury) {
       await step.run('auth-plan', () =>
-        runStep5AuthPlan(listingId, step2Result, suggestedPriceCents)
+        runStep5AuthPlan(listingId, step2Result, suggestedPriceCents, apiKeys)
       )
     }
 
