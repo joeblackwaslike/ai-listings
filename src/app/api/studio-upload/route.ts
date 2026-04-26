@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 import { inngest } from '@/lib/inngest/client'
 
 function getSupabaseAdmin() {
@@ -16,6 +17,12 @@ export async function POST(request: Request) {
 
   if (!file || !listingId) {
     return NextResponse.json({ error: 'photo and listingId required' }, { status: 400 })
+  }
+
+  const sessionClient = await createClient()
+  const { data: { user } } = await sessionClient.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const supabase = getSupabaseAdmin()
