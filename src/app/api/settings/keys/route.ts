@@ -16,11 +16,11 @@ export async function PATCH(req: Request) {
   const { provider, api_key } = body
 
   if (typeof provider !== 'string' || !VALID_PROVIDER_IDS.includes(provider)) {
-    return Response.json({ error: 'provider must be one of: anthropic, serpapi, photoroom' }, { status: 400 })
+    return Response.json({ error: `provider must be one of: ${VALID_PROVIDER_IDS.join(', ')}` }, { status: 400 })
   }
 
-  if (typeof api_key !== 'string' || api_key.trim() === '') {
-    return Response.json({ error: 'api_key must be a non-empty string' }, { status: 400 })
+  if (typeof api_key !== 'string' || api_key.trim() === '' || api_key.trim().length > 256) {
+    return Response.json({ error: 'api_key must be a non-empty string (max 256 chars)' }, { status: 400 })
   }
 
   const { error } = await supabase
@@ -30,7 +30,10 @@ export async function PATCH(req: Request) {
       { onConflict: 'user_id,provider' }
     )
 
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('user_api_keys upsert failed:', error)
+    return Response.json({ error: 'Failed to save key' }, { status: 500 })
+  }
 
   return Response.json({ ok: true })
 }

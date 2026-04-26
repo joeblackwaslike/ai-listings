@@ -22,6 +22,7 @@ export function ApiKeyRow({ provider, label, placeholder, maskedValue }: ApiKeyR
   async function save() {
     if (!value.trim()) return
     setSaving(true)
+    setError(false)
     try {
       const res = await fetch('/api/settings/keys', {
         method: 'PATCH',
@@ -52,6 +53,7 @@ export function ApiKeyRow({ provider, label, placeholder, maskedValue }: ApiKeyR
       </div>
       <input
         type="password"
+        aria-label={`${label} API key`}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={placeholder}
