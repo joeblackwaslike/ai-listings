@@ -19,11 +19,12 @@ export function ApiKeyRow({ provider, label, placeholder, maskedValue }: ApiKeyR
     if (!value.trim()) return
     setSaving(true)
     try {
-      await fetch('/api/settings/keys', {
+      const res = await fetch('/api/settings/keys', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, api_key: value.trim() }),
       })
+      if (!res.ok) return
       setValue('')
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)

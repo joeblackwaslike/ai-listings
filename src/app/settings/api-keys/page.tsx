@@ -16,9 +16,10 @@ export default async function ApiKeysPage() {
   const { data: keyRows } = await supabase
     .from('user_api_keys')
     .select('provider, api_key')
+    .eq('user_id', user.id)
 
   const keysMap = Object.fromEntries(
-    (keyRows ?? []).map((r) => [r.provider, r.api_key as string])
+    (keyRows ?? []).map((r) => [r.provider, r.api_key ?? ''])
   )
 
   return (
