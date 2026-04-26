@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { MessageParam, ToolUseBlock } from '@anthropic-ai/sdk/resources/messages'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import type { ApiKeys } from '@/lib/user-api-keys'
 import { assembleContext } from './system-prompt'
 import { TOOL_SCHEMAS, executeTool } from './tools'
 
@@ -11,15 +12,16 @@ export type AgentEvent =
   | { type: 'done' }
   | { type: 'error'; message: string }
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const MAX_ITERATIONS = 10
 
 export async function streamAgentResponse(
   listingId: string,
   userMessage: string,
-  emit: (event: AgentEvent) => void
+  emit: (event: AgentEvent) => void,
+  apiKeys: ApiKeys
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
+  const client = new Anthropic({ apiKey: apiKeys.anthropic })
 
   await supabase.from('conversations').insert({
     listing_id: listingId,

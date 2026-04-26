@@ -1,11 +1,25 @@
 import { streamAgentResponse } from '@/lib/agent/chat'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { createClient } from '@/lib/supabase/server'
+import type { ApiKeys } from '@/lib/user-api-keys'
+import { getUserApiKeys } from '@/lib/user-api-keys'
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ listingId: string }> }
 ) {
   const { listingId } = await params
+
+  const sessionClient = await createClient()
+  const { data: { user } } = await sessionClient.auth.getUser()
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  let apiKeys: ApiKeys
+  try {
+    apiKeys = await getUserApiKeys(user.id)
+  } catch {
+    return Response.json({ error: 'Failed to load API keys' }, { status: 500 })
+  }
 
   let body: { message?: string }
   try {
@@ -26,7 +40,7 @@ export async function POST(
       try {
         await streamAgentResponse(listingId, message, (event) => {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
-        })
+        }, apiKeys)
       } finally {
         controller.close()
       }
@@ -47,6 +61,10 @@ export async function GET(
   { params }: { params: Promise<{ listingId: string }> }
 ) {
   const { listingId } = await params
+  const sessionClient = await createClient()
+  const { data: { user } } = await sessionClient.auth.getUser()
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
   const supabase = getSupabaseAdmin()
 
   const { data, error } = await supabase
