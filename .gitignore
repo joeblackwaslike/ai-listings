@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Brainstorm / plan artifacts
 .superpowers/
+
+# Seed files with real credentials
+supabase/seed/

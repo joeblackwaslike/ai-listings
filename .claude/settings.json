@@ -1,25 +1,33 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(bd close *)",
+      "Read(//Users/joeblack/.claude/plugins/cache/superpowers-marketplace/superpowers/5.0.7/skills/**)",
+      "Bash(bd search *)",
+      "Bash(bd list *)"
+    ]
+  },
   "hooks": {
     "PreCompact": [
       {
+        "matcher": "",
         "hooks": [
           {
-            "command": "bd prime",
-            "type": "command"
+            "type": "command",
+            "command": "bd prime"
           }
-        ],
-        "matcher": ""
+        ]
       }
     ],
     "SessionStart": [
       {
+        "matcher": "",
         "hooks": [
           {
-            "command": "bd prime",
-            "type": "command"
+            "type": "command",
+            "command": "bd prime"
           }
-        ],
-        "matcher": ""
+        ]
       }
     ]
   }
