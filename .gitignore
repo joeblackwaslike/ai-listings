@@ -48,3 +48,4 @@ next-env.d.ts
 
 # Seed files with real credentials
 supabase/seed/
+.serena/
