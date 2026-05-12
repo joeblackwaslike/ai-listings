@@ -5,7 +5,17 @@ import { createClient } from '@/lib/supabase/client'
 import { ListingCard, type ListingWithCover } from './ListingCard'
 import { UploadZone } from './UploadZone'
 
-export function ListingsGrid({ initialListings }: { initialListings: ListingWithCover[] }) {
+function applyInsert(prev: ListingWithCover[], row: ListingWithCover) {
+  if (prev.some((l) => l.id === row.id)) return prev
+  return [row, ...prev]
+}
+
+function applyUpdate(prev: ListingWithCover[], row: ListingWithCover) {
+  if (row.status === 'archived') return prev.filter((l) => l.id !== row.id)
+  return prev.map((l) => (l.id === row.id ? { ...l, ...row } : l))
+}
+
+export function ListingsGrid({ initialListings }: Readonly<{ initialListings: ListingWithCover[] }>) {
   const [listings, setListings] = useState(initialListings)
 
   useEffect(() => {
@@ -16,23 +26,12 @@ export function ListingsGrid({ initialListings }: { initialListings: ListingWith
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'listings' },
-        (payload) => {
-          const row = payload.new as ListingWithCover
-          setListings((prev) => {
-            if (prev.some((l) => l.id === row.id)) return prev
-            return [row, ...prev]
-          })
-        }
+        (payload) => setListings((prev) => applyInsert(prev, payload.new as ListingWithCover))
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'listings' },
-        (payload) => {
-          const row = payload.new as ListingWithCover
-          setListings((prev) =>
-            prev.map((l) => (l.id === row.id ? { ...l, ...row } : l))
-          )
-        }
+        (payload) => setListings((prev) => applyUpdate(prev, payload.new as ListingWithCover))
       )
       .subscribe()
 
@@ -40,6 +39,10 @@ export function ListingsGrid({ initialListings }: { initialListings: ListingWith
       void supabase.removeChannel(channel)
     }
   }, [])
+
+  function handleArchive(id: string) {
+    setListings((prev) => prev.filter((l) => l.id !== id))
+  }
 
   return (
     <div className="space-y-6">
@@ -51,7 +54,7 @@ export function ListingsGrid({ initialListings }: { initialListings: ListingWith
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {listings.map((listing) => (
-            <ListingCard key={listing.id} listing={listing} />
+            <ListingCard key={listing.id} listing={listing} onArchive={handleArchive} />
           ))}
         </div>
       )}
