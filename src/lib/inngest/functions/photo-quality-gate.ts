@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { inngest } from '../client'
 import type { StudioUploadedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { toPublicUrl, toInternalUrl } from '@/lib/pipeline/to-public-url'
 
 interface QualityOutput {
   passed: boolean
@@ -10,6 +11,7 @@ interface QualityOutput {
 }
 
 async function checkPhotoQuality(photoUrl: string): Promise<QualityOutput> {
+  const publicUrl = await toPublicUrl(photoUrl)
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
   const response = await client.messages.create({
@@ -45,7 +47,7 @@ async function checkPhotoQuality(photoUrl: string): Promise<QualityOutput> {
       {
         role: 'user',
         content: [
-          { type: 'image', source: { type: 'url', url: photoUrl } },
+          { type: 'image', source: { type: 'url', url: publicUrl } },
           {
             type: 'text',
             text: `Evaluate this product photo for resale listing quality.
@@ -112,36 +114,27 @@ export const photoQualityGate = inngest.createFunction(
       throw new Error(`photo-quality-gate: photo ${photoId} has no raw_url`)
     }
 
-    const photoResponse = await fetch(photoRow.raw_url as string)
+    const photoResponse = await fetch(toInternalUrl(photoRow.raw_url as string))
     const photoBuffer = await photoResponse.arrayBuffer()
 
     const formData = new FormData()
-    formData.append(
-      'image_file',
-      new Blob([photoBuffer], { type: 'image/jpeg' }),
-      'photo.jpg'
-    )
-    formData.append('output_type', 'white_background')
-    formData.append('format', 'jpg')
+    formData.append('image', new Blob([photoBuffer], { type: 'image/jpeg' }), 'photo.jpg')
 
-    const prResponse = await fetch('https://sdk.photoroom.com/v1/segment', {
+    const prResponse = await fetch('https://api.withoutbg.com/v1.0/image-without-background', {
       method: 'POST',
-      headers: { 'x-api-key': process.env.PHOTOROOM_API_KEY! },
+      headers: { 'X-API-Key': process.env.WITHOUTBG_API_KEY! },
       body: formData,
     })
 
     if (!prResponse.ok) {
-      throw new Error(`photo-quality-gate: PhotoRoom HTTP ${prResponse.status}`)
+      throw new Error(`photo-quality-gate: withoutBG HTTP ${prResponse.status}`)
     }
 
-    const prContentType = prResponse.headers.get('content-type') ?? ''
-    const processedBuffer = prContentType.startsWith('image/')
-      ? Buffer.from(await prResponse.arrayBuffer())
-      : Buffer.from(((await prResponse.json()) as { result_b64: string }).result_b64, 'base64')
-    const storagePath = `studio/${listingId}/processed-${photoId}.jpg`
+    const processedBuffer = Buffer.from(await prResponse.arrayBuffer())
+    const storagePath = `studio/${listingId}/processed-${photoId}.png`
 
     await supabase.storage.from('photos').upload(storagePath, processedBuffer, {
-      contentType: 'image/jpeg',
+      contentType: 'image/png',
       upsert: true,
     })
 

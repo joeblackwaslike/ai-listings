@@ -3,7 +3,7 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 export interface ApiKeys {
   anthropic: string
   serpapi: string
-  photoroom: string
+  withoutbg: string
 }
 
 export async function getUserApiKeys(userId: string | null | undefined): Promise<ApiKeys> {
@@ -13,7 +13,7 @@ export async function getUserApiKeys(userId: string | null | undefined): Promise
     return {
       anthropic: isDev ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
       serpapi:   isDev ? (process.env.SERPAPI_API_KEY   ?? '') : '',
-      photoroom: isDev ? (process.env.PHOTOROOM_API_KEY ?? '') : '',
+      withoutbg: isDev ? (process.env.WITHOUTBG_API_KEY ?? '') : '',
     }
   }
 
@@ -30,8 +30,8 @@ export async function getUserApiKeys(userId: string | null | undefined): Promise
   )
 
   return {
-    anthropic: keys.anthropic ?? (isDev ? (process.env.ANTHROPIC_API_KEY ?? '') : ''),
-    serpapi:   keys.serpapi   ?? (isDev ? (process.env.SERPAPI_API_KEY   ?? '') : ''),
-    photoroom: keys.photoroom ?? (isDev ? (process.env.PHOTOROOM_API_KEY ?? '') : ''),
+    anthropic: keys.anthropic ?? (isDev ? (process.env.ANTHROPIC_API_KEY  ?? '') : ''),
+    serpapi:   keys.serpapi   ?? (isDev ? (process.env.SERPAPI_API_KEY    ?? '') : ''),
+    withoutbg: keys.withoutbg ?? (isDev ? (process.env.WITHOUTBG_API_KEY  ?? '') : ''),
   }
 }

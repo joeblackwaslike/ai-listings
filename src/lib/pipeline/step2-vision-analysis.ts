@@ -3,6 +3,7 @@ import type { ListingCategory, ConditionValue, PhotoShot, Inclusion } from '@/ty
 import type { ProductIdData } from './step1-product-id'
 import { pushPipelineStep } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
+import { toPublicUrl } from './to-public-url'
 
 const LUXURY_BRANDS = new Set([
   'Chanel',
@@ -58,7 +59,10 @@ export async function runStep2VisionAnalysis(
   corrections: string | null = null,
   apiKeys: ApiKeys
 ): Promise<VisionAnalysis> {
+  console.log(`[step2] starting vision analysis for listing ${listingId}`)
   const client = new Anthropic({ apiKey: apiKeys.anthropic })
+  const publicPhotoUrl = await toPublicUrl(photoUrl)
+  console.log(`[step2] public photo URL: ${publicPhotoUrl}, calling Claude...`)
 
   const correctionContext = corrections
     ? `\n\nUSER CORRECTION: The previous identification was wrong. The user says: "${corrections}". Prioritize this correction.`
@@ -179,7 +183,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
         content: [
           {
             type: 'image',
-            source: { type: 'url', url: photoUrl },
+            source: { type: 'url', url: publicPhotoUrl },
           },
           { type: 'text', text: prompt },
         ],
@@ -187,6 +191,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
     ],
   })
 
+  console.log(`[step2] Claude responded, stop_reason=${response.stop_reason}`)
   const toolUse = response.content.find((b) => b.type === 'tool_use')
   if (!toolUse || toolUse.type !== 'tool_use') {
     throw new Error('step2: Claude did not return a tool_use block')
@@ -212,6 +217,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
     },
   })
 
+  console.log(`[step2] complete: brand=${output.brand} category=${output.category}`)
   return {
     ok: true,
     brand: output.brand,

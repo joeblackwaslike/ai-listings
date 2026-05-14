@@ -1,14 +1,6 @@
 import { getSupabaseAdmin } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
-
-interface PhotoRoomResponse {
-  result_b64: string
-  foreground_top: number
-  foreground_left: number
-  foreground_width: number
-  foreground_height: number
-  image_type: string
-}
+import { toInternalUrl } from './to-public-url'
 
 export async function runStep4bPhotoRoom(
   listingId: string,
@@ -18,76 +10,42 @@ export async function runStep4bPhotoRoom(
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
 
-  const photoResponse = await fetch(photoUrl)
+  const photoResponse = await fetch(toInternalUrl(photoUrl))
   if (!photoResponse.ok) {
     throw new Error(`step4b: failed to download intake photo — HTTP ${photoResponse.status}`)
   }
   const photoBuffer = await photoResponse.arrayBuffer()
 
   const formData = new FormData()
-  formData.append(
-    'image_file',
-    new Blob([photoBuffer], { type: 'image/jpeg' }),
-    'photo.jpg'
-  )
-  formData.append('output_type', 'white_background')
-  formData.append('format', 'jpg')
+  formData.append('image', new Blob([photoBuffer], { type: 'image/jpeg' }), 'photo.jpg')
 
-  const photoroomResponse = await fetch('https://sdk.photoroom.com/v1/segment', {
+  const wbgResponse = await fetch('https://api.withoutbg.com/v1.0/image-without-background', {
     method: 'POST',
-    headers: {
-      'x-api-key': apiKeys.photoroom,
-    },
+    headers: { 'X-API-Key': apiKeys.withoutbg },
     body: formData,
   })
 
-  if (!photoroomResponse.ok) {
-    const errText = await photoroomResponse.text()
-    throw new Error(`step4b: PhotoRoom returned HTTP ${photoroomResponse.status} — ${errText}`)
+  if (!wbgResponse.ok) {
+    const errText = await wbgResponse.text()
+    throw new Error(`step4b: withoutBG returned HTTP ${wbgResponse.status} — ${errText}`)
   }
 
-  const contentType = photoroomResponse.headers.get('content-type') ?? ''
-  let processedBuffer: Buffer
-  let photoroomMeta: Record<string, unknown> = {}
-
-  if (contentType.startsWith('image/')) {
-    processedBuffer = Buffer.from(await photoroomResponse.arrayBuffer())
-  } else {
-    const prData = (await photoroomResponse.json()) as PhotoRoomResponse
-    processedBuffer = Buffer.from(prData.result_b64, 'base64')
-    photoroomMeta = {
-      foreground_top: prData.foreground_top,
-      foreground_left: prData.foreground_left,
-      foreground_width: prData.foreground_width,
-      foreground_height: prData.foreground_height,
-    }
-  }
-
-  const processedFilePath = `intake/${listingId}/processed.jpg`
+  const processedBuffer = Buffer.from(await wbgResponse.arrayBuffer())
+  const processedFilePath = `intake/${listingId}/processed.png`
 
   const { error: uploadError } = await supabase.storage
     .from('photos')
-    .upload(processedFilePath, processedBuffer, {
-      contentType: 'image/jpeg',
-      upsert: true,
-    })
+    .upload(processedFilePath, processedBuffer, { contentType: 'image/png', upsert: true })
 
   if (uploadError) {
     throw new Error(`step4b: Supabase storage upload failed — ${uploadError.message}`)
   }
 
-  const { data: urlData } = supabase.storage
-    .from('photos')
-    .getPublicUrl(processedFilePath)
-
-  const processedUrl = urlData.publicUrl
+  const { data: urlData } = supabase.storage.from('photos').getPublicUrl(processedFilePath)
 
   const { error: photoUpdateError } = await supabase
     .from('photos')
-    .update({
-      processed_url: processedUrl,
-      photoroom_meta: photoroomMeta,
-    })
+    .update({ processed_url: urlData.publicUrl, photoroom_meta: {} })
     .eq('id', intakePhotoId)
 
   if (photoUpdateError) {

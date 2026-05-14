@@ -1,6 +1,7 @@
 import type { ListingCategory } from '@/types/listings'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
+import { toPublicUrl } from './to-public-url'
 
 interface LensMatch {
   title: string
@@ -28,8 +29,7 @@ export interface ProductIdData {
   brand: string
   category: ListingCategory
   sku: string
-  lensMatches: LensMatch[]
-  rawLensResponse: SerpApiLensResponse
+  lensMatches: Pick<LensMatch, 'title' | 'source' | 'price'>[]
 }
 
 function inferCategory(matches: LensMatch[]): ListingCategory {
@@ -40,17 +40,13 @@ function inferCategory(matches: LensMatch[]): ListingCategory {
   if (/sneaker|shoe|boot|sandal|louboutin|jordan|nike air/.test(allTitles))
     return 'sneakers'
   if (
-    /phone|laptop|tablet|watch|camera|headphone|iphone|macbook|airpod/.test(
-      allTitles
-    )
+    /phone|laptop|tablet|watch|camera|headphone|iphone|macbook|airpod/.test(allTitles)
   )
     return 'electronics'
   if (/ring|necklace|bracelet|earring|pendant|diamond|gold jewelry/.test(allTitles))
     return 'jewelry'
   if (
-    /shirt|dress|jacket|coat|pant|jeans|skirt|blouse|sweater|hoodie|legging/.test(
-      allTitles
-    )
+    /shirt|dress|jacket|coat|pant|jeans|skirt|blouse|sweater|hoodie|legging/.test(allTitles)
   )
     return 'clothing'
 
@@ -59,44 +55,34 @@ function inferCategory(matches: LensMatch[]): ListingCategory {
 
 function inferBrand(matches: LensMatch[]): string {
   const luxuryBrands = [
-    'Chanel',
-    'Louis Vuitton',
-    'Gucci',
-    'Hermès',
-    'Prada',
-    'Balenciaga',
-    'Christian Louboutin',
-    'Dior',
-    'Burberry',
-    'Versace',
-    'Saint Laurent',
-    'Bottega Veneta',
+    'Chanel', 'Louis Vuitton', 'Gucci', 'Hermès', 'Prada', 'Balenciaga',
+    'Christian Louboutin', 'Dior', 'Burberry', 'Versace', 'Saint Laurent', 'Bottega Veneta',
   ]
   const sneakerBrands = ['Nike', 'Jordan', 'Adidas', 'New Balance', 'Puma', 'Vans']
   const allBrands = [...luxuryBrands, ...sneakerBrands]
-
   const allTitles = matches.map((m) => m.title).join(' ')
 
   for (const brand of allBrands) {
-    if (allTitles.toLowerCase().includes(brand.toLowerCase())) {
-      return brand
-    }
+    if (allTitles.toLowerCase().includes(brand.toLowerCase())) return brand
   }
 
-  const firstTitle = matches[0]?.title ?? ''
-  return firstTitle.split(' ')[0] ?? 'Unknown'
+  return matches[0]?.title.split(' ')[0] ?? 'Unknown'
 }
+
 
 export async function runStep1ProductId(
   listingId: string,
   photoUrl: string,
   apiKeys: ApiKeys
 ): Promise<ProductIdData> {
+  const publicPhotoUrl = await toPublicUrl(photoUrl)
+
   const url = new URL('https://serpapi.com/search')
   url.searchParams.set('engine', 'google_lens')
-  url.searchParams.set('url', photoUrl)
+  url.searchParams.set('url', publicPhotoUrl)
   url.searchParams.set('api_key', apiKeys.serpapi)
 
+  console.log(`[step1] calling SerpAPI Google Lens with url=${publicPhotoUrl}`)
   const response = await fetch(url.toString())
 
   if (!response.ok) {
@@ -104,6 +90,7 @@ export async function runStep1ProductId(
   }
 
   const data = (await response.json()) as SerpApiLensResponse
+  console.log(`[step1] SerpAPI response status: ${data.search_metadata?.status}, matches: ${data.visual_matches?.length ?? 0}, error: ${data.error ?? 'none'}`)
 
   if (data.error) {
     throw new Error(`step1: SerpAPI error — ${data.error}`)
@@ -119,25 +106,16 @@ export async function runStep1ProductId(
   const brand = inferBrand(matches)
   const title = data.knowledge_graph?.title ?? matches[0].title
 
+  console.log(`[step1] identified: title="${title}" brand="${brand}" category="${category}"`)
+
   const supabase = getSupabaseAdmin()
   const prefix = {
-    handbag: 'HB',
-    clothing: 'CL',
-    sneakers: 'SN',
-    electronics: 'EL',
-    jewelry: 'JW',
-    collectibles: 'CO',
-    other: 'OT',
+    handbag: 'HB', clothing: 'CL', sneakers: 'SN',
+    electronics: 'EL', jewelry: 'JW', collectibles: 'CO', other: 'OT',
   }[category]
 
-  const { data: skuData, error: skuError } = await supabase.rpc('generate_sku', {
-    prefix,
-  })
-
-  if (skuError) {
-    throw new Error(`step1: generate_sku failed — ${skuError.message}`)
-  }
-
+  const { data: skuData, error: skuError } = await supabase.rpc('generate_sku', { prefix })
+  if (skuError) throw new Error(`step1: generate_sku failed — ${skuError.message}`)
   const sku = skuData as string
 
   await pushPipelineStep(listingId, {
@@ -148,13 +126,12 @@ export async function runStep1ProductId(
     intake_meta: { lensMatches: matches, rawLensResponse: data },
   })
 
-  return {
-    ok: true,
-    title,
-    brand,
-    category,
-    sku,
-    lensMatches: matches,
-    rawLensResponse: data,
-  }
+  // Return only what downstream steps need — rawLensResponse is already stored in the DB
+  // and is too large (~59 matches × full JSON) to fit in Inngest's step memoization payload.
+  const topMatches = matches.slice(0, 5).map((m: LensMatch) => ({
+    title: m.title,
+    source: m.source,
+    price: m.price,
+  }))
+  return { ok: true, title, brand, category, sku, lensMatches: topMatches }
 }

@@ -9,4 +9,5 @@ data:
   REGISTRATION_MODE: "whitelist"
   NODE_ENV: "production"
   INNGEST_BASE_URL: "http://inngest.ai-listings.svc.cluster.local:8288"
+  SUPABASE_INTERNAL_URL: "http://ai-listings-supabase-kong.sup-ai-listings.svc.cluster.local:8000"
   INNGEST_DEV: "1"
