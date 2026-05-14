@@ -49,3 +49,6 @@ next-env.d.ts
 # Seed files with real credentials
 supabase/seed/
 .serena/
+
+# Deployment — generated secret manifest (never commit real secrets)
+deployment/kubernetes/app/secret.yaml

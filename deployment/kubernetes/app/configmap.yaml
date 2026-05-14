@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-listings-config
+  namespace: ai-listings
+data:
+  NEXT_PUBLIC_SUPABASE_URL: "https://sup-ai-listings.napoleon-catfish.ts.net"
+  NEXT_PUBLIC_SITE_URL: "https://ai-listings.napoleon-catfish.ts.net"
+  REGISTRATION_MODE: "whitelist"
+  NODE_ENV: "production"
+  INNGEST_BASE_URL: "http://inngest.ai-listings.svc.cluster.local:8288"
+  INNGEST_DEV: "1"

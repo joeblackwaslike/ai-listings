@@ -1,0 +1,64 @@
+secret:
+  jwt:
+    anonKey:    "${ANON_KEY}"
+    serviceKey: "${SERVICE_KEY}"
+    secret:     "${JWT_SECRET}"
+  db:
+    password: "${DB_PASS}"
+    database: postgres
+  dashboard:
+    username: supabase
+    password: "${DASH_PASS}"
+  analytics:
+    publicAccessToken:  "${LOGFLARE_PUB}"
+    privateAccessToken: "${LOGFLARE_PRIV}"
+  smtp:
+    username: ""
+    password: ""
+
+deployment:
+  vector:    { enabled: false }
+  analytics: { enabled: false }
+  auth:      { enabled: true }
+  db:        { enabled: true }
+  functions: { enabled: true }
+  imgproxy:  { enabled: true }
+  kong:      { enabled: true }
+  meta:      { enabled: true }
+  minio:     { enabled: true }
+  realtime:  { enabled: true }
+  rest:      { enabled: true }
+  storage:   { enabled: true }
+  studio:    { enabled: true }
+
+persistence:
+  db:      { enabled: true, storageClassName: longhorn, size: 10Gi, annotations: {} }
+  storage: { enabled: true, storageClassName: longhorn, size: 10Gi, annotations: {} }
+  minio:   { enabled: true, storageClassName: longhorn, size: 10Gi, annotations: {} }
+
+envs:
+  studio:
+    SUPABASE_URL:              "http://ai-listings-supabase-kong:8000"
+    STUDIO_PG_META_URL:        "http://ai-listings-supabase-meta:8080"
+    NEXT_PUBLIC_ENABLE_LOGS:   "false"
+
+ingress:
+  enabled: false
+
+autoscaling:
+  analytics:   { enabled: false }
+  auth:        { enabled: false }
+  db:          { enabled: false }
+  functions:   { enabled: false }
+  imgproxy:    { enabled: false }
+  kong:        { enabled: false }
+  meta:        { enabled: false }
+  minio:       { enabled: false }
+  realtime:    { enabled: false }
+  rest:        { enabled: false }
+  storage:     { enabled: false }
+  studio:      { enabled: false }
+  vector:      { enabled: false }
+
+controller:
+  type: StatefulSet

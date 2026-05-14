@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-listings-supabase-ts
+  namespace: sup-ai-listings
+  annotations:
+    tailscale.com/proxy-group: cluster-ingress
+    tailscale.com/hostname: sup-ai-listings
+spec:
+  ingressClassName: tailscale
+  # Must use defaultBackend — Tailscale ProxyGroup ingress does not support rules.host
+  defaultBackend:
+    service:
+      name: ai-listings-supabase-kong
+      port:
+        number: 8000
+  tls:
+    - hosts:
+        - sup-ai-listings

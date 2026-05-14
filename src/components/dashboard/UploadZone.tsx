@@ -3,8 +3,9 @@
 import { useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
 import { toast } from 'sonner'
+import type { ListingWithCover } from './ListingCard'
 
-export function UploadZone() {
+export function UploadZone({ onUpload }: Readonly<{ onUpload?: (listing: ListingWithCover) => void }>) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -24,7 +25,20 @@ export function UploadZone() {
         try {
           const res = await fetch('/api/upload', { method: 'POST', body: formData })
           if (!res.ok) throw new Error('Upload failed')
+          const data = await res.json() as { listingId: string; photoUrl: string }
           toast.success(`${file.name} — pipeline started`)
+          onUpload?.({
+            id: data.listingId,
+            sku: null,
+            status: 'intake',
+            title: null,
+            brand: null,
+            suggested_price_cents: null,
+            agent_blocked: false,
+            pipeline_step: 0,
+            pipeline_total: 5,
+            coverPhoto: { raw_url: data.photoUrl, processed_url: null },
+          })
         } catch {
           toast.error(`Failed to upload ${file.name}`)
         }

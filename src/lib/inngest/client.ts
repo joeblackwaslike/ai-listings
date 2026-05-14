@@ -1,6 +1,9 @@
 import { Inngest } from 'inngest'
 
-export const inngest = new Inngest({ id: 'ai-listings' })
+export const inngest = new Inngest({
+  id: 'ai-listings',
+  ...(process.env.INNGEST_BASE_URL ? { baseUrl: process.env.INNGEST_BASE_URL } : {}),
+})
 
 // Typed event payload interfaces — used in function files to cast event.data
 export interface PhotoUploadedEvent {

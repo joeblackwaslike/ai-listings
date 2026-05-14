@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inngest
+  namespace: ai-listings
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inngest
+  template:
+    metadata:
+      labels:
+        app: inngest
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-credentials
+      containers:
+        - name: inngest
+          image: ghcr.io/joeblackwaslike/inngest:latest
+          command: ["inngest"]
+          args:
+            - dev
+            - --no-discovery
+            - -u
+            - http://ai-listings.ai-listings.svc.cluster.local:3000/api/inngest
+          ports:
+            - containerPort: 8288
+          env:
+            - name: INNGEST_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-listings-secret
+                  key: INNGEST_SIGNING_KEY
+            - name: INNGEST_EVENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-listings-secret
+                  key: INNGEST_EVENT_KEY
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inngest
+  namespace: ai-listings
+spec:
+  selector:
+    app: inngest
+  ports:
+    - port: 8288
+      targetPort: 8288

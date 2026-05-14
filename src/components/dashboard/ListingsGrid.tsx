@@ -46,7 +46,7 @@ export function ListingsGrid({ initialListings }: Readonly<{ initialListings: Li
 
   return (
     <div className="space-y-6">
-      <UploadZone />
+      <UploadZone onUpload={(listing) => setListings((prev) => applyInsert(prev, listing))} />
       {listings.length === 0 ? (
         <p className="text-center text-sm text-gray-600 py-16">
           No listings yet — drop some photos above to get started

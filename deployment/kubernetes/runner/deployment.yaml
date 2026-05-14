@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner
+  namespace: github-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-runner
+  template:
+    metadata:
+      labels:
+        app: github-runner
+    spec:
+      serviceAccountName: github-runner
+      containers:
+        - name: runner
+          # myoung34/github-runner supports linux/arm64 natively
+          image: myoung34/github-runner:latest
+          env:
+            - name: RUNNER_SCOPE
+              value: "repo"
+            - name: REPO_URL
+              value: "https://github.com/joeblackwaslike/ai-listings"
+            - name: RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-runner-secret
+                  key: RUNNER_TOKEN
+            - name: RUNNER_NAME
+              value: "k3s-pi-cluster"
+            - name: LABELS
+              value: "self-hosted,linux,arm64,k3s"
+            - name: RUNNER_WORKDIR
+              value: "/tmp/runner"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: runner-work
+              mountPath: /tmp/runner
+      volumes:
+        - name: runner-work
+          emptyDir: {}
