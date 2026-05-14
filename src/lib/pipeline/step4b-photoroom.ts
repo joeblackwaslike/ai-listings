@@ -17,7 +17,7 @@ export async function runStep4bPhotoRoom(
   const photoBuffer = await photoResponse.arrayBuffer()
 
   const formData = new FormData()
-  formData.append('image', new Blob([photoBuffer], { type: 'image/jpeg' }), 'photo.jpg')
+  formData.append('file', new Blob([photoBuffer], { type: 'image/jpeg' }), 'photo.jpg')
 
   const wbgResponse = await fetch('https://api.withoutbg.com/v1.0/image-without-background', {
     method: 'POST',

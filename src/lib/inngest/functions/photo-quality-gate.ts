@@ -118,7 +118,7 @@ export const photoQualityGate = inngest.createFunction(
     const photoBuffer = await photoResponse.arrayBuffer()
 
     const formData = new FormData()
-    formData.append('image', new Blob([photoBuffer], { type: 'image/jpeg' }), 'photo.jpg')
+    formData.append('file', new Blob([photoBuffer], { type: 'image/jpeg' }), 'photo.jpg')
 
     const prResponse = await fetch('https://api.withoutbg.com/v1.0/image-without-background', {
       method: 'POST',
