@@ -115,6 +115,7 @@ export interface Listing {
   agent_blocked: boolean;
   agent_blocked_reason: string | null;
 
+  photos_confirmed: boolean;
   is_luxury: boolean;
   intake_meta: Record<string, unknown> | null;
 

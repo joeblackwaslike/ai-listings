@@ -3,32 +3,112 @@ import { createClient } from '@/lib/supabase/server'
 import { PhotoPanel } from '@/components/workspace/PhotoPanel'
 import { FieldsPanel } from '@/components/workspace/FieldsPanel'
 import { AgentChat } from '@/components/workspace/AgentChat'
+import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { Listing, Photo, PricingComp } from '@/types/listings'
 
-function inLoopNextSteps(listing: Listing, photos: Photo[]): string[] {
-  const hasStudioPhotos = photos.some((p) => p.type === 'studio')
-  const pendingAuthCount = listing.auth_plan.filter((s) => s.status === 'pending').length
-  const steps: string[] = []
-  if (pendingAuthCount > 0) steps.push(`• Complete the authentication checklist (${pendingAuthCount} steps remaining)`)
-  if (!hasStudioPhotos) steps.push(`• Upload studio photos — use the photo icon in the chat to attach them`)
-  if (steps.length === 0) steps.push(`• Review the title, description, and condition, then you're ready to publish`)
-  return steps
+type WorkspaceContext = {
+  firstMessage: string | null
+  suggestions: Suggestion[] | null
 }
 
-function buildFirstMessage(listing: Listing, photos: Photo[]): string {
-  if (listing.agent_blocked && listing.agent_blocked_reason) return listing.agent_blocked_reason
-  if (listing.status === 'published') return `This listing is live. Ask me anything about it or use the agent to make edits.`
-  if (listing.status === 'finalizing') return `This listing is being finalized. Let me know if you'd like any last changes before it goes live.`
-  if (listing.status !== 'in_loop') return `I'm working on this listing. Ask me anything or check back shortly.`
-  const steps = inLoopNextSteps(listing, photos)
-  return [`The automated pipeline has finished — here's what's left before you can publish:`, ...steps].join('\n')
+function ctx(firstMessage: string, suggestions: Suggestion[]): WorkspaceContext {
+  return { firstMessage, suggestions }
+}
+
+const NO_CONTEXT: WorkspaceContext = { firstMessage: null, suggestions: null }
+
+function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
+  const studioPhotos = photos.filter((p) => p.type === 'studio')
+  const hasStudio = studioPhotos.length > 0
+  const allProcessed = hasStudio && studioPhotos.every((p) => p.processed_url)
+  const pendingAuthCount = listing.auth_plan.filter((s) => s.status === 'pending').length
+  const needsInclusions = listing.inclusions.length === 0
+
+  if (!hasStudio) {
+    return ctx(
+      "The automated analysis is done. Upload your studio photos to get started — clear shots on a plain background work best.",
+      [
+        { label: 'Upload photos', openFilePicker: true },
+        { label: 'What shots do I need?' },
+        { label: 'Skip photos for now', message: "I'd like to skip uploading studio photos for now." },
+      ]
+    )
+  }
+
+  if (!allProcessed) {
+    const photoWord = studioPhotos.length === 1 ? 'photo' : `${String(studioPhotos.length)} photos`
+    return ctx(
+      `Background removal is running on your ${photoWord}. Check back in a moment.`,
+      [
+        { label: "What's happening?", message: "What is background removal and why does it matter?" },
+        { label: 'Skip background removal', message: "I'd like to skip background removal and keep the original photos." },
+      ]
+    )
+  }
+
+  if (!listing.photos_confirmed) {
+    return ctx(
+      "Your photos have been processed — backgrounds removed. Take a look and let me know if they look good to continue.",
+      [
+        { label: 'Looks good ✓', message: 'The photos look great, ready to continue.', confirmPhotos: true },
+        { label: 'There are problems', focusInput: true },
+        { label: 'Redo background removal', message: "Please redo the background removal on my photos." },
+      ]
+    )
+  }
+
+  if (pendingAuthCount > 0 || needsInclusions) {
+    const parts: string[] = []
+    if (pendingAuthCount > 0) {
+      const stepWord = pendingAuthCount === 1 ? 'step' : 'steps'
+      parts.push(`complete the authentication checklist (${pendingAuthCount} ${stepWord} remaining)`)
+    }
+    if (needsInclusions) parts.push("add what's included in the box")
+    return ctx(
+      `Almost there — please ${parts.join(' and ')}.`,
+      [
+        { label: 'All authenticated', message: 'All authentication steps are complete.' },
+        { label: 'Skip auth', message: "I'd like to skip the authentication checklist." },
+        { label: 'Inclusions complete', message: 'The inclusions list is complete.' },
+        { label: 'Ask me about auth', message: 'Can you explain the authentication requirements?' },
+      ]
+    )
+  }
+
+  if (hasHistory) return NO_CONTEXT
+
+  return ctx(
+    "Review the title, description, and condition below — let me know if anything needs fixing, then you're ready to publish.",
+    [
+      { label: 'Everything looks good', message: 'The title, description, and condition all look correct.' },
+      { label: 'Fix the title', message: 'The title needs to be updated.' },
+      { label: 'Fix the description', message: 'The description needs work.' },
+      { label: 'Wrong condition', message: 'The condition rating is incorrect.' },
+    ]
+  )
+}
+
+function buildWorkspaceContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
+  if (listing.agent_blocked && listing.agent_blocked_reason) {
+    return { firstMessage: listing.agent_blocked_reason, suggestions: null }
+  }
+  if (listing.status === 'published') {
+    return { firstMessage: 'This listing is live. Ask me anything about it or use the agent to make edits.', suggestions: null }
+  }
+  if (listing.status === 'finalizing') {
+    return { firstMessage: "This listing is being finalized. Let me know if you'd like any last changes before it goes live.", suggestions: null }
+  }
+  if (listing.status !== 'in_loop') {
+    return { firstMessage: "I'm working on this listing. Ask me anything or check back shortly.", suggestions: null }
+  }
+  return inLoopContext(listing, photos, hasHistory)
 }
 
 export default async function WorkspacePage({
   params,
-}: {
+}: Readonly<{
   params: Promise<{ id: string }>
-}) {
+}>) {
   const { id } = await params
   const supabase = await createClient()
 
@@ -61,7 +141,9 @@ export default async function WorkspacePage({
   const comps = (compsResult.data ?? []) as unknown as PricingComp[]
   const history = historyResult.data ?? []
 
-  const firstMessage = history.length === 0 ? buildFirstMessage(listing, photos) : null
+  const { firstMessage, suggestions } = history.length === 0
+    ? buildWorkspaceContext(listing, photos, false)
+    : { firstMessage: null, suggestions: null }
 
   return (
     <div className="h-screen flex flex-col">
@@ -79,13 +161,8 @@ export default async function WorkspacePage({
       <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_1fr] xl:grid-cols-[3fr_2fr]">
         <div className="overflow-y-auto border-r border-gray-800">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-6 p-6">
-            <PhotoPanel
-              photos={photos}
-              photoplan={listing.photo_plan ?? []}
-              inclusions={listing.inclusions ?? []}
-              listingId={id}
-            />
-            <FieldsPanel listing={listing} comps={comps} />
+            <PhotoPanel photos={photos} />
+            <FieldsPanel listing={listing} photos={photos} comps={comps} />
           </div>
         </div>
 
@@ -99,6 +176,7 @@ export default async function WorkspacePage({
               created_at: m.created_at as string,
             }))}
             firstMessage={firstMessage}
+            suggestions={suggestions}
           />
         </div>
       </div>

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { Send, Zap, Check, X, AlertCircle, ImagePlus } from 'lucide-react'
+import { SuggestedReplies } from './SuggestedReplies'
+import type { Suggestion } from './SuggestedReplies'
 
 interface ChatMessage {
   id: string
@@ -25,6 +27,7 @@ interface AgentChatProps {
   readonly listingId: string
   readonly initialMessages: InitialConversation[]
   readonly firstMessage?: string | null
+  readonly suggestions?: Suggestion[] | null
 }
 
 type AgentEvent =
@@ -111,7 +114,7 @@ async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setM
   }
 }
 
-export function AgentChat({ listingId, initialMessages, firstMessage }: AgentChatProps) {
+export function AgentChat({ listingId, initialMessages, firstMessage, suggestions }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
@@ -122,6 +125,8 @@ export function AgentChat({ listingId, initialMessages, firstMessage }: AgentCha
   const [input, setInput] = useState('')
   const [pendingImages, setPendingImages] = useState<File[]>([])
   const [streaming, setStreaming] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -141,16 +146,13 @@ export function AgentChat({ listingId, initialMessages, firstMessage }: AgentCha
     }))
   }
 
-  async function sendMessage() {
-    const text = input.trim()
-    if ((!text && pendingImages.length === 0) || streaming) return
-
-    setInput('')
+  async function doSend(text: string, imagesToUpload: File[]) {
+    setSuggestionsDismissed(true)
     setStreaming(true)
 
     let uploadedUrls: string[] = []
-    if (pendingImages.length > 0) {
-      uploadedUrls = await uploadImages(pendingImages)
+    if (imagesToUpload.length > 0) {
+      uploadedUrls = await uploadImages(imagesToUpload)
       setPendingImages([])
     }
 
@@ -180,6 +182,28 @@ export function AgentChat({ listingId, initialMessages, firstMessage }: AgentCha
     }
   }
 
+  async function handleSuggestionSelect(suggestion: Suggestion) {
+    if (suggestion.openFilePicker) {
+      fileInputRef.current?.click()
+      return
+    }
+    if (suggestion.focusInput) {
+      textareaRef.current?.focus()
+      return
+    }
+    if (suggestion.confirmPhotos) {
+      await fetch(`/api/listings/${listingId}/confirm-photos`, { method: 'PATCH' })
+    }
+    await doSend(suggestion.message ?? suggestion.label, [])
+  }
+
+  async function sendMessage() {
+    const text = input.trim()
+    if ((!text && pendingImages.length === 0) || streaming) return
+    setInput('')
+    await doSend(text, pendingImages)
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage() }
   }
@@ -190,11 +214,44 @@ export function AgentChat({ listingId, initialMessages, firstMessage }: AgentCha
     e.target.value = ''
   }
 
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const hasFiles = Array.from(e.dataTransfer.items).some((item) => item.kind === 'file')
+    if (hasFiles) setIsDragging(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragging(false)
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setIsDragging(false)
+    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'))
+    if (files.length > 0) setPendingImages((prev) => [...prev, ...files])
+  }
+
+  function removePendingImage(i: number) {
+    setPendingImages((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
   const canSend = (input.trim().length > 0 || pendingImages.length > 0) && !streaming
   const showFirstMessage = messages.length === 0 && firstMessage
 
   return (
-    <div className="flex flex-col h-full">
+    <section
+      aria-label="Chat"
+      className="relative flex flex-col h-full"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-emerald-500 bg-gray-950/90 pointer-events-none">
+          <p className="text-sm font-medium text-emerald-400">Drop photos here</p>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {showFirstMessage && (
           <div className="flex justify-start">
@@ -254,6 +311,9 @@ export function AgentChat({ listingId, initialMessages, firstMessage }: AgentCha
       </div>
 
       <div className="flex-none border-t border-gray-800 px-4 py-3 space-y-2">
+        {!suggestionsDismissed && suggestions && suggestions.length > 0 && (
+          <SuggestedReplies suggestions={suggestions} onSelect={(s) => void handleSuggestionSelect(s)} />
+        )}
         {pendingImages.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {pendingImages.map((file, i) => (
@@ -262,7 +322,7 @@ export function AgentChat({ listingId, initialMessages, firstMessage }: AgentCha
                   <Image src={URL.createObjectURL(file)} alt={file.name} fill className="object-cover" />
                 </div>
                 <button
-                  onClick={() => setPendingImages((prev) => prev.filter((_, idx) => idx !== i))}
+                  onClick={() => removePendingImage(i)}
                   className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <X className="w-2.5 h-2.5" />
@@ -301,8 +361,8 @@ export function AgentChat({ listingId, initialMessages, firstMessage }: AgentCha
             <Send className="w-3.5 h-3.5" />
           </button>
         </div>
-        <p className="text-[10px] text-gray-700 text-center">Enter to send · Shift+Enter for newline</p>
+        <p className="text-[10px] text-gray-700 text-center">Enter to send · Shift+Enter for newline · drag photos to attach</p>
       </div>
-    </div>
+    </section>
   )
 }

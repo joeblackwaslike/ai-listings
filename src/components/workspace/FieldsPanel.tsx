@@ -1,15 +1,16 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronRight, CheckCircle2, Circle, AlertCircle, SkipForward } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { ChevronRight, Check, CheckCircle2, Circle, AlertCircle, Plus, SkipForward, X } from 'lucide-react'
 import { formatPrice } from '@/lib/utils'
 import { EvidenceDrawer } from './EvidenceDrawer'
 import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
-import type { Listing, PricingComp, AuthStep } from '@/types/listings'
+import type { Listing, Photo, PricingComp, AuthStep, Inclusion } from '@/types/listings'
 
 interface FieldsPanelProps {
   listing: Listing
+  photos: Photo[]
   comps: PricingComp[]
 }
 
@@ -36,10 +37,13 @@ function AuthStepIcon({ status }: Readonly<{ status: AuthStep['status'] }>) {
   return <Circle className="w-3.5 h-3.5 text-gray-700 hover:text-gray-400 transition-colors" />
 }
 
-export function FieldsPanel({ listing, comps }: FieldsPanelProps) {
+export function FieldsPanel({ listing, photos, comps }: Readonly<FieldsPanelProps>) {
   const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [authSteps, setAuthSteps] = useState<AuthStep[]>(listing.auth_plan ?? [])
   const [saving, setSaving] = useState(false)
+  const [inclusions, setInclusions] = useState<Inclusion[]>(listing.inclusions ?? [])
+  const [addInput, setAddInput] = useState('')
+  const addInputRef = useRef<HTMLInputElement>(null)
 
   const doneCount = authSteps.filter((s) => s.status === 'done').length
   const failedCount = authSteps.filter((s) => s.status === 'failed').length
@@ -59,13 +63,34 @@ export function FieldsPanel({ listing, comps }: FieldsPanelProps) {
       idx === i ? { ...s, status: STEP_CYCLE[s.status] } : s
     )
     setAuthSteps(updated)
-    saveAuthPlan(updated)
+    void saveAuthPlan(updated)
   }
 
   function skipAll() {
     const updated = authSteps.map((s) => ({ ...s, status: 'done' as const }))
     setAuthSteps(updated)
-    saveAuthPlan(updated)
+    void saveAuthPlan(updated)
+  }
+
+  async function saveInclusions(updated: Inclusion[]) {
+    setInclusions(updated)
+    await fetch(`/api/listings/${listing.id}/inclusions`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inclusions: updated }),
+    })
+  }
+
+  function removeInclusion(i: number) {
+    void saveInclusions(inclusions.filter((_, idx) => idx !== i))
+  }
+
+  function addInclusion() {
+    const name = addInput.trim()
+    if (!name) return
+    void saveInclusions([...inclusions, { item: name, included: true, notes: null }])
+    setAddInput('')
+    addInputRef.current?.focus()
   }
 
   return (
@@ -99,7 +124,7 @@ export function FieldsPanel({ listing, comps }: FieldsPanelProps) {
                 onClick={() => setEvidenceOpen(true)}
                 className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
               >
-                View {comps.length} pricing comp{comps.length !== 1 ? 's' : ''}
+                View {comps.length} pricing comp{comps.length === 1 ? '' : 's'}
                 <ChevronRight className="w-3 h-3" />
               </button>
             )}
@@ -127,11 +152,86 @@ export function FieldsPanel({ listing, comps }: FieldsPanelProps) {
           )}
         </dl>
 
+        {listing.description && (
+          <section>
+            <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Description
+            </h3>
+            <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">{listing.description}</p>
+            <p className="text-[10px] text-gray-600 mt-1">Ask the agent to rewrite if needed.</p>
+          </section>
+        )}
+
         <section>
           <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3">
             Progress
           </h3>
-          <PipelineTimeline listing={listing} />
+          <PipelineTimeline listing={listing} photos={photos} />
+        </section>
+
+        {listing.photo_plan && listing.photo_plan.length > 0 && (
+          <section>
+            <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Photo Plan
+            </h3>
+            <ul className="space-y-2">
+              {listing.photo_plan.map((shot) => (
+                <li key={shot.shot} className="flex items-start gap-2">
+                  <span className={`mt-0.5 flex-none w-3.5 h-3.5 rounded border ${shot.required ? 'border-gray-600' : 'border-gray-700'}`} />
+                  <div className="min-w-0">
+                    <span className="text-xs text-gray-300">{shot.shot}</span>
+                    {shot.required && <span className="ml-1 text-[10px] text-orange-500">required</span>}
+                    <p className="text-[10px] text-gray-600 leading-snug">{shot.description}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <section>
+          <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Inclusions
+          </h3>
+          <ul className="space-y-1">
+            {inclusions.map((item, i) => (
+              <li key={item.item} className="flex items-center gap-2 group">
+                {item.included ? (
+                  <Check className="w-3.5 h-3.5 flex-none text-emerald-500 shrink-0" />
+                ) : (
+                  <X className="w-3.5 h-3.5 flex-none text-gray-700 shrink-0" />
+                )}
+                <span className={`text-xs flex-1 min-w-0 truncate ${item.included ? 'text-gray-300' : 'text-gray-600'}`}>
+                  {item.item}
+                  {item.notes && <span className="text-gray-600"> ({item.notes})</span>}
+                </span>
+                <button
+                  onClick={() => removeInclusion(i)}
+                  className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-gray-700 hover:text-red-400"
+                  title="Remove"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-center gap-1.5 mt-2">
+            <input
+              ref={addInputRef}
+              value={addInput}
+              onChange={(e) => setAddInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addInclusion() } }}
+              placeholder="Add inclusion…"
+              className="flex-1 bg-transparent text-xs text-gray-300 placeholder-gray-700 outline-none border-b border-gray-800 focus:border-gray-600 pb-0.5 transition-colors"
+            />
+            <button
+              onClick={addInclusion}
+              disabled={!addInput.trim()}
+              className="flex-none text-gray-700 hover:text-emerald-400 disabled:opacity-30 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </section>
 
         {authSteps.length > 0 && (
@@ -153,7 +253,7 @@ export function FieldsPanel({ listing, comps }: FieldsPanelProps) {
             </div>
             <ul className="space-y-2">
               {authSteps.map((step, i) => (
-                <li key={i} className="flex items-start gap-2">
+                <li key={step.step} className="flex items-start gap-2">
                   <button
                     onClick={() => toggleStep(i)}
                     disabled={saving}
