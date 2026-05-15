@@ -5,6 +5,25 @@ import { FieldsPanel } from '@/components/workspace/FieldsPanel'
 import { AgentChat } from '@/components/workspace/AgentChat'
 import type { Listing, Photo, PricingComp } from '@/types/listings'
 
+function inLoopNextSteps(listing: Listing, photos: Photo[]): string[] {
+  const hasStudioPhotos = photos.some((p) => p.type === 'studio')
+  const pendingAuthCount = listing.auth_plan.filter((s) => s.status === 'pending').length
+  const steps: string[] = []
+  if (pendingAuthCount > 0) steps.push(`• Complete the authentication checklist (${pendingAuthCount} steps remaining)`)
+  if (!hasStudioPhotos) steps.push(`• Upload studio photos — use the photo icon in the chat to attach them`)
+  if (steps.length === 0) steps.push(`• Review the title, description, and condition, then you're ready to publish`)
+  return steps
+}
+
+function buildFirstMessage(listing: Listing, photos: Photo[]): string {
+  if (listing.agent_blocked && listing.agent_blocked_reason) return listing.agent_blocked_reason
+  if (listing.status === 'published') return `This listing is live. Ask me anything about it or use the agent to make edits.`
+  if (listing.status === 'finalizing') return `This listing is being finalized. Let me know if you'd like any last changes before it goes live.`
+  if (listing.status !== 'in_loop') return `I'm working on this listing. Ask me anything or check back shortly.`
+  const steps = inLoopNextSteps(listing, photos)
+  return [`The automated pipeline has finished — here's what's left before you can publish:`, ...steps].join('\n')
+}
+
 export default async function WorkspacePage({
   params,
 }: {
@@ -42,6 +61,8 @@ export default async function WorkspacePage({
   const comps = (compsResult.data ?? []) as unknown as PricingComp[]
   const history = historyResult.data ?? []
 
+  const firstMessage = history.length === 0 ? buildFirstMessage(listing, photos) : null
+
   return (
     <div className="h-screen flex flex-col">
       <header className="flex-none flex items-center gap-3 px-6 py-3 border-b border-gray-800 bg-gray-950">
@@ -62,6 +83,7 @@ export default async function WorkspacePage({
               photos={photos}
               photoplan={listing.photo_plan ?? []}
               inclusions={listing.inclusions ?? []}
+              listingId={id}
             />
             <FieldsPanel listing={listing} comps={comps} />
           </div>
@@ -76,6 +98,7 @@ export default async function WorkspacePage({
               content: m.content as string,
               created_at: m.created_at as string,
             }))}
+            firstMessage={firstMessage}
           />
         </div>
       </div>

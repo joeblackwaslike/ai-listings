@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Send, Zap, Check, X, AlertCircle } from 'lucide-react'
+import Image from 'next/image'
+import { Send, Zap, Check, X, AlertCircle, ImagePlus } from 'lucide-react'
 
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'tool_event'
   content: string
+  images?: string[]
   toolName?: string
   toolOk?: boolean
   isToolCall?: boolean
@@ -20,8 +22,9 @@ interface InitialConversation {
 }
 
 interface AgentChatProps {
-  listingId: string
-  initialMessages: InitialConversation[]
+  readonly listingId: string
+  readonly initialMessages: InitialConversation[]
+  readonly firstMessage?: string | null
 }
 
 type AgentEvent =
@@ -31,140 +34,176 @@ type AgentEvent =
   | { type: 'done' }
   | { type: 'error'; message: string }
 
-function uid() {
-  return Math.random().toString(36).slice(2)
+type SetMessages = React.Dispatch<React.SetStateAction<ChatMessage[]>>
+
+interface StreamCtx { assistantId: string; assistantText: string }
+
+function uid() { return Math.random().toString(36).slice(2) }
+
+function autoResize(e: React.SyntheticEvent<HTMLTextAreaElement>) {
+  const t = e.currentTarget
+  t.style.height = 'auto'
+  t.style.height = `${t.scrollHeight}px`
 }
 
-export function AgentChat({ listingId, initialMessages }: AgentChatProps) {
+function plural(n: number, word: string) { return n === 1 ? word : `${word}s` }
+
+function ToolEventIcon({ msg }: Readonly<{ msg: ChatMessage }>) {
+  if (msg.toolName === 'error') return <AlertCircle className="w-3 h-3 text-red-500 flex-none" />
+  if (msg.isToolCall) return <Zap className="w-3 h-3 text-yellow-500 flex-none animate-pulse" />
+  if (msg.toolOk) return <Check className="w-3 h-3 text-emerald-500 flex-none" />
+  return <X className="w-3 h-3 text-red-500 flex-none" />
+}
+
+function applyEvent(
+  event: AgentEvent,
+  ctx: StreamCtx,
+  setMessages: SetMessages,
+): StreamCtx {
+  if (event.type === 'text') {
+    const text = ctx.assistantText + event.content
+    setMessages((prev) => {
+      const exists = prev.some((m) => m.id === ctx.assistantId)
+      if (exists) return prev.map((m) => m.id === ctx.assistantId ? { ...m, content: text } : m)
+      return [...prev, { id: ctx.assistantId, role: 'assistant', content: text }]
+    })
+    return { ...ctx, assistantText: text }
+  }
+  if (event.type === 'tool_call') {
+    const toolId = uid()
+    setMessages((prev) => [...prev, { id: toolId, role: 'tool_event', content: event.name, toolName: event.name, isToolCall: true }])
+    return ctx
+  }
+  if (event.type === 'tool_result') {
+    setMessages((prev) => {
+      const idx = [...prev].reverse().findIndex((m) => m.role === 'tool_event' && m.toolName === event.name && m.isToolCall)
+      if (idx === -1) return prev
+      return prev.map((m, i) => i === prev.length - 1 - idx ? { ...m, isToolCall: false, toolOk: event.ok } : m)
+    })
+    return { assistantId: uid(), assistantText: '' }
+  }
+  if (event.type === 'error') {
+    setMessages((prev) => [...prev, { id: uid(), role: 'tool_event', content: event.message, toolName: 'error' }])
+  }
+  return ctx
+}
+
+async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setMessages: SetMessages): Promise<void> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let current = ctx
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const chunks = buffer.split('\n\n')
+    buffer = chunks.pop() ?? ''
+    for (const chunk of chunks) {
+      const line = chunk.replace(/^data: /, '').trim()
+      if (!line) continue
+      try {
+        const event = JSON.parse(line) as AgentEvent
+        current = applyEvent(event, current, setMessages)
+      } catch { /* skip malformed */ }
+    }
+  }
+}
+
+export function AgentChat({ listingId, initialMessages, firstMessage }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
-      role: m.role === 'user' ? 'user' : 'assistant',
+      role: m.role === 'user' ? 'user' : ('assistant' as const),
       content: m.content,
     }))
   )
   const [input, setInput] = useState('')
+  const [pendingImages, setPendingImages] = useState<File[]>([])
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  async function uploadImages(files: File[]): Promise<string[]> {
+    return Promise.all(files.map(async (file) => {
+      const form = new FormData()
+      form.append('photo', file)
+      form.append('listingId', listingId)
+      const res = await fetch('/api/studio-upload', { method: 'POST', body: form })
+      const data = await res.json() as { photoUrl?: string }
+      return data.photoUrl ?? ''
+    }))
+  }
+
   async function sendMessage() {
     const text = input.trim()
-    if (!text || streaming) return
+    if ((!text && pendingImages.length === 0) || streaming) return
 
     setInput('')
     setStreaming(true)
 
-    const userMsg: ChatMessage = { id: uid(), role: 'user', content: text }
-    setMessages((prev) => [...prev, userMsg])
+    let uploadedUrls: string[] = []
+    if (pendingImages.length > 0) {
+      uploadedUrls = await uploadImages(pendingImages)
+      setPendingImages([])
+    }
 
-    let assistantId = uid()
-    let assistantText = ''
+    const photoCount = uploadedUrls.length
+    const photoNote = photoCount > 0 ? `[Uploaded ${photoCount} ${plural(photoCount, 'photo')}]\n` : ''
+    const message = (photoNote + text).trim()
+    const displayContent = text || `Uploaded ${photoCount} ${plural(photoCount, 'photo')}`
+
+    setMessages((prev) => [...prev, {
+      id: uid(), role: 'user', content: displayContent,
+      images: photoCount > 0 ? uploadedUrls : undefined,
+    }])
 
     try {
       const res = await fetch(`/api/agent/${listingId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message }),
       })
-
-      if (!res.ok || !res.body) {
-        throw new Error(`HTTP ${res.status}`)
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const chunks = buffer.split('\n\n')
-        buffer = chunks.pop() ?? ''
-
-        for (const chunk of chunks) {
-          const line = chunk.replace(/^data: /, '').trim()
-          if (!line) continue
-
-          let event: AgentEvent
-          try {
-            event = JSON.parse(line) as AgentEvent
-          } catch {
-            continue
-          }
-
-          if (event.type === 'text') {
-            assistantText += event.content
-            setMessages((prev) => {
-              const existing = prev.find((m) => m.id === assistantId)
-              if (existing) {
-                return prev.map((m) =>
-                  m.id === assistantId ? { ...m, content: assistantText } : m
-                )
-              }
-              return [...prev, { id: assistantId, role: 'assistant', content: assistantText }]
-            })
-          } else if (event.type === 'tool_call') {
-            const toolId = uid()
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: toolId,
-                role: 'tool_event',
-                content: event.name,
-                toolName: event.name,
-                isToolCall: true,
-              },
-            ])
-          } else if (event.type === 'tool_result') {
-            setMessages((prev) => {
-              const idx = [...prev].reverse().findIndex(
-                (m) => m.role === 'tool_event' && m.toolName === event.name && m.isToolCall
-              )
-              if (idx === -1) return prev
-              const realIdx = prev.length - 1 - idx
-              return prev.map((m, i) =>
-                i === realIdx ? { ...m, isToolCall: false, toolOk: event.ok } : m
-              )
-            })
-            assistantId = uid()
-            assistantText = ''
-          } else if (event.type === 'error') {
-            setMessages((prev) => [
-              ...prev,
-              { id: uid(), role: 'tool_event', content: event.message, toolName: 'error' },
-            ])
-          }
-        }
-      }
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+      await readStream(res.body, { assistantId: uid(), assistantText: '' }, setMessages)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Connection error'
-      setMessages((prev) => [
-        ...prev,
-        { id: uid(), role: 'tool_event', content: msg, toolName: 'error' },
-      ])
+      setMessages((prev) => [...prev, { id: uid(), role: 'tool_event', content: msg, toolName: 'error' }])
     } finally {
       setStreaming(false)
     }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      void sendMessage()
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage() }
   }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith('image/'))
+    setPendingImages((prev) => [...prev, ...files])
+    e.target.value = ''
+  }
+
+  const canSend = (input.trim().length > 0 || pendingImages.length > 0) && !streaming
+  const showFirstMessage = messages.length === 0 && firstMessage
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {messages.length === 0 && (
+        {showFirstMessage && (
+          <div className="flex justify-start">
+            <div className="max-w-[90%] rounded-2xl rounded-tl-sm px-3 py-2 bg-gray-900/50">
+              <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{firstMessage}</p>
+            </div>
+          </div>
+        )}
+        {!showFirstMessage && messages.length === 0 && (
           <p className="text-center text-xs text-gray-600 py-8">
             Ask the agent anything about this listing — pricing, description, authentication…
           </p>
@@ -174,32 +213,35 @@ export function AgentChat({ listingId, initialMessages }: AgentChatProps) {
             const isError = msg.toolName === 'error'
             return (
               <div key={msg.id} className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                {isError ? (
-                  <AlertCircle className="w-3 h-3 text-red-500 flex-none" />
-                ) : msg.isToolCall ? (
-                  <Zap className="w-3 h-3 text-yellow-500 flex-none animate-pulse" />
-                ) : msg.toolOk ? (
-                  <Check className="w-3 h-3 text-emerald-500 flex-none" />
-                ) : (
-                  <X className="w-3 h-3 text-red-500 flex-none" />
-                )}
+                <ToolEventIcon msg={msg} />
                 <span className={isError ? 'text-red-400' : ''}>
-                  {isError ? msg.content : (msg.toolName ?? msg.content).replace(/_/g, ' ')}
+                  {isError ? msg.content : (msg.toolName ?? msg.content).replaceAll('_', ' ')}
                 </span>
               </div>
             )
           }
-
           if (msg.role === 'user') {
             return (
               <div key={msg.id} className="flex justify-end">
-                <div className="max-w-[80%] bg-gray-800 rounded-2xl rounded-tr-sm px-3 py-2">
-                  <p className="text-sm text-gray-100 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                <div className="max-w-[80%] space-y-1.5">
+                  {msg.images && msg.images.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 justify-end">
+                      {msg.images.map((url) => (
+                        <div key={url} className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-700">
+                          <Image src={url} alt="Uploaded photo" fill className="object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {msg.content && (
+                    <div className="bg-gray-800 rounded-2xl rounded-tr-sm px-3 py-2">
+                      <p className="text-sm text-gray-100 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )
           }
-
           return (
             <div key={msg.id} className="flex justify-start">
               <div className="max-w-[90%] rounded-2xl rounded-tl-sm px-3 py-2">
@@ -211,33 +253,55 @@ export function AgentChat({ listingId, initialMessages }: AgentChatProps) {
         <div ref={bottomRef} />
       </div>
 
-      <div className="flex-none border-t border-gray-800 px-4 py-3">
+      <div className="flex-none border-t border-gray-800 px-4 py-3 space-y-2">
+        {pendingImages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {pendingImages.map((file, i) => (
+              <div key={`${file.name}-${i}`} className="relative group">
+                <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-gray-700">
+                  <Image src={URL.createObjectURL(file)} alt={file.name} fill className="object-cover" />
+                </div>
+                <button
+                  onClick={() => setPendingImages((prev) => prev.filter((_, idx) => idx !== i))}
+                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2 bg-gray-900 rounded-xl border border-gray-800 px-3 py-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={streaming}
+            className="flex-none p-1 text-gray-600 hover:text-gray-300 disabled:opacity-30 transition-colors"
+            title="Attach photos"
+          >
+            <ImagePlus className="w-3.5 h-3.5" />
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about pricing, description, auth…"
+            placeholder={pendingImages.length > 0 ? 'Add a message (optional)…' : 'Ask about pricing, description, auth…'}
             rows={1}
             disabled={streaming}
-            className="flex-1 bg-transparent text-sm text-gray-100 placeholder-gray-600 resize-none outline-none min-h-[20px] max-h-32 disabled:opacity-50"
+            className="flex-1 bg-transparent text-sm text-gray-100 placeholder-gray-600 resize-none outline-none min-h-5 max-h-32 disabled:opacity-50"
             style={{ height: 'auto' }}
-            onInput={(e) => {
-              const t = e.currentTarget
-              t.style.height = 'auto'
-              t.style.height = `${t.scrollHeight}px`
-            }}
+            onInput={autoResize}
           />
           <button
             onClick={() => void sendMessage()}
-            disabled={!input.trim() || streaming}
+            disabled={!canSend}
             className="flex-none p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="w-3.5 h-3.5" />
           </button>
         </div>
-        <p className="text-[10px] text-gray-700 mt-1 text-center">Enter to send · Shift+Enter for newline</p>
+        <p className="text-[10px] text-gray-700 text-center">Enter to send · Shift+Enter for newline</p>
       </div>
     </div>
   )

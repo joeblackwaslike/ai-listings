@@ -1,0 +1,8 @@
+{
+  "observed_at": "2026-05-14T23:37:36.167Z",
+  "provider": "claude-code",
+  "event_name": "UserPromptSubmit",
+  "session_id": "a7a66042-4bf6-44dc-bb13-be3c89aaec0b",
+  "turn_id": null,
+  "prompt_summary": "completion"
+}
