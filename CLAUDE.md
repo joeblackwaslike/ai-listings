@@ -6,8 +6,8 @@ There are two env files — both are gitignored:
 
 | File | Used when | Points to |
 | --- | --- | --- |
-| `.env.local` | `next dev` (local development) | Cloud Supabase project `jzpxtmiarxtlcunvvlkn` |
-| `.env.production.local` | `next build` / Kubernetes deployment | Self-hosted Supabase in k8s |
+| `.env.local` | `next dev` (local development) | k8s Supabase via Tailscale (same DB as prod — requires Tailscale connected) |
+| `.env.production.local` | `next build` / Kubernetes deployment | k8s Supabase via internal cluster DNS |
 
 **Production is Kubernetes.** The app and all its dependencies (Supabase, Inngest) run in the cluster at `napoleon-catfish.ts.net`. There is no separate staging environment.
 
