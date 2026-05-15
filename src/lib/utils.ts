@@ -3,7 +3,8 @@ export function formatPrice(cents: number | null): string {
   return `$${(cents / 100).toFixed(0)}`
 }
 
-export function relativeDate(isoString: string): string {
+export function relativeDate(isoString: string | null | undefined): string {
+  if (!isoString) return '—'
   const days = Math.floor((Date.now() - new Date(isoString).getTime()) / 86_400_000)
   if (days === 0) return 'today'
   if (days === 1) return 'yesterday'
