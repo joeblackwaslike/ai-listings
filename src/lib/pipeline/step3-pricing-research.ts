@@ -163,7 +163,7 @@ ${postsText}`,
     const postsByTitle = Object.fromEntries(top.map((p) => [p.title, p]))
 
     return extracted
-      .filter((e) => typeof e.price_cents === 'number' && e.price_cents > 0)
+      .filter((e) => typeof e.price_cents === 'number' && e.price_cents > 0 && e.price_cents < 10_000_000)
       .map((e) => {
         const matchedPost = postsByTitle[e.title]
         return {
@@ -241,7 +241,7 @@ export async function runStep3PricingResearch(
           clientId: process.env.REDDIT_CLIENT_ID,
           clientSecret: process.env.REDDIT_CLIENT_SECRET,
           refreshToken: process.env.REDDIT_REFRESH_TOKEN,
-          userAgent: 'ai-listings-bot/1.0 by joe',
+          userAgent: process.env.REDDIT_USER_AGENT ?? 'ai-listings-bot/1.0 (by /u/joeblackwaslike)',
         }
       : null
 

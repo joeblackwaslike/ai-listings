@@ -102,7 +102,7 @@ export class MercariAdapter implements PlatformSDK {
         variables,
       );
       const itemId = data.createItem.item.id;
-      return { platformId: itemId, url: `https://jp.mercari.com/item/${itemId}` };
+      return { platformId: itemId, url: `https://www.mercari.com/us/item/${itemId}` };
     } catch (err) {
       throw mapMercariError(err, this.platform);
     }

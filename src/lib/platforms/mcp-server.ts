@@ -265,7 +265,8 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
   reply(id, undefined, { code: -32601, message: `Method not found: ${method}` });
 }
 
-// Only start stdio listener when run directly
+// require.main === module is correct here: Next.js compiles server-side TS to CJS,
+// so this guard works as expected when the file is run directly via node.
 if (require.main === module) {
   let buffer = '';
   process.stdin.setEncoding('utf8');

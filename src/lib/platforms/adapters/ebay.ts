@@ -401,7 +401,7 @@ export class EbayAdapter implements PlatformSDK {
     const statusParam = filters?.status ? `&status=${filters.status.toUpperCase()}` : '';
     const res = await this.ebayFetch<{ offers?: EbayOffer[] }>(
       // TODO: implement cursor pagination for more than 200 results (use `next` href from response)
-      `https://api.ebay.com/sell/inventory/v1/offer?marketplace_id=EBAY_US&limit=200${statusParam}`,
+      `https://api.ebay.com/sell/inventory/v1/offer?marketplace_id=EBAY_US&limit=100${statusParam}`,
       { method: 'GET' },
       token,
     );
@@ -474,7 +474,7 @@ export class EbayAdapter implements PlatformSDK {
         body: JSON.stringify({
           // lineItemId is the Sell Fulfillment v1 identifier — NOT legacyItemId
           lineItems: (order.lineItems ?? []).map((li) => ({
-            lineItemId: li.lineItemId ?? li.legacyItemId ?? orderId,
+            lineItemId: li.lineItemId ?? li.legacyItemId,
           })),
           shippedDate: new Date().toISOString(),
           shippingCarrierCode: tracking.carrier,

@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac, createHash, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -32,8 +32,27 @@ const TYPE_MAP: Record<string, string> = {
   'ITEM_SOLD': 'item_sold',
   'FIXED_PRICE_TRANSACTION': 'order_placed',
   'BEST_OFFER': 'offer_received',
-  'MESSAGE_CREATED': 'reddit_message',
+  'MESSAGE_CREATED': 'listing_question',
 };
+
+// eBay endpoint verification: GET with ?challenge_code=<token>
+// Response must be sha256(challengeCode + verificationToken + endpoint)
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const challengeCode = req.nextUrl.searchParams.get('challenge_code');
+  if (!challengeCode) return NextResponse.json({ error: 'Missing challenge_code' }, { status: 400 });
+
+  const verificationToken = process.env.EBAY_VERIFICATION_TOKEN ?? '';
+  const endpoint = process.env.EBAY_WEBHOOK_ENDPOINT ?? req.url.split('?')[0];
+  if (!verificationToken) {
+    return NextResponse.json({ error: 'Webhook verification token not configured' }, { status: 500 });
+  }
+
+  const challengeResponse = createHash('sha256')
+    .update(challengeCode + verificationToken + endpoint)
+    .digest('hex');
+
+  return NextResponse.json({ challengeResponse });
+}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const EBAY_CLIENT_SECRET = process.env.EBAY_CLIENT_SECRET ?? '';

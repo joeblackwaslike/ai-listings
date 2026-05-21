@@ -21,12 +21,12 @@ interface EtsyWebhookBody {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const ETSY_WEBHOOK_SECRET = process.env.ETSY_WEBHOOK_SECRET ?? '';
-  const rawBody = await req.text();
-  const signature = req.headers.get('x-etsy-signature') ?? '';
-
   if (!ETSY_WEBHOOK_SECRET) {
     return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
   }
+
+  const rawBody = await req.text();
+  const signature = req.headers.get('x-etsy-signature') ?? '';
 
   if (!verifyEtsySignature(rawBody, signature, ETSY_WEBHOOK_SECRET)) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });

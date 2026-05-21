@@ -1,5 +1,4 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const Snoowrap = require('snoowrap') as typeof import('snoowrap');
+import type Snoowrap from 'snoowrap';
 import { createClient } from '@supabase/supabase-js';
 import type {
   PlatformSDK,
@@ -146,10 +145,11 @@ export class MechmarketAdapter implements PlatformSDK {
   // Private helpers
   // --------------------------------------------------------------------------
 
-  private async getReddit(): Promise<InstanceType<typeof Snoowrap>> {
+  private async getReddit(): Promise<Snoowrap> {
     const creds = await getMechmarketCreds(this.userId);
     if (!creds) throw new AuthExpiredError('mechmarket');
-    return new Snoowrap({
+    const SnoowrapCtor = (await import('snoowrap')).default;
+    return new SnoowrapCtor({
       userAgent: 'ai-listings/1.0',
       clientId: creds.redditClientId,
       clientSecret: creds.redditClientSecret,
@@ -210,12 +210,12 @@ export class MechmarketAdapter implements PlatformSDK {
   }
 
   /** Get a Submission object cast to our safe interface. */
-  private getSubmission(r: InstanceType<typeof Snoowrap>, postId: string): RedditPost {
+  private getSubmission(r: Snoowrap, postId: string): RedditPost {
     return r.getSubmission(postId) as unknown as RedditPost;
   }
 
   /** Get a PrivateMessage object cast to our safe interface. */
-  private getMessage(r: InstanceType<typeof Snoowrap>, msgId: string): RedditMessage {
+  private getMessage(r: Snoowrap, msgId: string): RedditMessage {
     return r.getMessage(msgId) as unknown as RedditMessage;
   }
 

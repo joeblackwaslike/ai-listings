@@ -69,7 +69,7 @@ export class TheRealRealAdapter implements PlatformSDK {
     if (!creds) return [];
 
     const limit = options?.limit ?? 20;
-    const searchUrl = `https://www.therealreal.com/collections/women/jewelry-watches?keywords=${encodeURIComponent(query)}&sort=sold`;
+    const searchUrl = `https://www.therealreal.com/search?keywords=${encodeURIComponent(query)}&sort=sold`;
 
     try {
       const startRes = await fetch(`${APIFY_BASE}/acts/${APIFY_ACTOR}/runs`, {

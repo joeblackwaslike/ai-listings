@@ -63,7 +63,7 @@ export const syncPlatformMessages = inngest.createFunction(
                       read_at: msg.read ? new Date().toISOString() : null,
                       metadata: {},
                     },
-                    { onConflict: 'platform,message_id', ignoreDuplicates: true },
+                    { onConflict: 'platform,message_id' },
                   )
 
                 if (upsertError) {
@@ -90,7 +90,7 @@ export const syncPlatformMessages = inngest.createFunction(
                       platform,
                       title: `New message from ${msg.from}`,
                       preview: msg.body.slice(0, 200),
-                      metadata: { threadId: msg.threadId, messageId: msg.messageId },
+                      metadata: { thread_id: msg.threadId, messageId: msg.messageId },
                     })
                   }
                 }

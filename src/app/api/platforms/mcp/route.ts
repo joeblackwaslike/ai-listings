@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { PLATFORM_TOOLS, dispatchToolCall } from '@/lib/platforms/mcp-server';
+import { AuthExpiredError, UnsupportedOperationError } from '@/lib/platforms/errors';
 
 function getSupabaseBrowserClient(req: NextRequest) {
   return createClient(
@@ -10,8 +11,12 @@ function getSupabaseBrowserClient(req: NextRequest) {
   );
 }
 
-// GET /api/platforms/mcp — list available tools
-export async function GET(): Promise<NextResponse> {
+// GET /api/platforms/mcp — requires auth; leaking schema to unauthenticated callers
+// would reveal internal tool names and input shapes.
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const supabase = getSupabaseBrowserClient(req);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   return NextResponse.json({ tools: PLATFORM_TOOLS });
 }
 
@@ -34,6 +39,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 400 });
+    const status =
+      err instanceof AuthExpiredError ? 401 :
+      err instanceof UnsupportedOperationError ? 501 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }

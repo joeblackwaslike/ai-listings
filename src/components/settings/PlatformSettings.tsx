@@ -44,7 +44,7 @@ const PLATFORMS: PlatformDef[] = [
     name: 'Poshmark',
     description: 'Paste your Poshmark session cookie string to enable automated listing.',
     fields: [
-      { kind: 'textarea', key: 'poshmark_cookies', label: 'Cookie string', placeholder: 'Paste cookie string here…' },
+      { kind: 'password', key: 'poshmark_cookies', label: 'Cookie string', placeholder: 'Paste cookie string here…' },
     ],
   },
   {
