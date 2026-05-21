@@ -44,34 +44,22 @@ const PLATFORMS: PlatformDef[] = [
   {
     id: 'mercari',
     name: 'Mercari',
-    description: 'Connect your Mercari Shops seller account via OAuth.',
+    description: 'Paste your Mercari Bearer token to enable listing. In Chrome: open mercari.com → DevTools → Network tab → click any page action → find a request to api.mercari.com → copy the Authorization header value (everything after "Bearer ").',
     fields: [
-      { kind: 'text', key: 'mercari_client_id', label: 'Client ID', placeholder: 'from Mercari Shops developer portal' },
-      { kind: 'password', key: 'mercari_client_secret', label: 'Client secret' },
-      { kind: 'oauth', platform: 'mercari', key: 'mercari_api_token', label: 'Mercari' },
+      { kind: 'password', key: 'mercari_api_token', label: 'Bearer token', placeholder: 'Paste token here…' },
     ],
     supportsRules: true,
   },
   {
-    id: 'imgur',
-    name: 'Imgur',
-    description: 'Connect your Imgur account to host listing images. Note: Imgur app registration is currently broken — new apps cannot be created.',
-    fields: [
-      { kind: 'text', key: 'imgur_client_id', label: 'Client ID', placeholder: 'from api.imgur.com/#registerapp' },
-      { kind: 'password', key: 'imgur_client_secret', label: 'Client secret' },
-      { kind: 'oauth', platform: 'imgur', key: 'imgur_access_token', label: 'Imgur' },
-    ],
-  },
-  {
     id: 'reddit',
     name: 'Reddit',
-    description: 'Connect your Reddit account for r/mechmarket posting.',
+    description: 'Connect your Reddit account for r/mechmarket posting. Create a "script" app (not web app) at reddit.com/prefs/apps — use http://localhost as the redirect URI.',
     fields: [
       { kind: 'text', key: 'reddit_username', label: 'Reddit username', placeholder: 'u/yourname' },
+      { kind: 'password', key: 'reddit_password', label: 'Reddit password' },
       { kind: 'text', key: 'us_state', label: 'US state code', placeholder: 'NY' },
       { kind: 'text', key: 'reddit_client_id', label: 'Client ID', placeholder: 'from reddit.com/prefs/apps' },
       { kind: 'password', key: 'reddit_client_secret', label: 'Client secret' },
-      { kind: 'oauth', platform: 'reddit', key: 'reddit_refresh_token', label: 'Reddit' },
     ],
     devPortalUrl: 'https://www.reddit.com/prefs/apps',
   },
