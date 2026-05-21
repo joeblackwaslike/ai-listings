@@ -39,8 +39,12 @@ function inferCategory(matches: LensMatch[]): ListingCategory {
     return 'handbag'
   if (/sneaker|shoe|boot|sandal|louboutin|jordan|nike air/.test(allTitles))
     return 'sneakers'
+  if (/watch|timepiece|movado|rolex|omega|seiko|casio|cartier.*watch|tudor|tag.?heuer|longines|hublot/.test(allTitles))
+    return 'watches'
+  if (/mechanical.?keyboard|keyboard|keycap|switch.*keyboard|tkl|65%|75%|60%|40%|gmk|kbd|endgame.?gear|gmmk/.test(allTitles))
+    return 'keyboards'
   if (
-    /phone|laptop|tablet|watch|camera|headphone|iphone|macbook|airpod/.test(allTitles)
+    /phone|laptop|tablet|camera|headphone|iphone|macbook|airpod/.test(allTitles)
   )
     return 'electronics'
   if (/ring|necklace|bracelet|earring|pendant|diamond|gold jewelry/.test(allTitles))
@@ -111,7 +115,8 @@ export async function runStep1ProductId(
   const supabase = getSupabaseAdmin()
   const prefix = {
     handbag: 'HB', clothing: 'CL', sneakers: 'SN',
-    electronics: 'EL', jewelry: 'JW', collectibles: 'CO', other: 'OT',
+    electronics: 'EL', jewelry: 'JW', collectibles: 'CO',
+    watches: 'WA', keyboards: 'KB', other: 'OT',
   }[category]
 
   const { data: skuData, error: skuError } = await supabase.rpc('generate_sku', { prefix })

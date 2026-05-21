@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Copy, Check, ExternalLink } from 'lucide-react'
 import { CopyField } from './CopyField'
 import type { Listing, ListingStatus } from '@/types/listings'
@@ -58,9 +58,8 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
   const [listingStatus, setListingStatus] = useState<ListingStatus>(listing.status)
   const [saving, setSaving] = useState<Platform | null>(null)
   const [markingPublished, setMarkingPublished] = useState(false)
-  const [copyAllDone, setCopyAllDone] = useState(false)
-
-  useEffect(() => { setCopyAllDone(false) }, [activeTab])
+  const [copyAllDoneTab, setCopyAllDoneTab] = useState<Platform | null>(null)
+  const copyAllDone = copyAllDoneTab === activeTab
 
   const hasAnyUrl = savedUrls.ebay || savedUrls.poshmark
 
@@ -107,8 +106,8 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
       : buildPoshmarkCopyAll(listing)
     if (!text) return
     await navigator.clipboard.writeText(text)
-    setCopyAllDone(true)
-    setTimeout(() => setCopyAllDone(false), 1500)
+    setCopyAllDoneTab(activeTab)
+    setTimeout(() => setCopyAllDoneTab(null), 1500)
   }
 
   const ebay = listing.platform_fields?.ebay

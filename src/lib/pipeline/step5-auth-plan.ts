@@ -42,6 +42,18 @@ Authentication requirements by brand:
 - Christian Louboutin: Red sole condition (primary value driver), Loubi insole code (post-2011), leather quality, heel height accuracy
 - Gucci: Serial number card (format varies by era), authenticity card, hardware, canvas/leather tells
 - General luxury: Hardware stamping, lining quality, stitching consistency, brand stamp placement, date codes if applicable
+- Watches (luxury only): Confirm Museum dial authenticity markers (Movado: single dot at 12 o'clock position); verify sapphire crystal (scratch test with knife — sapphire won't scratch); locate and photograph case back serial number; check "Swiss Made" engraving on dial and case back; test crown functionality (pull to set time, wind if automatic); note movement type (quartz vs. automatic); check bracelet/band for stretch, missing links, clasp wear; include original box, papers, warranty card if available
+${step2.category === 'watches' && step2.isLuxury ? `
+Additional watch authentication steps required for this item:
+- Confirm Museum dial authenticity markers (Movado: single dot at 12 o'clock position)
+- Verify sapphire crystal (scratch test with knife — sapphire won't scratch)
+- Locate and photograph case back serial number
+- Check "Swiss Made" engraving on dial and case back
+- Test crown functionality (pull to set time, wind if automatic)
+- Note movement type (quartz vs. automatic)
+- Check bracelet/band for stretch, missing links, clasp wear
+- Include original box, papers, warranty card if available
+` : ''}
 
 Do NOT suggest Entrupy, Real Authentication, or other third-party authentication services.
 For items ≥ $500: note eBay Authenticity Guarantee / Poshmark Posh Authenticate as the authentication layer.

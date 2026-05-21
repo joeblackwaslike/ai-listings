@@ -13,6 +13,8 @@ export type ListingCategory =
   | 'electronics'
   | 'jewelry'
   | 'collectibles'
+  | 'watches'
+  | 'keyboards'
   | 'other';
 
 export type ConditionValue =
@@ -27,7 +29,7 @@ export type ConditionValue =
 
 export type PhotoType = 'intake' | 'processed' | 'auth_card' | 'studio';
 
-export type CompSource = 'ebay' | 'poshmark' | 'therealreal' | 'google';
+export type CompSource = 'ebay' | 'poshmark' | 'therealreal' | 'google' | 'reddit';
 
 export type ConversationRole = 'user' | 'assistant';
 
@@ -38,6 +40,8 @@ export const CATEGORY_PREFIXES: Record<ListingCategory, string> = {
   electronics: 'EL',
   jewelry: 'JW',
   collectibles: 'CO',
+  watches: 'WA',
+  keyboards: 'KB',
   other: 'OT',
 };
 

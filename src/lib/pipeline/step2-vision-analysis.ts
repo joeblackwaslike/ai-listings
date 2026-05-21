@@ -21,6 +21,16 @@ const LUXURY_BRANDS = new Set([
   'Fendi',
   'Valentino',
   'Givenchy',
+  'Movado',
+  'Rolex',
+  'Omega',
+  'Cartier',
+  'TAG Heuer',
+  'Hublot',
+  'Patek Philippe',
+  'IWC',
+  'Breguet',
+  'Jaeger-LeCoultre',
 ])
 
 export interface VisionAnalysis {
@@ -83,7 +93,9 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
 - handbag: front flat, back flat, bottom, interior open, all hardware close-up, brand stamp, date code, auth card, serial number, strap, zipper pulls, any damage areas
 - sneakers: side profile (both shoes), toe box, heel, insole, box label, hangtag, any creasing or scuffs
 - electronics: front powered off, front powered on (boot/home screen), back, all ports, serial/IMEI label, all accessories, any damage
-- clothing: front flat, back flat, brand tag, care label, measurement reference, any wear/damage`
+- clothing: front flat, back flat, brand tag, care label, measurement reference, any wear/damage
+- watches: front dial (full face), crown close-up, case back (serial number + movement if visible), band/bracelet + clasp, bezel detail, any scratches/chips on crystal, box and papers if present
+- keyboards: top-down full board, left side profile, right side profile, bottom (case + badge), PCB close-up if unbuilt/exposed, switch stem detail, keycap legends (angle shot), stabilizers, any scratches/damage, box and accessories included`
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
@@ -105,6 +117,8 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
                 'electronics',
                 'jewelry',
                 'collectibles',
+                'watches',
+                'keyboards',
                 'other',
               ],
             },

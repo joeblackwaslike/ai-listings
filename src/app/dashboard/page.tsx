@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { ListingsGrid } from '@/components/dashboard/ListingsGrid'
 import type { ListingWithCover } from '@/components/dashboard/ListingCard'
+import { NotificationBell } from '@/components/layout/NotificationBell'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -43,7 +44,10 @@ export default async function DashboardPage() {
     <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">AI Listings</h1>
-        <span className="text-xs text-gray-600">{listingsWithCovers.length} listings</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-600">{listingsWithCovers.length} listings</span>
+          <NotificationBell />
+        </div>
       </div>
       <ListingsGrid initialListings={listingsWithCovers} />
     </main>
