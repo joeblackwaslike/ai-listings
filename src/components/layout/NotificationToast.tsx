@@ -25,53 +25,66 @@ export function NotificationToast() {
 
   useEffect(() => {
     const supabase = createClient()
+    const timerIds: ReturnType<typeof setTimeout>[] = []
+    let channel: ReturnType<typeof supabase.channel> | null = null
 
-    const channel = supabase
-      .channel('notification-toast')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications' },
-        (payload) => {
-          const row = payload.new as {
-            id: string
-            type: string
-            platform: string | null
-            title: string
-            preview: string | null
-            source_url: string | null
-            related_listing_id: string | null
-            metadata: Record<string, unknown> | null
-            read_at: string | null
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+
+      channel = supabase
+        .channel('notification-toast')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            const row = payload.new as {
+              id: string
+              type: string
+              platform: string | null
+              title: string
+              preview: string | null
+              source_url: string | null
+              related_listing_id: string | null
+              metadata: Record<string, unknown> | null
+              read_at: string | null
+            }
+            if (row.read_at !== null) return
+
+            const toast: ToastItem = {
+              id: crypto.randomUUID(),
+              notifId: row.id,
+              platform: row.platform,
+              title: row.title,
+              preview: row.preview ? row.preview.slice(0, 80) : null,
+              source_url: row.source_url,
+              related_listing_id: row.related_listing_id,
+              type: row.type,
+              metadata: row.metadata,
+            }
+
+            setToasts((prev) => {
+              const next = [toast, ...prev].slice(0, MAX_TOASTS)
+              return next
+            })
+
+            // Auto-dismiss after 5s
+            const timerId = setTimeout(() => {
+              setToasts((prev) => prev.filter((t) => t.id !== toast.id))
+            }, 5000)
+            timerIds.push(timerId)
           }
-          if (row.read_at !== null) return
-
-          const toast: ToastItem = {
-            id: crypto.randomUUID(),
-            notifId: row.id,
-            platform: row.platform,
-            title: row.title,
-            preview: row.preview ? row.preview.slice(0, 80) : null,
-            source_url: row.source_url,
-            related_listing_id: row.related_listing_id,
-            type: row.type,
-            metadata: row.metadata,
-          }
-
-          setToasts((prev) => {
-            const next = [toast, ...prev].slice(0, MAX_TOASTS)
-            return next
-          })
-
-          // Auto-dismiss after 5s
-          setTimeout(() => {
-            setToasts((prev) => prev.filter((t) => t.id !== toast.id))
-          }, 5000)
-        }
-      )
-      .subscribe()
+        )
+        .subscribe()
+    })
 
     return () => {
-      void supabase.removeChannel(channel)
+      timerIds.forEach(clearTimeout)
+      if (channel) void supabase.removeChannel(channel)
     }
   }, [])
 
