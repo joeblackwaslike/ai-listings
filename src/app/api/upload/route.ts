@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import sharp from 'sharp'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { inngest } from '@/lib/inngest/client'
@@ -32,13 +31,61 @@ export async function POST(request: Request) {
   }
 
   const file = formData.get('photo') as File | null
-
   if (!file) {
     return NextResponse.json({ error: 'No photo provided' }, { status: 400 })
   }
 
-  const supabase = getSupabaseAdmin()
+  const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase()
+  const isHeic =
+    ['heic', 'heif'].includes(ext) ||
+    ['image/heic', 'image/heif'].includes((file.type ?? '').toLowerCase())
 
+  const supabase = getSupabaseAdmin()
+  const rawBuffer = Buffer.from(await file.arrayBuffer())
+
+  if (isHeic) {
+    const { data: listing, error: listingError } = await supabase
+      .from('listings')
+      .insert({
+        status: 'in_loop',
+        pipeline_step: 0,
+        pipeline_total: 5,
+        user_id: user.id,
+        agent_blocked: true,
+        agent_blocked_reason: 'Photo format not supported — re-upload as JPEG or PNG',
+      })
+      .select('id')
+      .single()
+
+    if (listingError || !listing) {
+      return NextResponse.json({ error: 'Failed to create listing' }, { status: 500 })
+    }
+
+    const listingId: string = listing.id
+    const storagePath = `intake/${listingId}/original.heic`
+
+    const { error: uploadError } = await supabase.storage
+      .from('photos')
+      .upload(storagePath, rawBuffer, { contentType: 'image/heic', upsert: false })
+
+    if (uploadError) {
+      return NextResponse.json({ error: 'Storage upload failed' }, { status: 500 })
+    }
+
+    const { data: urlData } = supabase.storage.from('photos').getPublicUrl(storagePath)
+    const photoUrl = urlData.publicUrl
+
+    await supabase.from('photos').insert({
+      listing_id: listingId,
+      type: 'intake',
+      raw_url: photoUrl,
+      display_order: 0,
+    })
+
+    return NextResponse.json({ listingId, photoUrl })
+  }
+
+  // Non-HEIC: normal flow
   const { data: listing, error: listingError } = await supabase
     .from('listings')
     .insert({ status: 'intake', pipeline_step: 0, pipeline_total: 5, user_id: user.id })
@@ -50,31 +97,12 @@ export async function POST(request: Request) {
   }
 
   const listingId: string = listing.id
-  const ext = file.name.split('.').pop() ?? 'jpg'
-
-  const rawBuffer = Buffer.from(await file.arrayBuffer())
-  const isHeic = ['heic', 'heif'].includes(ext.toLowerCase()) ||
-    ['image/heic', 'image/heif'].includes((file.type ?? '').toLowerCase())
-
-  let uploadBuffer: Buffer
-  let finalExt: string
-  let uploadContentType: string
-  if (isHeic) {
-    uploadBuffer = await sharp(rawBuffer).jpeg({ quality: 95 }).toBuffer()
-    finalExt = 'jpg'
-    uploadContentType = 'image/jpeg'
-  } else {
-    uploadBuffer = rawBuffer
-    finalExt = ext
-    uploadContentType = file.type || 'image/jpeg'
-  }
-
-  const storagePath = `intake/${listingId}/original.${finalExt}`
+  const storagePath = `intake/${listingId}/original.${ext}`
 
   const { error: uploadError } = await supabase.storage
     .from('photos')
-    .upload(storagePath, uploadBuffer, {
-      contentType: uploadContentType,
+    .upload(storagePath, rawBuffer, {
+      contentType: file.type || 'image/jpeg',
       upsert: false,
     })
 
