@@ -28,6 +28,7 @@ interface AgentChatProps {
   readonly initialMessages: InitialConversation[]
   readonly firstMessage?: string | null
   readonly suggestions?: Suggestion[] | null
+  readonly pendingIdGate?: boolean
 }
 
 type AgentEvent =
@@ -114,7 +115,7 @@ async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setM
   }
 }
 
-export function AgentChat({ listingId, initialMessages, firstMessage, suggestions }: AgentChatProps) {
+export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
@@ -130,6 +131,7 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const idGateResolvedRef = useRef(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -194,6 +196,14 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     if (suggestion.confirmPhotos) {
       await fetch(`/api/listings/${listingId}/confirm-photos`, { method: 'PATCH' })
     }
+    if (suggestion.confirmId) {
+      idGateResolvedRef.current = true
+      await fetch('/api/pipeline/confirm-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId, confirmed: true }),
+      })
+    }
     await doSend(suggestion.message ?? suggestion.label, [])
   }
 
@@ -201,6 +211,14 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     const text = input.trim()
     if ((!text && pendingImages.length === 0) || streaming) return
     setInput('')
+    if (pendingIdGate && !idGateResolvedRef.current && text) {
+      idGateResolvedRef.current = true
+      await fetch('/api/pipeline/confirm-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId, confirmed: false, corrections: text }),
+      })
+    }
     await doSend(text, pendingImages)
   }
 

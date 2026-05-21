@@ -88,6 +88,33 @@ function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): 
   )
 }
 
+function idGateContext(listing: Listing): WorkspaceContext {
+  const brand = listing.brand ?? 'Unknown brand'
+  const category = listing.category ?? 'unknown category'
+  const condition = (listing.condition ?? 'unknown condition').replace(/_/g, ' ')
+  const notes = listing.condition_notes
+
+  const lines = [
+    "I've analyzed the photo. Here's what I found:",
+    '',
+    `Brand: ${brand}`,
+    `Category: ${category}`,
+    `Condition: ${condition}`,
+    notes ? `Notes: ${notes}` : null,
+    '',
+    "Does this look right? Confirm to continue to pricing research, or describe what's wrong.",
+  ].filter((l): l is string => l !== null).join('\n')
+
+  return ctx(lines, [
+    {
+      label: 'Yes, that\'s correct',
+      confirmId: true,
+      message: `Confirmed — ${brand} ${category}, condition: ${condition}.`,
+    },
+    { label: "Something's wrong", focusInput: true },
+  ])
+}
+
 function buildWorkspaceContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
   if (listing.agent_blocked && listing.agent_blocked_reason) {
     return { firstMessage: listing.agent_blocked_reason, suggestions: null }
@@ -97,6 +124,9 @@ function buildWorkspaceContext(listing: Listing, photos: Photo[], hasHistory: bo
   }
   if (listing.status === 'finalizing') {
     return { firstMessage: "This listing is being finalized. Let me know if you'd like any last changes before it goes live.", suggestions: null }
+  }
+  if (listing.status === 'id_gate') {
+    return idGateContext(listing)
   }
   if (listing.status !== 'in_loop') {
     return { firstMessage: "I'm working on this listing. Ask me anything or check back shortly.", suggestions: null }
@@ -141,8 +171,9 @@ export default async function WorkspacePage({
   const comps = (compsResult.data ?? []) as unknown as PricingComp[]
   const history = historyResult.data ?? []
 
-  const { firstMessage, suggestions } = history.length === 0
-    ? buildWorkspaceContext(listing, photos, false)
+  const hasHistory = history.length > 0
+  const { firstMessage, suggestions } = !hasHistory || listing.status === 'id_gate'
+    ? buildWorkspaceContext(listing, photos, hasHistory)
     : { firstMessage: null, suggestions: null }
 
   return (
@@ -175,6 +206,7 @@ export default async function WorkspacePage({
               content: m.content as string,
               created_at: m.created_at as string,
             }))}
+            pendingIdGate={listing.status === 'id_gate'}
             firstMessage={firstMessage}
             suggestions={suggestions}
           />

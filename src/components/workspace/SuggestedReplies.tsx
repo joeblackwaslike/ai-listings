@@ -5,6 +5,7 @@ export interface Suggestion {
   message?: string
   openFilePicker?: boolean
   confirmPhotos?: boolean
+  confirmId?: boolean
   focusInput?: boolean
 }
 
