@@ -10,6 +10,17 @@ export default async function PlatformsPage() {
 
   const existingSettings = await getSettings(user.id, Array.from(PLATFORM_SETTING_KEYS))
 
+  // Query platform_rules for pre-populating the rules URL inputs
+  const { data: rulesRows } = await supabase
+    .from('platform_rules')
+    .select('platform, rules_url')
+    .eq('user_id', user.id)
+
+  const existingRules: Record<string, string> = {}
+  for (const row of rulesRows ?? []) {
+    existingRules[row.platform as string] = row.rules_url as string
+  }
+
   return (
     <div className="min-h-screen bg-gray-950">
       <header className="flex items-center gap-3 px-6 py-3 border-b border-gray-800">
@@ -33,7 +44,7 @@ export default async function PlatformsPage() {
           </p>
         </div>
 
-        <PlatformSettings existingSettings={existingSettings} />
+        <PlatformSettings existingSettings={existingSettings} existingRules={existingRules} />
       </div>
     </div>
   )

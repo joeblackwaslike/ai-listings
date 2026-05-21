@@ -25,6 +25,7 @@ interface PlatformDef {
   name: string
   description: string
   fields: FieldDef[]
+  supportsRules?: boolean
 }
 
 // ── platform definitions ─────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ const PLATFORMS: PlatformDef[] = [
     fields: [
       { kind: 'password', key: 'poshmark_cookies', label: 'Cookie string', placeholder: 'Paste cookie string here…' },
     ],
+    supportsRules: true,
   },
   {
     id: 'mercari',
@@ -54,6 +56,7 @@ const PLATFORMS: PlatformDef[] = [
     fields: [
       { kind: 'password', key: 'mercari_api_token', label: 'API token', placeholder: 'Paste token…' },
     ],
+    supportsRules: true,
   },
   {
     id: 'therealreal',
@@ -86,6 +89,7 @@ const PLATFORMS: PlatformDef[] = [
     fields: [
       { kind: 'oauth', key: 'etsy_access_token', label: 'Etsy' },
     ],
+    supportsRules: true,
   },
   {
     id: 'ebay',
@@ -94,6 +98,7 @@ const PLATFORMS: PlatformDef[] = [
     fields: [
       { kind: 'oauth', key: 'ebay_refresh_token', label: 'eBay' },
     ],
+    supportsRules: true,
   },
 ]
 
@@ -196,12 +201,84 @@ function TextSettingRow({
   )
 }
 
+function RulesUrlRow({
+  platform,
+  initialValue,
+}: {
+  platform: string
+  initialValue: string
+}) {
+  const [value, setValue] = useState(initialValue)
+  const [pending, setPending] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'cached' | 'error'>('idle')
+  const [previewLength, setPreviewLength] = useState<number | null>(null)
+
+  async function save() {
+    const trimmed = value.trim()
+    if (!trimmed || trimmed === initialValue) return
+    setPending(true)
+    setStatus('idle')
+    try {
+      const res = await fetch('/api/settings/platform-rules', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, rulesUrl: trimmed }),
+      })
+      if (!res.ok) {
+        setStatus('error')
+        setTimeout(() => setStatus('idle'), 3000)
+        return
+      }
+      const data = await res.json() as { ok: boolean; previewLength?: number }
+      setPreviewLength(data.previewLength ?? null)
+      setStatus('cached')
+      setTimeout(() => setStatus('idle'), 4000)
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const sharedClass =
+    'bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-700 outline-none focus:border-gray-600 transition-colors'
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-[10px] text-gray-500">Listing rules URL</label>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => void save()}
+          placeholder="https://…/seller-policy"
+          className={`${sharedClass} flex-1 font-mono`}
+        />
+        <button
+          onClick={() => void save()}
+          disabled={!value.trim() || value.trim() === initialValue || pending}
+          className="flex-none px-3 py-2 text-xs rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {pending ? 'Fetching…' : status === 'error' ? <span className="text-red-400">Failed</span> : status === 'cached' ? 'Cached' : 'Fetch'}
+        </button>
+      </div>
+      {status === 'cached' && previewLength !== null && (
+        <p className="text-[10px] text-emerald-500">Rules cached ({previewLength} chars)</p>
+      )}
+      {status === 'error' && (
+        <p className="text-[10px] text-red-400">Failed to fetch rules page</p>
+      )}
+    </div>
+  )
+}
+
 function PlatformSection({
   platform,
   existingSettings,
+  existingRules,
 }: {
   platform: PlatformDef
   existingSettings: Record<string, string>
+  existingRules?: Record<string, string>
 }) {
   return (
     <div className="rounded-xl border border-gray-800 p-5 space-y-4">
@@ -226,6 +303,12 @@ function PlatformSection({
             />
           )
         )}
+        {platform.supportsRules && (
+          <RulesUrlRow
+            platform={platform.id}
+            initialValue={existingRules?.[platform.id] ?? ''}
+          />
+        )}
       </div>
     </div>
   )
@@ -235,9 +318,10 @@ function PlatformSection({
 
 export interface PlatformSettingsProps {
   existingSettings: Record<string, string>
+  existingRules?: Record<string, string>
 }
 
-export function PlatformSettings({ existingSettings }: PlatformSettingsProps) {
+export function PlatformSettings({ existingSettings, existingRules }: PlatformSettingsProps) {
   return (
     <div className="space-y-4">
       {PLATFORMS.map((platform) => (
@@ -245,6 +329,7 @@ export function PlatformSettings({ existingSettings }: PlatformSettingsProps) {
           key={platform.id}
           platform={platform}
           existingSettings={existingSettings}
+          existingRules={existingRules}
         />
       ))}
     </div>

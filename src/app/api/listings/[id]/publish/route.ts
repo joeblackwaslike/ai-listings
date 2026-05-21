@@ -61,12 +61,26 @@ export async function PATCH(
 
   const { data: current, error: fetchError } = await supabase
     .from('listings')
-    .select('listing_urls, status')
+    .select('listing_urls, status, user_id, platform_fields')
     .eq('id', id)
     .single()
 
   if (fetchError || !current) {
     return Response.json({ error: 'Listing not found' }, { status: 404 })
+  }
+
+  // Title length validation — warn but do not block
+  let titleWarning: { warning: string; currentLength: number; maxLength: number } | null = null
+  if (platform && current.user_id) {
+    const TITLE_LIMITS: Record<string, number> = { ebay: 80, poshmark: 60 }
+    const maxLength = TITLE_LIMITS[platform]
+    if (maxLength) {
+      const platformFields = current.platform_fields as Record<string, Record<string, string>> | null
+      const title: string | undefined = platformFields?.[platform]?.title
+      if (title && title.length > maxLength) {
+        titleWarning = { warning: 'title_too_long', currentLength: title.length, maxLength }
+      }
+    }
   }
 
   const updates: Partial<Pick<Listing, 'listing_urls' | 'status'>> = {}
@@ -95,5 +109,10 @@ export async function PATCH(
     return Response.json({ error: 'Update failed' }, { status: 500 })
   }
 
-  return Response.json({ ok: true, status: updated.status, listing_urls: updated.listing_urls })
+  return Response.json({
+    ok: true,
+    status: updated.status,
+    listing_urls: updated.listing_urls,
+    ...(titleWarning ?? {}),
+  })
 }

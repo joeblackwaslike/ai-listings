@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
+import { getPlatformRules } from '@/lib/platform-rules'
 
 interface DraftOutput {
   canonical_title: string
@@ -26,6 +27,32 @@ export async function runStep4aDraftListing(
 ): Promise<void> {
   const client = new Anthropic({ apiKey: apiKeys.anthropic })
   const supabase = getSupabaseAdmin()
+
+  // Fetch listing's user_id for rules lookup
+  let rulesSection = ''
+  try {
+    const { data: listingRow } = await supabase
+      .from('listings')
+      .select('user_id')
+      .eq('id', listingId)
+      .single()
+
+    if (listingRow?.user_id) {
+      const rules = await getPlatformRules(listingRow.user_id as string, ['ebay', 'poshmark'])
+      const parts: string[] = []
+      if (rules['ebay']) {
+        parts.push(`[eBay listing rules — excerpt]\n${rules['ebay'].slice(0, 1500)}`)
+      }
+      if (rules['poshmark']) {
+        parts.push(`[Poshmark listing rules — excerpt]\n${rules['poshmark'].slice(0, 1500)}`)
+      }
+      if (parts.length > 0) {
+        rulesSection = `Platform listing policies to follow:\n${parts.join('\n\n')}\n\n`
+      }
+    }
+  } catch {
+    // Never block pipeline if rules fetch fails
+  }
 
   const { data: comps } = await supabase
     .from('pricing_comps')
@@ -68,7 +95,7 @@ ${priceHint}
 
 Use the generate_listing tool to produce the full listing.
 
-Rules:
+${rulesSection}Rules:
 - Canonical title: brand + model + key attributes, not platform-specific
 - eBay title: exactly 80 chars or fewer, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
 - Poshmark title: natural, 60 chars max
