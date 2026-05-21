@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
@@ -74,6 +75,111 @@ async function fetchSerpComps(
   return data.shopping_results ?? []
 }
 
+interface RedditPost {
+  title: string
+  selftext: string
+  url: string
+  created_utc: number
+}
+
+interface RedditExtracted {
+  title: string
+  price_cents: number
+  sold_at_approx: string | null
+}
+
+async function fetchRedditMechmarketComps(
+  brand: string,
+  model: string,
+  redditCreds: {
+    clientId: string
+    clientSecret: string
+    refreshToken: string
+    userAgent: string
+  },
+  anthropicApiKey: string
+): Promise<Array<{
+  source: string
+  title: string
+  sale_price_cents: number
+  sold_at: string | null
+  listing_url: string
+}>> {
+  try {
+    // Dynamic import to avoid bundling issues with snoowrap's CommonJS deps
+    const Snoowrap = (await import('snoowrap')).default
+    const r = new Snoowrap({
+      userAgent: redditCreds.userAgent,
+      clientId: redditCreds.clientId,
+      clientSecret: redditCreds.clientSecret,
+      refreshToken: redditCreds.refreshToken,
+    })
+
+    const searchQuery = `[H] ${brand} ${model}`
+    const posts = await r.getSubreddit('mechmarket').search({
+      query: searchQuery,
+      sort: 'new',
+      limit: 25,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+
+    if (!posts || posts.length === 0) return []
+
+    const top = (posts as RedditPost[]).slice(0, 15)
+    const postsText = top
+      .map(
+        (p, i) =>
+          `--- Post ${i + 1} ---\nTitle: ${p.title}\nBody: ${p.selftext?.slice(0, 500) ?? '(no body)'}\nURL: ${p.url}`
+      )
+      .join('\n\n')
+
+    const client = new Anthropic({ apiKey: anthropicApiKey })
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'user',
+          content: `Extract selling prices for ${brand} ${model} from these mechmarket posts. Return a JSON array only (no prose, no markdown fences): [{ "title": string, "price_cents": number, "sold_at_approx": string | null }]. Only include posts that appear to be actual sale listings with a clear price. If no qualifying posts exist, return [].
+
+${postsText}`,
+        },
+      ],
+    })
+
+    const raw = response.content[0]
+    if (raw.type !== 'text') return []
+
+    let extracted: RedditExtracted[] = []
+    try {
+      // Strip markdown fences if Claude wrapped it anyway
+      const json = raw.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+      extracted = JSON.parse(json)
+      if (!Array.isArray(extracted)) return []
+    } catch {
+      return []
+    }
+
+    const postsByTitle = Object.fromEntries(top.map((p) => [p.title, p]))
+
+    return extracted
+      .filter((e) => typeof e.price_cents === 'number' && e.price_cents > 0)
+      .map((e) => {
+        const matchedPost = postsByTitle[e.title]
+        return {
+          source: 'reddit',
+          title: e.title,
+          sale_price_cents: Math.round(e.price_cents),
+          sold_at: e.sold_at_approx ?? null,
+          listing_url: matchedPost?.url ?? `https://www.reddit.com/r/mechmarket/search/?q=${encodeURIComponent(brand + ' ' + model)}`,
+        }
+      })
+  } catch {
+    // Never throw — Reddit is a best-effort enrichment
+    return []
+  }
+}
+
 function conditionDelta(
   listingCondition: string,
   compCondition: string
@@ -124,9 +230,27 @@ export async function runStep3PricingResearch(
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
 
-  const [ebayItems, serpResults] = await Promise.all([
+  const isKeyboard = step2.category?.toLowerCase() === 'keyboards'
+
+  const redditCreds =
+    isKeyboard &&
+    process.env.REDDIT_CLIENT_ID &&
+    process.env.REDDIT_CLIENT_SECRET &&
+    process.env.REDDIT_REFRESH_TOKEN
+      ? {
+          clientId: process.env.REDDIT_CLIENT_ID,
+          clientSecret: process.env.REDDIT_CLIENT_SECRET,
+          refreshToken: process.env.REDDIT_REFRESH_TOKEN,
+          userAgent: 'ai-listings-bot/1.0 by joe',
+        }
+      : null
+
+  const [ebayItems, serpResults, redditComps] = await Promise.all([
     fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi),
     step2.isLuxury ? fetchSerpComps(step2.brand, model, apiKeys.serpapi) : Promise.resolve([]),
+    redditCreds
+      ? fetchRedditMechmarketComps(step2.brand, model, redditCreds, apiKeys.anthropic)
+      : Promise.resolve([]),
   ])
 
   const compRows: Array<{
@@ -178,6 +302,21 @@ export async function runStep3PricingResearch(
       listing_url: result.link,
       condition_delta: delta,
       adjusted_price_cents: adjustForCondition(priceCents, delta),
+    })
+  }
+
+  for (const comp of redditComps) {
+    const delta = conditionDelta(step2.condition, 'Not specified')
+    compRows.push({
+      listing_id: listingId,
+      source: comp.source,
+      title: comp.title,
+      sale_price_cents: comp.sale_price_cents,
+      condition: 'Not specified',
+      sold_at: comp.sold_at,
+      listing_url: comp.listing_url,
+      condition_delta: delta,
+      adjusted_price_cents: adjustForCondition(comp.sale_price_cents, delta),
     })
   }
 
