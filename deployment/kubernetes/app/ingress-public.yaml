@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-listings-public
+  namespace: ai-listings
+  annotations:
+    external-dns.alpha.kubernetes.io/target: 1ee1e71f-263e-4de6-a31b-7cb04cf79036.cfargotunnel.com
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: ai-listings.joeblack.nyc
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-listings
+            port:
+              number: 3000
+  tls:
+  - hosts:
+    - ai-listings.joeblack.nyc
+    secretName: wildcard-joeblack-tls
