@@ -44,7 +44,7 @@ export default async function PlatformsPage() {
           </p>
         </div>
 
-        <PlatformSettings existingSettings={existingSettings} existingRules={existingRules} />
+        <PlatformSettings existingSettings={existingSettings} existingRules={existingRules} siteUrl={process.env.NEXT_PUBLIC_SITE_URL ?? ''} />
       </div>
     </div>
   )

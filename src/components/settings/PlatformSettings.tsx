@@ -26,6 +26,7 @@ interface PlatformDef {
   description: string
   fields: FieldDef[]
   supportsRules?: boolean
+  devPortalUrl?: string
 }
 
 // ── platform definitions ─────────────────────────────────────────────────────
@@ -43,28 +44,30 @@ const PLATFORMS: PlatformDef[] = [
   {
     id: 'mercari',
     name: 'Mercari',
-    description: 'Connect your Mercari Shops seller account. Create an app at the Mercari Shops developer portal to get credentials.',
+    description: 'Connect your Mercari Shops seller account via OAuth.',
     fields: [
       { kind: 'text', key: 'mercari_client_id', label: 'Client ID', placeholder: 'from Mercari Shops developer portal' },
       { kind: 'password', key: 'mercari_client_secret', label: 'Client secret' },
       { kind: 'oauth', platform: 'mercari', key: 'mercari_api_token', label: 'Mercari' },
     ],
     supportsRules: true,
+    devPortalUrl: 'https://open.mercari.com/',
   },
   {
     id: 'imgur',
     name: 'Imgur',
-    description: 'Connect your Imgur account to host listing images. Register an app at api.imgur.com first.',
+    description: 'Connect your Imgur account to host listing images.',
     fields: [
       { kind: 'text', key: 'imgur_client_id', label: 'Client ID', placeholder: 'from api.imgur.com/#registerapp' },
       { kind: 'password', key: 'imgur_client_secret', label: 'Client secret' },
       { kind: 'oauth', platform: 'imgur', key: 'imgur_access_token', label: 'Imgur' },
     ],
+    devPortalUrl: 'https://api.imgur.com/#registerapp',
   },
   {
     id: 'reddit',
     name: 'Reddit',
-    description: 'Connect your Reddit account for r/mechmarket posting. Create a "web app" at reddit.com/prefs/apps with redirect URI: {SITE_URL}/api/auth/callback/reddit.',
+    description: 'Connect your Reddit account for r/mechmarket posting.',
     fields: [
       { kind: 'text', key: 'reddit_username', label: 'Reddit username', placeholder: 'u/yourname' },
       { kind: 'text', key: 'us_state', label: 'US state code', placeholder: 'NY' },
@@ -72,22 +75,24 @@ const PLATFORMS: PlatformDef[] = [
       { kind: 'password', key: 'reddit_client_secret', label: 'Client secret' },
       { kind: 'oauth', platform: 'reddit', key: 'reddit_refresh_token', label: 'Reddit' },
     ],
+    devPortalUrl: 'https://www.reddit.com/prefs/apps',
   },
   {
     id: 'etsy',
     name: 'Etsy',
-    description: 'Connect your Etsy shop to publish listings automatically. Create an app at etsy.com/developers.',
+    description: 'Connect your Etsy shop to publish listings automatically.',
     fields: [
       { kind: 'text', key: 'etsy_client_id', label: 'API key (keystring)', placeholder: 'from etsy.com/developers' },
       { kind: 'text', key: 'etsy_shop_id', label: 'Shop ID', placeholder: 'Numeric shop ID' },
       { kind: 'oauth', platform: 'etsy', key: 'etsy_access_token', label: 'Etsy' },
     ],
     supportsRules: true,
+    devPortalUrl: 'https://www.etsy.com/developers/your-account/apps/create',
   },
   {
     id: 'ebay',
     name: 'eBay',
-    description: "Connect your eBay seller account. Create an app at developer.ebay.com. The RuName is listed in your app's OAuth settings.",
+    description: "Connect your eBay seller account. The RuName is listed in your app's OAuth settings.",
     fields: [
       { kind: 'text', key: 'ebay_client_id', label: 'App ID (client ID)', placeholder: 'from developer.ebay.com' },
       { kind: 'password', key: 'ebay_client_secret', label: 'Cert ID (client secret)' },
@@ -95,6 +100,7 @@ const PLATFORMS: PlatformDef[] = [
       { kind: 'oauth', platform: 'ebay', key: 'ebay_refresh_token', label: 'eBay' },
     ],
     supportsRules: true,
+    devPortalUrl: 'https://developer.ebay.com/my/keys',
   },
 ]
 
@@ -271,17 +277,50 @@ function PlatformSection({
   platform,
   existingSettings,
   existingRules,
+  siteUrl,
 }: {
   platform: PlatformDef
   existingSettings: Record<string, string>
   existingRules?: Record<string, string>
+  siteUrl: string
 }) {
+  const hasOAuth = platform.fields.some((f) => f.kind === 'oauth')
+  const callbackUrl = hasOAuth ? `${siteUrl}/api/auth/callback/${platform.id}` : null
+
   return (
     <div className="rounded-xl border border-gray-800 p-5 space-y-4">
-      <div>
-        <h2 className="text-sm font-semibold text-gray-200">{platform.name}</h2>
-        <p className="text-[11px] text-gray-600 mt-0.5">{platform.description}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-200">{platform.name}</h2>
+          <p className="text-[11px] text-gray-600 mt-0.5">{platform.description}</p>
+        </div>
+        {platform.devPortalUrl && (
+          <a
+            href={platform.devPortalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-none text-[10px] text-blue-500 hover:text-blue-400 transition-colors whitespace-nowrap"
+          >
+            Create app →
+          </a>
+        )}
       </div>
+      {callbackUrl && (
+        <div className="space-y-1">
+          <p className="text-[10px] text-gray-500">Redirect URI (paste into your app settings)</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-gray-900 border border-gray-800 rounded px-2 py-1.5 text-[10px] text-gray-400 font-mono truncate">
+              {callbackUrl}
+            </code>
+            <button
+              onClick={() => void navigator.clipboard.writeText(callbackUrl)}
+              className="flex-none px-2 py-1.5 text-[10px] rounded bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors"
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      )}
       <div className="space-y-3">
         {platform.fields.map((field) =>
           field.kind === 'oauth' ? (
@@ -315,9 +354,10 @@ function PlatformSection({
 export interface PlatformSettingsProps {
   existingSettings: Record<string, string>
   existingRules?: Record<string, string>
+  siteUrl: string
 }
 
-export function PlatformSettings({ existingSettings, existingRules }: PlatformSettingsProps) {
+export function PlatformSettings({ existingSettings, existingRules, siteUrl }: Readonly<PlatformSettingsProps>) {
   return (
     <div className="space-y-4">
       {PLATFORMS.map((platform) => (
@@ -326,6 +366,7 @@ export function PlatformSettings({ existingSettings, existingRules }: PlatformSe
           platform={platform}
           existingSettings={existingSettings}
           existingRules={existingRules}
+          siteUrl={siteUrl}
         />
       ))}
     </div>

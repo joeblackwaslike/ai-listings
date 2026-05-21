@@ -11,14 +11,10 @@ spec:
   - host: ai-listings.joeblack.nyc
     http:
       paths:
-      - path: /
+      - path: /api/auth/callback/
         pathType: Prefix
         backend:
           service:
             name: ai-listings
             port:
               number: 3000
-  tls:
-  - hosts:
-    - ai-listings.joeblack.nyc
-    secretName: wildcard-joeblack-tls
