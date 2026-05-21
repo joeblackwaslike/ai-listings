@@ -1,26 +1,14 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getSettings } from '@/lib/user-settings'
+import { getSettings, PLATFORM_SETTING_KEYS } from '@/lib/user-settings'
 import { PlatformSettings } from '@/components/settings/PlatformSettings'
-
-const PLATFORM_KEYS = [
-  'reddit_username',
-  'us_state',
-  'imgur_access_token',
-  'reddit_refresh_token',
-  'poshmark_cookies',
-  'mercari_api_token',
-  'etsy_access_token',
-  'ebay_refresh_token',
-  'apify_api_token',
-]
 
 export default async function PlatformsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const existingSettings = await getSettings(user.id, PLATFORM_KEYS)
+  const existingSettings = await getSettings(user.id, Array.from(PLATFORM_SETTING_KEYS))
 
   return (
     <div className="min-h-screen bg-gray-950">

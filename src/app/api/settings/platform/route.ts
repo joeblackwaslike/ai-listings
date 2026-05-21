@@ -1,17 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { setSetting } from '@/lib/user-settings'
-
-const VALID_KEYS = new Set([
-  'reddit_username',
-  'us_state',
-  'imgur_access_token',
-  'reddit_refresh_token',
-  'poshmark_cookies',
-  'mercari_api_token',
-  'etsy_access_token',
-  'ebay_refresh_token',
-  'apify_api_token',
-])
+import { setSetting, PLATFORM_SETTING_KEYS } from '@/lib/user-settings'
 
 export async function PATCH(req: Request) {
   const supabase = await createClient()
@@ -27,8 +15,8 @@ export async function PATCH(req: Request) {
 
   const { key, value } = body
 
-  if (typeof key !== 'string' || !VALID_KEYS.has(key)) {
-    return Response.json({ error: `key must be one of: ${[...VALID_KEYS].join(', ')}` }, { status: 400 })
+  if (typeof key !== 'string' || !PLATFORM_SETTING_KEYS.has(key)) {
+    return Response.json({ error: `key must be one of: ${[...PLATFORM_SETTING_KEYS].join(', ')}` }, { status: 400 })
   }
 
   if (typeof value !== 'string' || value.trim() === '') {

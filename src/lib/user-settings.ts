@@ -2,6 +2,20 @@ import { createClient } from '@supabase/supabase-js'
 
 export type SettingType = 'string' | 'number' | 'decimal' | 'date' | 'json' | 'array' | 'credential'
 
+export const PLATFORM_SETTING_KEYS = new Set([
+  'reddit_username',
+  'us_state',
+  'imgur_access_token',
+  'imgur_refresh_token',
+  'reddit_refresh_token',
+  'poshmark_cookies',
+  'mercari_api_token',
+  'etsy_access_token',
+  'etsy_refresh_token',
+  'ebay_refresh_token',
+  'apify_api_token',
+])
+
 function getSupabaseAdmin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
