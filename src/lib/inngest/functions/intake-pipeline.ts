@@ -99,7 +99,7 @@ export const intakePipeline = inngest.createFunction(
       gateAttempt++
     }
 
-    const titleForComps = step2Result.notableFeatures.slice(0, 3).join(' ')
+    const titleForComps = (step2Result.notableFeatures[0] ?? '').replace(/^Model:\s*/i, '').trim()
     await step.run('pricing-research', () =>
       runStep3PricingResearch(listingId, step2Result, titleForComps, apiKeys)
     )

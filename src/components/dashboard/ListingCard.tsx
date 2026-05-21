@@ -81,7 +81,6 @@ function IdGatePhoto({
             <div>
               <p className="text-[11px] font-semibold text-white leading-tight">{brand}</p>
               <p className="text-[10px] text-gray-400 capitalize">{category} · {condition}</p>
-              {notes && <p className="text-[10px] text-gray-500 leading-snug mt-0.5">{notes}</p>}
             </div>
             {features.length > 0 && (
               <ul className="space-y-0.5">
@@ -93,6 +92,7 @@ function IdGatePhoto({
                 ))}
               </ul>
             )}
+            {notes && <p className="text-[10px] text-gray-500 leading-snug">{notes}</p>}
             <p className="text-[10px] text-amber-400 font-medium">Is this correct?</p>
             <div className="h-2" />
           </div>

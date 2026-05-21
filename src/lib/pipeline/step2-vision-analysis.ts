@@ -103,6 +103,7 @@ For sneakers specifically: always identify US size (from box label, insole tag, 
 
 For the photo plan, generate an item-specific shot checklist for the studio session. Examples by category:
 - handbag: front flat, back flat, bottom, interior open, all hardware close-up, brand stamp, date code, auth card, serial number, strap, zipper pulls, any damage areas
+- small_leather_goods: front, back, interior open (all card slots/compartments), brand stamp/blind stamp, date code, zipper or snap hardware close-up, any scuffs or corner wear, dust bag if present
 - sneakers: side profile (both shoes), toe box, heel, insole with size label visible, box label (size + colorway), hangtag, any creasing or scuffs, outsole wear
 - electronics: front powered off, front powered on (boot/home screen), back, all ports, serial/IMEI label, all accessories, any damage
 - clothing: front flat, back flat, brand tag, care label, measurement reference, any wear/damage
@@ -124,6 +125,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
               type: 'string',
               enum: [
                 'handbag',
+                'small_leather_goods',
                 'clothing',
                 'sneakers',
                 'electronics',
@@ -146,6 +148,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
                 'poor',
                 'for_parts',
               ],
+              description: "Use 'new_with_tags' ONLY if original tags, hang tags, or price tags are physically visible in the photo or the item is still in sealed/original packaging with tags attached. If the item appears unused but no tags are visible, use 'new_without_tags'.",
             },
             condition_notes: {
               type: 'string',

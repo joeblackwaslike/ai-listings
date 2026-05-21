@@ -8,6 +8,7 @@ export type ListingStatus =
 
 export type ListingCategory =
   | 'handbag'
+  | 'small_leather_goods'
   | 'clothing'
   | 'sneakers'
   | 'electronics'
@@ -35,6 +36,7 @@ export type ConversationRole = 'user' | 'assistant';
 
 export const CATEGORY_PREFIXES: Record<ListingCategory, string> = {
   handbag: 'HB',
+  small_leather_goods: 'SL',
   clothing: 'CL',
   sneakers: 'SN',
   electronics: 'EL',

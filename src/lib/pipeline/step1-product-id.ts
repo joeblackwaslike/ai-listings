@@ -39,6 +39,8 @@ function inferCategory(matches: LensMatch[]): ListingCategory {
 
   if (/bag|purse|handbag|clutch|tote|satchel|crossbody/.test(allTitles))
     return 'handbag'
+  if (/wallet|cardholder|card.?holder|billfold|card.?case|key.?pouch|key.?holder|coin.?purse|small.?leather|pochette.?cles|zippy|compact.?wallet/.test(allTitles))
+    return 'small_leather_goods'
   if (/sneaker|shoe|boot|sandal|louboutin|jordan|nike air/.test(allTitles))
     return 'sneakers'
   if (/watch|timepiece|movado|rolex|omega|seiko|casio|cartier.*watch|tudor|tag.?heuer|longines|hublot/.test(allTitles))
@@ -116,7 +118,7 @@ export async function runStep1ProductId(
 
   const supabase = getSupabaseAdmin()
   const prefix = {
-    handbag: 'HB', clothing: 'CL', sneakers: 'SN',
+    handbag: 'HB', small_leather_goods: 'SL', clothing: 'CL', sneakers: 'SN',
     electronics: 'EL', jewelry: 'JW', collectibles: 'CO',
     watches: 'WA', keyboards: 'KB', other: 'OT',
   }[category]

@@ -94,12 +94,15 @@ function idGateContext(listing: Listing): WorkspaceContext {
   const category = listing.category ?? 'unknown category'
   const condition = (listing.condition ?? 'unknown condition').replace(/_/g, ' ')
   const notes = listing.condition_notes
+  const features = (listing.intake_meta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
 
   const lines = [
     "I've analyzed the photo. Here's what I found:",
     '',
     `Brand: ${brand}`,
     `Category: ${category}`,
+    ...(features.length > 0 ? ['', ...features.map((f) => `• ${f}`)] : []),
+    '',
     `Condition: ${condition}`,
     notes ? `Notes: ${notes}` : null,
     '',
