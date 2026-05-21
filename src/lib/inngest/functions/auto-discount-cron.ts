@@ -75,7 +75,7 @@ export const autoDiscountCron = inngest.createFunction(
 
           const daysSinceLastEvent =
             (Date.now() - new Date(lastEvent.created_at as string).getTime()) / (1000 * 60 * 60 * 24)
-          if (daysSinceLastEvent < intervalDays) continue
+          if (Math.floor(daysSinceLastEvent) < intervalDays) continue
 
           // Get initial price for floor calculation
           const { data: initialEvent } = await supabase
@@ -88,6 +88,7 @@ export const autoDiscountCron = inngest.createFunction(
             .single()
 
           const initialPrice = (initialEvent?.price_cents as number | null) ?? (listing.suggested_price_cents as number | null) ?? 0
+          if (initialPrice <= 0) continue
           const currentPrice = (listing.final_price_cents as number | null) ?? (listing.suggested_price_cents as number | null) ?? 0
           if (currentPrice <= 0) continue
 
