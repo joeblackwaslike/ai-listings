@@ -46,6 +46,41 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const [addInput, setAddInput] = useState('')
   const addInputRef = useRef<HTMLInputElement>(null)
 
+  // Auto-discount per-listing override state
+  const [adOverride, setAdOverride] = useState(
+    listing.auto_discount_enabled !== null ||
+    listing.auto_discount_pct !== null ||
+    listing.auto_discount_interval_days !== null
+  )
+  const [adEnabled, setAdEnabled] = useState<boolean>(listing.auto_discount_enabled ?? false)
+  const [adPct, setAdPct] = useState<string>(String(listing.auto_discount_pct ?? 10))
+  const [adIntervalDays, setAdIntervalDays] = useState<string>(String(listing.auto_discount_interval_days ?? 14))
+
+  async function saveAdOverride(patch: {
+    auto_discount_enabled?: boolean | null
+    auto_discount_pct?: number | null
+    auto_discount_interval_days?: number | null
+  }) {
+    await fetch(`/api/listings/${listing.id}/auto-discount`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+  }
+
+  function handleAdOverrideToggle() {
+    const next = !adOverride
+    setAdOverride(next)
+    if (!next) {
+      // Clear overrides
+      void saveAdOverride({
+        auto_discount_enabled: null,
+        auto_discount_pct: null,
+        auto_discount_interval_days: null,
+      })
+    }
+  }
+
   const doneCount = authSteps.filter((s) => s.status === 'done').length
   const failedCount = authSteps.filter((s) => s.status === 'failed').length
 
@@ -278,6 +313,81 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
             </p>
           </section>
         )}
+
+        <section>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+              Auto-Discount
+            </h3>
+            <button
+              onClick={handleAdOverrideToggle}
+              className="text-[10px] text-gray-600 hover:text-emerald-400 transition-colors"
+            >
+              {adOverride ? 'Clear override' : 'Override'}
+            </button>
+          </div>
+
+          {adOverride ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-400">Enabled</span>
+                <button
+                  onClick={() => {
+                    const next = !adEnabled
+                    setAdEnabled(next)
+                    void saveAdOverride({ auto_discount_enabled: next })
+                  }}
+                  className={`relative inline-flex h-4 w-8 flex-none cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                    adEnabled ? 'bg-emerald-500' : 'bg-gray-700'
+                  }`}
+                  role="switch"
+                  aria-checked={adEnabled}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                      adEnabled ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-[10px] text-gray-500 flex-none">Discount %</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={adPct}
+                  onChange={(e) => setAdPct(e.target.value)}
+                  onBlur={() => {
+                    const n = parseFloat(adPct)
+                    if (!isNaN(n) && n > 0) void saveAdOverride({ auto_discount_pct: n })
+                  }}
+                  className="w-20 bg-gray-900 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 outline-none focus:border-gray-600 transition-colors"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-[10px] text-gray-500 flex-none">Interval (days)</label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={adIntervalDays}
+                  onChange={(e) => setAdIntervalDays(e.target.value)}
+                  onBlur={() => {
+                    const n = parseInt(adIntervalDays, 10)
+                    if (!isNaN(n) && n > 0) void saveAdOverride({ auto_discount_interval_days: n })
+                  }}
+                  className="w-20 bg-gray-900 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 outline-none focus:border-gray-600 transition-colors"
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="text-[10px] text-gray-700">Using global auto-discount settings</p>
+          )}
+        </section>
 
         {listing.agent_blocked && listing.agent_blocked_reason && (
           <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5">

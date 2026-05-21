@@ -128,6 +128,10 @@ export interface Listing {
   agent_blocked: boolean;
   agent_blocked_reason: string | null;
 
+  auto_discount_enabled: boolean | null;
+  auto_discount_pct: number | null;
+  auto_discount_interval_days: number | null;
+
   photos_confirmed: boolean;
   is_luxury: boolean;
   intake_meta: Record<string, unknown> | null;

@@ -44,6 +44,19 @@ export default async function SettingsPage() {
           </div>
           <span className="text-gray-700 group-hover:text-gray-500 transition-colors">→</span>
         </a>
+
+        <a
+          href="/settings/auto-discount"
+          className="flex items-center justify-between rounded-xl border border-gray-800 px-5 py-4 hover:border-gray-700 transition-colors group"
+        >
+          <div>
+            <p className="text-sm font-medium text-gray-200">Auto-Discount</p>
+            <p className="text-[11px] text-gray-600 mt-0.5">
+              Scheduled price reductions to move stale inventory
+            </p>
+          </div>
+          <span className="text-gray-700 group-hover:text-gray-500 transition-colors">→</span>
+        </a>
       </div>
     </div>
   )

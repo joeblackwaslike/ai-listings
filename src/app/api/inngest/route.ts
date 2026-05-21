@@ -8,6 +8,7 @@ import { syncPlatformNotifications } from '@/lib/inngest/functions/sync-platform
 import { syncPlatformMessages } from '@/lib/inngest/functions/sync-platform-messages'
 import { syncPlatformOrders } from '@/lib/inngest/functions/sync-platform-orders'
 import { textIntakePipeline } from '@/lib/inngest/functions/text-intake-pipeline'
+import { autoDiscountCron } from '@/lib/inngest/functions/auto-discount-cron'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -20,5 +21,6 @@ export const { GET, POST, PUT } = serve({
     syncPlatformMessages,
     syncPlatformOrders,
     textIntakePipeline,
+    autoDiscountCron,
   ],
 })
