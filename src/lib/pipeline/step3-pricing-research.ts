@@ -58,12 +58,13 @@ async function fetchSerpComps(
   model: string,
   apiKey: string
 ): Promise<SerpShoppingResult[]> {
-  const query = `${brand} ${model} resale sold price site:poshmark.com OR site:therealreal.com`
+  const query = `${brand} ${model}`
   const url = new URL('https://serpapi.com/search')
   url.searchParams.set('engine', 'google_shopping')
   url.searchParams.set('q', query)
   url.searchParams.set('api_key', apiKey)
   url.searchParams.set('num', '10')
+  url.searchParams.set('condition', 'used')
 
   const response = await fetch(url.toString())
 
@@ -247,7 +248,7 @@ export async function runStep3PricingResearch(
 
   const [ebayItems, serpResults, redditComps] = await Promise.all([
     fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi),
-    step2.isLuxury ? fetchSerpComps(step2.brand, model, apiKeys.serpapi) : Promise.resolve([]),
+    fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     redditCreds && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, redditCreds, apiKeys.anthropic)
       : Promise.resolve([]),
