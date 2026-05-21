@@ -49,6 +49,9 @@ export async function POST(request: Request) {
     ext = 'png'
   }
 
+  // Auto-rotate per EXIF orientation, then normalise per-channel luminance (exposure + colour cast)
+  rawBuffer = Buffer.from(await sharp(rawBuffer).rotate().normalise().toBuffer())
+
   const { data: listing, error: listingError } = await supabase
     .from('listings')
     .insert({ status: 'intake', pipeline_step: 0, pipeline_total: 5, user_id: user.id })

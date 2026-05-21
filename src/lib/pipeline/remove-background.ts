@@ -1,3 +1,4 @@
+import sharp from 'sharp'
 import { getSupabaseAdmin } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { toInternalUrl } from './to-public-url'
@@ -30,7 +31,10 @@ export async function removeBackground(
     throw new Error(`removeBackground: withoutBG returned HTTP ${wbgResponse.status} — ${errText}`)
   }
 
-  const processedBuffer = Buffer.from(await wbgResponse.arrayBuffer())
+  const rawProcessedBuffer = Buffer.from(await wbgResponse.arrayBuffer())
+
+  // Auto-crop to the non-transparent bounding box of the subject
+  const processedBuffer = await sharp(rawProcessedBuffer).trim({ threshold: 10 }).toBuffer()
 
   const { error: uploadError } = await supabase.storage
     .from('photos')
