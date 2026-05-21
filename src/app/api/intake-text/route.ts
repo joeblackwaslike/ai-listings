@@ -5,6 +5,29 @@ import { inngest } from '@/lib/inngest/client'
 
 const UPC_REGEX = /^\d{8,14}$/
 
+function isPrivateUrl(url: URL): boolean {
+  const h = url.hostname.toLowerCase()
+  if (
+    h === 'localhost' ||
+    h.endsWith('.local') ||
+    h.endsWith('.internal') ||
+    h.includes('.svc.cluster') ||
+    h.includes('.cluster.local')
+  ) return true
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})/)
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])]
+    if (
+      a === 10 ||
+      a === 127 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
+    ) return true
+  }
+  return false
+}
+
 interface UpcItem {
   title?: string
   brand?: string
@@ -43,6 +66,10 @@ async function resolveUpc(upc: string): Promise<ResolvedItem> {
 
 async function resolveUrl(url: string): Promise<ResolvedItem> {
   try {
+    const parsed = new URL(url)
+    if (isPrivateUrl(parsed)) {
+      return { description: url }
+    }
     const res = await fetch(url, {
       signal: AbortSignal.timeout(5000),
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ai-listings-bot/1.0)' },
@@ -80,12 +107,22 @@ async function resolveEntry(entry: string): Promise<ResolvedItem> {
   return { description: entry }
 }
 
-async function fetchImageBuffer(imageUrl: string): Promise<Buffer | null> {
+interface FetchedImage {
+  buffer: Buffer
+  contentType: string
+  ext: string
+}
+
+async function fetchImageBuffer(imageUrl: string): Promise<FetchedImage | null> {
   try {
-    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(8000) })
+    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return null
-    const arrayBuffer = await res.arrayBuffer()
-    return Buffer.from(arrayBuffer)
+    const buffer = Buffer.from(await res.arrayBuffer())
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+    const ct = (res.headers.get('content-type') ?? 'image/jpeg').split(';')[0].trim()
+    const contentType = allowedTypes.includes(ct) ? ct : 'image/jpeg'
+    const ext = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg'
+    return { buffer, contentType, ext }
   } catch {
     return null
   }
@@ -109,6 +146,9 @@ export async function POST(request: Request) {
   const entries = (body.entries as unknown[]).filter((e): e is string => typeof e === 'string')
   if (entries.length === 0) {
     return NextResponse.json({ error: 'No valid string entries provided' }, { status: 400 })
+  }
+  if (entries.length > 20) {
+    return NextResponse.json({ error: 'Too many entries (max 20)' }, { status: 400 })
   }
 
   const supabase = getSupabaseAdmin()
@@ -139,12 +179,12 @@ export async function POST(request: Request) {
 
     // Upload image if available
     if (resolved.imageUrl) {
-      const imageBuffer = await fetchImageBuffer(resolved.imageUrl)
-      if (imageBuffer) {
-        const storagePath = `intake/${listingId}/original.jpg`
+      const fetched = await fetchImageBuffer(resolved.imageUrl)
+      if (fetched) {
+        const storagePath = `intake/${listingId}/original.${fetched.ext}`
         const { error: uploadError } = await supabase.storage
           .from('photos')
-          .upload(storagePath, imageBuffer, { contentType: 'image/jpeg', upsert: false })
+          .upload(storagePath, fetched.buffer, { contentType: fetched.contentType, upsert: false })
 
         if (!uploadError) {
           const { data: urlData } = supabase.storage.from('photos').getPublicUrl(storagePath)

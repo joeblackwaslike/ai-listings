@@ -217,14 +217,10 @@ export const textIntakePipeline = inngest.createFunction(
       return getUserApiKeys(listingRow?.user_id ?? null)
     })
 
-    // Step 2: vision analysis (if image) or text analysis
-    const step2Result = await step.run('text-analysis', () => {
-      if (imageUrl) {
-        // Lazy-import to avoid circular deps — step2 is vision-only but we can use text fallback
-        return runTextAnalysis(listingId, description, brand, apiKeys)
-      }
-      return runTextAnalysis(listingId, description, brand, apiKeys)
-    })
+    // Step 2: text analysis
+    const step2Result = await step.run('text-analysis', () =>
+      runTextAnalysis(listingId, description, brand, apiKeys)
+    )
 
     const titleForComps = (step2Result.notableFeatures[0] ?? '').replace(/^Model:\s*/i, '').trim()
 
