@@ -61,12 +61,8 @@ export async function createAlbum(
     throw new Error(`Imgur createAlbum failed: HTTP ${res.status} — ${text}`);
   }
 
-  const data = (await res.json()) as { data: { id: string; link: string } };
-  // Imgur returns a deletehash and id; construct the public album URL from the id
-  const albumId = data.data.link
-    ? data.data.link.split('/').pop()
-    : data.data.id;
-  return `https://imgur.com/a/${albumId}`;
+  const data = (await res.json()) as { data: { id: string } };
+  return `https://imgur.com/a/${data.data.id}`;
 }
 
 /**

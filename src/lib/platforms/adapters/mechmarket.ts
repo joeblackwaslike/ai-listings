@@ -12,7 +12,7 @@ import type {
   UnifiedListing,
   TrackingInfo,
 } from '../types';
-import { AuthExpiredError, CooldownError, UnsupportedOperationError } from '../errors';
+import { AuthExpiredError, CooldownError, PlatformError, UnsupportedOperationError } from '../errors';
 import { getMechmarketCreds } from '../credentials';
 import { setSetting } from '@/lib/user-settings';
 import { uploadImage, refreshImgurToken } from '@/lib/imgur';
@@ -402,17 +402,19 @@ export class MechmarketAdapter implements PlatformSDK {
 
     if (!postRow) return;
 
-    await supabase
+    const { error: updateError } = await supabase
       .from('mechmarket_post_items')
       .update({ status: 'removed' })
       .eq('post_id', postRow.id);
+
+    if (updateError) throw new PlatformError('mechmarket', `DB update failed: ${updateError.message}`);
 
     try {
       const r = await this.getReddit();
       const newBody = await this.rebuildPostBody(platformId);
       await this.getSubmission(r, platformId).edit(newBody);
     } catch {
-      // Non-fatal — post body update failure should not block the DB state change
+      // Non-fatal — Reddit edit failure should not block the DB state change
     }
   }
 
@@ -455,53 +457,46 @@ export class MechmarketAdapter implements PlatformSDK {
   async getMyListings(filters?: { status?: string }): Promise<PlatformListing[]> {
     const supabase = getSupabaseAdmin();
 
-    let query = supabase
+    // Step 1: get this user's posts (enforces user isolation via explicit user_id filter)
+    const { data: posts } = await supabase
+      .from('mechmarket_posts')
+      .select('id, reddit_post_id, reddit_post_url, created_at, updated_at')
+      .eq('user_id', this.userId)
+      .returns<Pick<MechmarketPostRow, 'id' | 'reddit_post_id' | 'reddit_post_url' | 'created_at' | 'updated_at'>[]>();
+
+    if (!posts || posts.length === 0) return [];
+
+    const postIds = posts.map((p) => p.id);
+    const postById = new Map(posts.map((p) => [p.id, p]));
+
+    // Step 2: get items for those posts only
+    let itemQuery = supabase
       .from('mechmarket_post_items')
-      .select(
-        `listing_id,
-         status,
-         sort_order,
-         added_at,
-         mechmarket_posts!inner (
-           id,
-           reddit_post_id,
-           reddit_post_url,
-           created_at,
-           updated_at,
-           user_id
-         )`,
-      )
-      .eq('mechmarket_posts.user_id', this.userId);
+      .select('post_id, listing_id, status')
+      .in('post_id', postIds);
 
-    if (filters?.status) {
-      query = query.eq('status', filters.status);
-    }
+    if (filters?.status) itemQuery = itemQuery.eq('status', filters.status);
 
-    const { data: rows } = await query;
-    if (!rows) return [];
+    const { data: items } = await itemQuery.returns<
+      Pick<MechmarketPostItemRow, 'post_id' | 'listing_id' | 'status'>[]
+    >();
 
-    type RowShape = {
-      listing_id: string;
-      status: string;
-      mechmarket_posts: {
-        reddit_post_id: string;
-        reddit_post_url: string;
-        created_at: string;
-        updated_at: string;
+    if (!items) return [];
+
+    return items.map((item) => {
+      const post = postById.get(item.post_id)!;
+      return {
+        platform: 'mechmarket',
+        platformId: post.reddit_post_id,
+        url: post.reddit_post_url,
+        title: `listing ${item.listing_id}`,
+        price: 0,
+        status: item.status as PlatformListing['status'],
+        createdAt: new Date(post.created_at),
+        updatedAt: new Date(post.updated_at),
+        raw: item as unknown as Record<string, unknown>,
       };
-    };
-
-    return (rows as unknown as RowShape[]).map((row) => ({
-      platform: 'mechmarket',
-      platformId: row.mechmarket_posts.reddit_post_id,
-      url: row.mechmarket_posts.reddit_post_url,
-      title: `listing ${row.listing_id}`,
-      price: 0,
-      status: row.status as PlatformListing['status'],
-      createdAt: new Date(row.mechmarket_posts.created_at),
-      updatedAt: new Date(row.mechmarket_posts.updated_at),
-      raw: row as unknown as Record<string, unknown>,
-    }));
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -638,7 +633,7 @@ export class MechmarketAdapter implements PlatformSDK {
       if (err instanceof Error && err.message.includes('Imgur auth expired')) {
         const newTokens = await refreshImgurToken(
           creds.imgurClientId,
-          creds.imgurClientId, // imgurClientSecret not stored separately; use clientId as fallback
+          creds.imgurClientSecret,
           creds.imgurRefreshToken,
         );
         await setSetting(this.userId, 'imgur_access_token', newTokens.accessToken);
