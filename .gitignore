@@ -46,6 +46,9 @@ next-env.d.ts
 # Brainstorm / plan artifacts
 .superpowers/
 
+# Git worktrees
+.worktrees/
+
 # Seed files with real credentials
 supabase/seed/
 .serena/
