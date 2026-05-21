@@ -73,7 +73,7 @@ export const syncPlatformNotifications = inngest.createFunction(
                 .from('notifications')
                 .select('id')
                 .eq('user_id', userId)
-                .eq("metadata->>'platformNotificationId'", notification.notificationId)
+                .filter('metadata->>platformNotificationId', 'eq', notification.notificationId)
                 .maybeSingle()
 
               if (!existing) {

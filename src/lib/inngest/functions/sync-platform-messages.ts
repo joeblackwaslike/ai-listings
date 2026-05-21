@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { MechmarketAdapter } from '@/lib/platforms/adapters/mechmarket'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
 import { getEbayCreds } from '@/lib/platforms/credentials'
+import { UnsupportedOperationError } from '@/lib/platforms/errors'
 
 const PLATFORM_CRED_KEYS = [
   { platform: 'mechmarket', credKey: 'reddit_refresh_token' },
@@ -74,18 +75,29 @@ export const syncPlatformMessages = inngest.createFunction(
                 }
 
                 if (!msg.read) {
-                  await supabase.from('notifications').insert({
-                    user_id: userId,
-                    type: platform === 'mechmarket' ? 'reddit_message' : 'listing_question',
-                    platform,
-                    title: `New message from ${msg.from}`,
-                    preview: msg.body.slice(0, 200),
-                    metadata: { threadId: msg.threadId, messageId: msg.messageId },
-                  })
+                  const { data: existingNotif } = await supabase
+                    .from('notifications')
+                    .select('id')
+                    .eq('user_id', userId)
+                    .eq('platform', platform)
+                    .filter('metadata->>messageId', 'eq', msg.messageId)
+                    .maybeSingle()
+
+                  if (!existingNotif) {
+                    await supabase.from('notifications').insert({
+                      user_id: userId,
+                      type: platform === 'mechmarket' ? 'reddit_message' : 'listing_question',
+                      platform,
+                      title: `New message from ${msg.from}`,
+                      preview: msg.body.slice(0, 200),
+                      metadata: { threadId: msg.threadId, messageId: msg.messageId },
+                    })
+                  }
                 }
               }
             }
           } catch (err) {
+            if (err instanceof UnsupportedOperationError) continue
             console.error(
               `[sync-platform-messages] error for platform=${platform} userId=${userId}:`,
               err,

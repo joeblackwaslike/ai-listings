@@ -60,7 +60,7 @@ export const syncPlatformOrders = inngest.createFunction(
                 .from('notifications')
                 .select('id')
                 .eq('user_id', userId)
-                .eq("metadata->>'orderId'", order.orderId)
+                .filter('metadata->>orderId', 'eq', order.orderId)
                 .eq('platform', order.platform)
                 .maybeSingle()
 
