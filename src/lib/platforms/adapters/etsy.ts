@@ -241,10 +241,12 @@ export class EtsyAdapter implements PlatformSDK {
     };
   }
 
-  async getOrders(_since?: Date): Promise<PlatformOrder[]> {
+  async getOrders(since?: Date): Promise<PlatformOrder[]> {
     const shopId = await this.getShopId();
+    const params = new URLSearchParams({ was_paid: 'true', was_shipped: 'false' });
+    if (since) params.set('min_created', String(Math.floor(since.getTime() / 1000)));
     const res = await this.etsyFetch<{ results: EtsyReceipt[] }>(
-      `/shops/${shopId}/receipts?was_paid=true&was_shipped=false`,
+      `/shops/${shopId}/receipts?${params.toString()}`,
     );
     return (res.results ?? []).map((r) => this.mapReceipt(r));
   }

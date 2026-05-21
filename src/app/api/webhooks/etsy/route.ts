@@ -3,9 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 function verifyEtsySignature(payload: string, signature: string, secret: string): boolean {
   if (!signature || !secret) return false;
-  const expected = createHmac('sha256', secret).update(payload).digest('base64');
+  const expectedBuf = createHmac('sha256', secret).update(payload).digest();
+  const sigBuf = Buffer.from(signature, 'base64');
+  if (expectedBuf.length !== sigBuf.length) return false;
   try {
-    return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    return timingSafeEqual(expectedBuf, sigBuf);
   } catch {
     return false;
   }
@@ -22,12 +24,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const rawBody = await req.text();
   const signature = req.headers.get('x-etsy-signature') ?? '';
 
-  if (ETSY_WEBHOOK_SECRET && !verifyEtsySignature(rawBody, signature, ETSY_WEBHOOK_SECRET)) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+  if (!ETSY_WEBHOOK_SECRET) {
+    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
   }
 
-  if (!ETSY_WEBHOOK_SECRET) {
-    console.warn('Etsy webhook: ETSY_WEBHOOK_SECRET not set — skipping signature verification');
+  if (!verifyEtsySignature(rawBody, signature, ETSY_WEBHOOK_SECRET)) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
   let body: EtsyWebhookBody;
