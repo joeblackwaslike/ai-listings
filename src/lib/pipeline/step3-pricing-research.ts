@@ -76,6 +76,84 @@ async function fetchSerpComps(
   return data.shopping_results ?? []
 }
 
+async function fetchRetailPrice(
+  brand: string,
+  model: string,
+  apiKey: string
+): Promise<{ retailPriceCents: number; source: string; promoNote: string | null } | null> {
+  try {
+    const query = `${brand} ${model}`
+    const url = new URL('https://serpapi.com/search')
+    url.searchParams.set('engine', 'google_shopping')
+    url.searchParams.set('q', query)
+    url.searchParams.set('api_key', apiKey)
+    url.searchParams.set('num', '5')
+    url.searchParams.set('condition', 'new')
+
+    const response = await fetch(url.toString())
+    if (!response.ok) return null
+
+    const data = (await response.json()) as SerpApiShoppingResponse
+    const results = data.shopping_results ?? []
+
+    const prices = results
+      .map((r) => r.price?.extracted_value)
+      .filter((v): v is number => typeof v === 'number' && v > 0)
+
+    if (prices.length === 0) return null
+
+    const sortedPrices = [...prices].sort((a, b) => a - b)
+    const lowestPrice = sortedPrices[0]
+    const retailPriceCents = Math.round(lowestPrice * 100)
+
+    let promoNote: string | null = null
+    if (prices.length >= 2) {
+      const median =
+        prices.length % 2 === 0
+          ? (sortedPrices[Math.floor(prices.length / 2) - 1] + sortedPrices[Math.floor(prices.length / 2)]) / 2
+          : sortedPrices[Math.floor(prices.length / 2)]
+      if (lowestPrice < median * 0.85) {
+        promoNote = 'Appears to be on sale'
+      }
+    }
+
+    const lowestResult = results.find((r) => r.price?.extracted_value === lowestPrice)
+    const source = lowestResult?.source ?? 'Google Shopping'
+
+    return { retailPriceCents, source, promoNote }
+  } catch {
+    return null
+  }
+}
+
+async function generatePricingMethodology(
+  compCount: number,
+  sources: string[],
+  suggestedPriceCents: number | null,
+  priceToMoveCents: number | null,
+  discountPct: number,
+  confidenceScore: number,
+  retailPriceCents: number | null,
+  apiKeys: ApiKeys
+): Promise<string> {
+  const suggestedStr = suggestedPriceCents != null ? `$${(suggestedPriceCents / 100).toFixed(2)}` : 'N/A'
+  const priceToMoveStr = priceToMoveCents != null ? `$${(priceToMoveCents / 100).toFixed(2)}` : 'N/A'
+  const retailStr = retailPriceCents != null ? ` Retail new: $${(retailPriceCents / 100).toFixed(2)}.` : ''
+  const sourcesStr = [...new Set(sources)].join(', ')
+
+  const prompt = `In 80–100 words, explain how this resale price was determined. Comp count: ${compCount}. Sources: ${sourcesStr}. Median adjusted price: ${suggestedStr}. Confidence: ${confidenceScore}%. Speed-to-sell price: ${priceToMoveStr} (${Math.round(discountPct * 100)}% below market median, typically sells in days vs weeks at list price).${retailStr} Return only the paragraph, no headings.`
+
+  const client = new Anthropic({ apiKey: apiKeys.anthropic })
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 200,
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  const textBlock = message.content.find((b) => b.type === 'text')
+  return textBlock && textBlock.type === 'text' ? textBlock.text.trim() : ''
+}
+
 interface RedditPost {
   title: string
   selftext: string
@@ -246,12 +324,13 @@ export async function runStep3PricingResearch(
         }
       : null
 
-  const [ebayItems, serpResults, redditComps] = await Promise.all([
+  const [ebayItems, serpResults, redditComps, retailResult] = await Promise.all([
     fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     redditCreds && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, redditCreds, apiKeys.anthropic)
       : Promise.resolve([]),
+    fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
   ])
 
   const compRows: Array<{
@@ -339,9 +418,45 @@ export async function runStep3PricingResearch(
         ? Math.round((prices[mid - 1] + prices[mid]) / 2)
         : prices[mid]
 
+  const CATEGORY_DISCOUNT: Record<string, number> = {
+    handbag: 0.15,
+    watches: 0.12,
+    electronics: 0.20,
+    clothing: 0.25,
+    sneakers: 0.20,
+    jewelry: 0.15,
+    small_leather_goods: 0.18,
+    keyboards: 0.15,
+    collectibles: 0.15,
+  }
+  const discountPct = CATEGORY_DISCOUNT[step2.category?.toLowerCase() ?? ''] ?? 0.18
+  const priceToMoveCents = suggestedPriceCents != null
+    ? Math.round(suggestedPriceCents * (1 - discountPct))
+    : null
+
+  const sources = [...new Set(compRows.map((r) => r.source))]
+  const methodologyText = apiKeys.anthropic
+    ? await generatePricingMethodology(
+        compRows.length,
+        sources,
+        suggestedPriceCents,
+        priceToMoveCents,
+        discountPct,
+        confidenceScore,
+        retailResult?.retailPriceCents ?? null,
+        apiKeys
+      )
+    : null
+
   await pushPipelineStep(listingId, {
     pipeline_step: 3,
     confidence_score: confidenceScore,
     suggested_price_cents: suggestedPriceCents,
+    price_to_move_cents: priceToMoveCents,
+    price_to_move_discount_pct: discountPct * 100,
+    retail_price_cents: retailResult?.retailPriceCents ?? null,
+    retail_price_source: retailResult?.source ?? null,
+    retail_promo_note: retailResult?.promoNote ?? null,
+    pricing_methodology: methodologyText,
   })
 }

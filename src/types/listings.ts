@@ -113,6 +113,13 @@ export interface Listing {
   final_price_cents: number | null;
   confidence_score: number | null;
 
+  price_to_move_cents: number | null;
+  price_to_move_discount_pct: number | null;
+  retail_price_cents: number | null;
+  retail_price_source: string | null;
+  retail_promo_note: string | null;
+  pricing_methodology: string | null;
+
   auth_plan: AuthStep[];
   photo_plan: PhotoShot[];
   platform_fields: PlatformFields;

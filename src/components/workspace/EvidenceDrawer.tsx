@@ -1,6 +1,7 @@
 'use client'
 
-import { X, ExternalLink } from 'lucide-react'
+import { useState } from 'react'
+import { X, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
 import { relativeDate, formatPrice } from '@/lib/utils'
 import type { PricingComp } from '@/types/listings'
 
@@ -10,6 +11,12 @@ interface EvidenceDrawerProps {
   comps: PricingComp[]
   suggestedPriceCents: number | null
   confidenceScore: number | null
+  priceToMoveCents?: number | null
+  priceToMoveDiscountPct?: number | null
+  retailPriceCents?: number | null
+  retailPriceSource?: string | null
+  retailPromoNote?: string | null
+  pricingMethodology?: string | null
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -25,8 +32,24 @@ const DELTA_DISPLAY: Record<string, { label: string; color: string }> = {
   worse: { label: 'worse', color: 'text-red-400' },
 }
 
-export function EvidenceDrawer({ open, onClose, comps, suggestedPriceCents, confidenceScore }: EvidenceDrawerProps) {
+export function EvidenceDrawer({
+  open,
+  onClose,
+  comps,
+  suggestedPriceCents,
+  confidenceScore,
+  priceToMoveCents,
+  priceToMoveDiscountPct,
+  retailPriceCents,
+  retailPriceSource,
+  retailPromoNote,
+  pricingMethodology,
+}: EvidenceDrawerProps) {
+  const [methodologyOpen, setMethodologyOpen] = useState(false)
+
   if (!open) return null
+
+  const isUrl = (s: string) => /^https?:\/\//.test(s)
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -42,9 +65,24 @@ export function EvidenceDrawer({ open, onClose, comps, suggestedPriceCents, conf
           </div>
           <div className="flex items-center gap-4">
             {suggestedPriceCents != null && (
-              <div className="text-right">
-                <p className="text-[10px] text-gray-600">Suggested</p>
-                <p className="text-sm font-semibold text-emerald-400">{formatPrice(suggestedPriceCents)}</p>
+              <div className="text-right space-y-1">
+                <div>
+                  <p className="text-[10px] text-gray-600">Suggested</p>
+                  <p className="text-sm font-semibold text-emerald-400">{formatPrice(suggestedPriceCents)}</p>
+                </div>
+                {priceToMoveCents != null && (
+                  <div>
+                    <p className="text-[10px] text-gray-600">Price to move</p>
+                    <p className="text-sm font-semibold text-amber-400">
+                      {formatPrice(priceToMoveCents)}
+                      {priceToMoveDiscountPct != null && (
+                        <span className="text-[10px] font-normal text-gray-500 ml-1">
+                          {priceToMoveDiscountPct}% off · moves faster
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             <button onClick={onClose} className="text-gray-500 hover:text-gray-300">
@@ -97,6 +135,55 @@ export function EvidenceDrawer({ open, onClose, comps, suggestedPriceCents, conf
                 </div>
               )
             })
+          )}
+
+          {retailPriceCents != null && (
+            <div className="px-5 py-3 space-y-0.5">
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Retail</p>
+              <p className="text-xs text-gray-400">
+                Retails new for{' '}
+                <span className="text-gray-200 font-medium">{formatPrice(retailPriceCents)}</span>
+                {retailPriceSource && (
+                  <>
+                    {' '}at{' '}
+                    {isUrl(retailPriceSource) ? (
+                      <a
+                        href={retailPriceSource}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 underline"
+                      >
+                        {retailPriceSource}
+                      </a>
+                    ) : (
+                      <span className="text-gray-300">{retailPriceSource}</span>
+                    )}
+                  </>
+                )}
+              </p>
+              {retailPromoNote && (
+                <p className="text-[10px] text-amber-500">{retailPromoNote}</p>
+              )}
+            </div>
+          )}
+
+          {pricingMethodology && (
+            <div className="px-5 py-3">
+              <button
+                onClick={() => setMethodologyOpen((v) => !v)}
+                className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hover:text-gray-300 transition-colors"
+              >
+                {methodologyOpen ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronRight className="w-3 h-3" />
+                )}
+                Methodology
+              </button>
+              {methodologyOpen && (
+                <p className="mt-2 text-xs text-gray-500 leading-relaxed">{pricingMethodology}</p>
+              )}
+            </div>
           )}
         </div>
       </div>

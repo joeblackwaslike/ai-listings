@@ -292,6 +292,12 @@ export function FieldsPanel({ listing, photos, comps }: Readonly<FieldsPanelProp
         comps={comps}
         suggestedPriceCents={listing.suggested_price_cents}
         confidenceScore={listing.confidence_score}
+        priceToMoveCents={listing.price_to_move_cents}
+        priceToMoveDiscountPct={listing.price_to_move_discount_pct}
+        retailPriceCents={listing.retail_price_cents}
+        retailPriceSource={listing.retail_price_source}
+        retailPromoNote={listing.retail_promo_note}
+        pricingMethodology={listing.pricing_methodology}
       />
     </>
   )
