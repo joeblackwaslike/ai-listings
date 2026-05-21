@@ -40,3 +40,12 @@ export interface StudioUploadedEvent {
     photoUrl: string
   }
 }
+
+export interface TextSubmittedEvent {
+  name: 'text/submitted'
+  data: {
+    listingId: string
+    productData: { description: string; brand?: string; imageUrl?: string }
+    uploadedAt: string
+  }
+}

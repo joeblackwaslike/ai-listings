@@ -1,9 +1,7 @@
-import Link from 'next/link'
-import { Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { ListingsGrid } from '@/components/dashboard/ListingsGrid'
 import type { ListingWithCover } from '@/components/dashboard/ListingCard'
-import { NotificationBell } from '@/components/layout/NotificationBell'
+import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -44,16 +42,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight">AI Listings</h1>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-600">{listingsWithCovers.length} listings</span>
-          <Link href="/settings" className="text-zinc-400 hover:text-white transition-colors">
-            <Settings className="h-5 w-5" />
-          </Link>
-          <NotificationBell />
-        </div>
-      </div>
+      <DashboardHeader listingsCount={listingsWithCovers.length} />
       <ListingsGrid initialListings={listingsWithCovers} />
     </main>
   )

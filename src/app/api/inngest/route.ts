@@ -7,6 +7,7 @@ import { studioPhotoProcess } from '@/lib/inngest/functions/studio-photo-process
 import { syncPlatformNotifications } from '@/lib/inngest/functions/sync-platform-notifications'
 import { syncPlatformMessages } from '@/lib/inngest/functions/sync-platform-messages'
 import { syncPlatformOrders } from '@/lib/inngest/functions/sync-platform-orders'
+import { textIntakePipeline } from '@/lib/inngest/functions/text-intake-pipeline'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -18,5 +19,6 @@ export const { GET, POST, PUT } = serve({
     syncPlatformNotifications,
     syncPlatformMessages,
     syncPlatformOrders,
+    textIntakePipeline,
   ],
 })
