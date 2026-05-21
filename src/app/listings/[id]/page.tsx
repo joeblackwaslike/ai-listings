@@ -5,7 +5,7 @@ import { FieldsPanel } from '@/components/workspace/FieldsPanel'
 import { AgentChat } from '@/components/workspace/AgentChat'
 import { ArchiveButton } from '@/components/workspace/ArchiveButton'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
-import type { Listing, Photo, PricingComp } from '@/types/listings'
+import type { Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
 
 type WorkspaceContext = {
   firstMessage: string | null
@@ -146,7 +146,7 @@ export default async function WorkspacePage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [listingResult, photosResult, compsResult, historyResult] = await Promise.all([
+  const [listingResult, photosResult, compsResult, historyResult, priceHistoryResult] = await Promise.all([
     supabase.from('listings').select('*').eq('id', id).single(),
     supabase
       .from('photos')
@@ -164,6 +164,11 @@ export default async function WorkspacePage({
       .eq('listing_id', id)
       .order('created_at', { ascending: true })
       .limit(30),
+    supabase
+      .from('listing_price_events')
+      .select('id, listing_id, event_type, price_cents, note, created_at')
+      .eq('listing_id', id)
+      .order('created_at', { ascending: true }),
   ])
 
   if (listingResult.error || !listingResult.data) {
@@ -174,6 +179,7 @@ export default async function WorkspacePage({
   const photos = (photosResult.data ?? []) as unknown as Photo[]
   const comps = (compsResult.data ?? []) as unknown as PricingComp[]
   const history = historyResult.data ?? []
+  const priceHistory = (priceHistoryResult.data ?? []) as unknown as ListingPriceEvent[]
 
   const hasHistory = history.length > 0
   const { firstMessage, suggestions } = !hasHistory || listing.status === 'id_gate'
@@ -200,7 +206,7 @@ export default async function WorkspacePage({
         <div className="overflow-y-auto border-r border-gray-800">
           <div className="flex flex-col gap-6 p-6">
             <PhotoPanel photos={photos} />
-            <FieldsPanel listing={listing} photos={photos} comps={comps} />
+            <FieldsPanel listing={listing} photos={photos} comps={comps} priceHistory={priceHistory} />
           </div>
         </div>
 

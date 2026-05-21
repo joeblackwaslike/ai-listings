@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { X, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
 import { relativeDate, formatPrice } from '@/lib/utils'
-import type { PricingComp } from '@/types/listings'
+import type { PricingComp, ListingPriceEvent } from '@/types/listings'
 
 interface EvidenceDrawerProps {
   open: boolean
@@ -17,6 +17,7 @@ interface EvidenceDrawerProps {
   retailPriceSource?: string | null
   retailPromoNote?: string | null
   pricingMethodology?: string | null
+  priceHistory?: ListingPriceEvent[]
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -24,6 +25,13 @@ const SOURCE_LABELS: Record<string, string> = {
   poshmark: 'Poshmark',
   therealreal: 'TRR',
   google: 'Google',
+}
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  initial: 'Listed',
+  manual_change: 'Repriced',
+  auto_discount: 'Auto-discounted',
+  relist: 'Relisted',
 }
 
 const DELTA_DISPLAY: Record<string, { label: string; color: string }> = {
@@ -44,6 +52,7 @@ export function EvidenceDrawer({
   retailPriceSource,
   retailPromoNote,
   pricingMethodology,
+  priceHistory,
 }: EvidenceDrawerProps) {
   const [methodologyOpen, setMethodologyOpen] = useState(false)
 
@@ -135,6 +144,21 @@ export function EvidenceDrawer({
                 </div>
               )
             })
+          )}
+
+          {priceHistory != null && priceHistory.length > 0 && (
+            <div className="px-5 py-3 space-y-2">
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Price History</p>
+              <ul className="space-y-1">
+                {priceHistory.map((event) => (
+                  <li key={event.id} className="text-xs text-gray-400">
+                    {formatPrice(event.price_cents)}
+                    <span className="text-gray-600"> · {EVENT_TYPE_LABELS[event.event_type] ?? event.event_type}</span>
+                    <span className="text-gray-600"> · {relativeDate(event.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {retailPriceCents != null && (

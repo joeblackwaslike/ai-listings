@@ -6,12 +6,13 @@ import { formatPrice } from '@/lib/utils'
 import { EvidenceDrawer } from './EvidenceDrawer'
 import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
-import type { Listing, Photo, PricingComp, AuthStep, Inclusion } from '@/types/listings'
+import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
   listing: Listing
   photos: Photo[]
   comps: PricingComp[]
+  priceHistory: ListingPriceEvent[]
 }
 
 const CONDITION_LABELS: Record<string, string> = {
@@ -37,7 +38,7 @@ function AuthStepIcon({ status }: Readonly<{ status: AuthStep['status'] }>) {
   return <Circle className="w-3.5 h-3.5 text-gray-700 hover:text-gray-400 transition-colors" />
 }
 
-export function FieldsPanel({ listing, photos, comps }: Readonly<FieldsPanelProps>) {
+export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<FieldsPanelProps>) {
   const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [authSteps, setAuthSteps] = useState<AuthStep[]>(listing.auth_plan ?? [])
   const [saving, setSaving] = useState(false)
@@ -298,6 +299,7 @@ export function FieldsPanel({ listing, photos, comps }: Readonly<FieldsPanelProp
         retailPriceSource={listing.retail_price_source}
         retailPromoNote={listing.retail_promo_note}
         pricingMethodology={listing.pricing_methodology}
+        priceHistory={priceHistory}
       />
     </>
   )

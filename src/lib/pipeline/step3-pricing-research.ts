@@ -134,6 +134,7 @@ async function generatePricingMethodology(
   discountPct: number,
   confidenceScore: number,
   retailPriceCents: number | null,
+  priceHistory: Array<{ event_type: string; price_cents: number; created_at: string }>,
   apiKeys: ApiKeys
 ): Promise<string> {
   const suggestedStr = suggestedPriceCents != null ? `$${(suggestedPriceCents / 100).toFixed(2)}` : 'N/A'
@@ -141,7 +142,22 @@ async function generatePricingMethodology(
   const retailStr = retailPriceCents != null ? ` Retail new: $${(retailPriceCents / 100).toFixed(2)}.` : ''
   const sourcesStr = [...new Set(sources)].join(', ')
 
-  const prompt = `In 80–100 words, explain how this resale price was determined. Comp count: ${compCount}. Sources: ${sourcesStr}. Median adjusted price: ${suggestedStr}. Confidence: ${confidenceScore}%. Speed-to-sell price: ${priceToMoveStr} (${Math.round(discountPct * 100)}% below market median, typically sells in days vs weeks at list price).${retailStr} Return only the paragraph, no headings.`
+  let historyStr = ''
+  if (priceHistory.length > 1) {
+    const oldest = priceHistory[0]
+    const daysSinceListed = Math.round(
+      (Date.now() - new Date(oldest.created_at).getTime()) / (1000 * 60 * 60 * 24)
+    )
+    const priceList = priceHistory
+      .map((e) => {
+        const date = new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        return `$${(e.price_cents / 100).toFixed(2)} on ${date}`
+      })
+      .join(', ')
+    historyStr = ` Price history shows ${priceHistory.length} previous prices: ${priceList}. The listing has been on market for ${daysSinceListed} days.`
+  }
+
+  const prompt = `In 80–100 words, explain how this resale price was determined. Comp count: ${compCount}. Sources: ${sourcesStr}. Median adjusted price: ${suggestedStr}. Confidence: ${confidenceScore}%. Speed-to-sell price: ${priceToMoveStr} (${Math.round(discountPct * 100)}% below market median, typically sells in days vs weeks at list price).${retailStr}${historyStr} Return only the paragraph, no headings.`
 
   const client = new Anthropic({ apiKey: apiKeys.anthropic })
   const message = await client.messages.create({
@@ -434,6 +450,13 @@ export async function runStep3PricingResearch(
     ? Math.round(suggestedPriceCents * (1 - discountPct))
     : null
 
+  // Fetch existing price history to pass to methodology generation
+  const { data: priceHistory } = await supabase
+    .from('listing_price_events')
+    .select('event_type, price_cents, created_at')
+    .eq('listing_id', listingId)
+    .order('created_at', { ascending: true })
+
   const sources = [...new Set(compRows.map((r) => r.source))]
   const methodologyText = apiKeys.anthropic
     ? await generatePricingMethodology(
@@ -444,6 +467,7 @@ export async function runStep3PricingResearch(
         discountPct,
         confidenceScore,
         retailResult?.retailPriceCents ?? null,
+        priceHistory ?? [],
         apiKeys
       )
     : null
@@ -459,4 +483,24 @@ export async function runStep3PricingResearch(
     retail_promo_note: retailResult?.promoNote ?? null,
     pricing_methodology: methodologyText,
   })
+
+  // Insert initial price event if none exist yet (informational — never throws)
+  try {
+    const { data: existingEvents } = await supabase
+      .from('listing_price_events')
+      .select('id')
+      .eq('listing_id', listingId)
+      .limit(1)
+
+    if ((existingEvents?.length ?? 0) === 0 && suggestedPriceCents != null) {
+      await supabase.from('listing_price_events').insert({
+        listing_id: listingId,
+        event_type: 'initial',
+        price_cents: suggestedPriceCents,
+        note: `Initial pricing — ${compRows.length} comps, ${Math.round(confidenceScore)}% confidence`,
+      })
+    }
+  } catch {
+    // Informational — never block the pipeline
+  }
 }

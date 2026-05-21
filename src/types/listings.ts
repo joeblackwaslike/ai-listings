@@ -188,6 +188,15 @@ export interface PricingResearch {
   evidence: string;
 }
 
+export interface ListingPriceEvent {
+  id: string;
+  listing_id: string;
+  event_type: 'initial' | 'manual_change' | 'auto_discount' | 'relist';
+  price_cents: number;
+  note: string | null;
+  created_at: string;
+}
+
 export interface AuthChecklist {
   ok: true;
   passed: boolean;
