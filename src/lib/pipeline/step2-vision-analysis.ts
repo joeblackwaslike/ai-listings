@@ -89,9 +89,11 @@ ${correctionContext}
 
 Analyze the photo carefully and extract the structured product information using the extract_product_info tool.
 
+For sneakers specifically: always identify US size (from box label, insole tag, or visible markings) and gender (men's/women's, inferred from silhouette). Include both as explicit entries in notable_features even if the value is "unknown".
+
 For the photo plan, generate an item-specific shot checklist for the studio session. Examples by category:
 - handbag: front flat, back flat, bottom, interior open, all hardware close-up, brand stamp, date code, auth card, serial number, strap, zipper pulls, any damage areas
-- sneakers: side profile (both shoes), toe box, heel, insole, box label, hangtag, any creasing or scuffs
+- sneakers: side profile (both shoes), toe box, heel, insole with size label visible, box label (size + colorway), hangtag, any creasing or scuffs, outsole wear
 - electronics: front powered off, front powered on (boot/home screen), back, all ports, serial/IMEI label, all accessories, any damage
 - clothing: front flat, back flat, brand tag, care label, measurement reference, any wear/damage
 - watches: front dial (full face), crown close-up, case back (serial number + movement if visible), band/bracelet + clasp, bezel detail, any scratches/chips on crystal, box and papers if present
@@ -142,7 +144,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
             notable_features: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Key attributes: size, color, hardware, model number, colorway, etc.',
+              description: 'Key attributes: color, hardware, model number, colorway, etc. For sneakers you MUST include two entries: (1) "Size: US X" — read from box label, insole, or visible markings, use "Size: unknown" if not visible; (2) "Gender: men\'s" or "Gender: women\'s" — infer from silhouette and proportions, use "Gender: unknown" if unclear.',
             },
             inclusions: {
               type: 'array',
