@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist } from 'next/font/google'
 import { Toaster } from 'sonner'
+import { NotificationToast } from '@/components/layout/NotificationToast'
 import './globals.css'
 
 const geist = Geist({ subsets: ['latin'] })
@@ -20,6 +21,7 @@ export default function RootLayout({
       <body className={`${geist.className} bg-gray-950 text-gray-100 antialiased`}>
         {children}
         <Toaster theme="dark" position="bottom-right" />
+        <NotificationToast />
       </body>
     </html>
   )
