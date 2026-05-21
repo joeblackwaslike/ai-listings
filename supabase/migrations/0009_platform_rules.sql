@@ -7,3 +7,7 @@ CREATE TABLE IF NOT EXISTS platform_rules (
   cached_at    TIMESTAMPTZ,
   UNIQUE (user_id, platform)
 );
+ALTER TABLE platform_rules ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_own_rules" ON platform_rules
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());

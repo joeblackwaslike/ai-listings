@@ -13,6 +13,9 @@ function isPrivateUrl(url: URL): boolean {
     h.includes('.svc.cluster') ||
     h.includes('.cluster.local')
   ) return true
+  if (h.startsWith('[') && (
+    h.startsWith('[::1]') || h.startsWith('[fc') || h.startsWith('[fd') || h.startsWith('[::ffff:')
+  )) return true
   const m = h.match(/^(\d{1,3})\.(\d{1,3})/)
   if (m) {
     const [a, b] = [Number(m[1]), Number(m[2])]
