@@ -198,11 +198,15 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     }
     if (suggestion.confirmId) {
       idGateResolvedRef.current = true
+      setSuggestionsDismissed(true)
+      setMessages((prev) => [...prev, { id: uid(), role: 'user', content: suggestion.message ?? suggestion.label }])
       await fetch('/api/pipeline/confirm-id', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ listingId, confirmed: true }),
       })
+      setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Confirmed! Running pricing research now — the listing will update in a moment." }])
+      return
     }
     await doSend(suggestion.message ?? suggestion.label, [])
   }
@@ -213,11 +217,15 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     setInput('')
     if (pendingIdGate && !idGateResolvedRef.current && text) {
       idGateResolvedRef.current = true
+      setSuggestionsDismissed(true)
+      setMessages((prev) => [...prev, { id: uid(), role: 'user', content: text }])
       await fetch('/api/pipeline/confirm-id', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ listingId, confirmed: false, corrections: text }),
       })
+      setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Got it — re-running the identification with your correction. The card will update shortly." }])
+      return
     }
     await doSend(text, pendingImages)
   }
