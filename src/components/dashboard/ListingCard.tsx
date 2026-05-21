@@ -17,6 +17,7 @@ interface CardListing {
   category: string | null
   condition: string | null
   condition_notes: string | null
+  intake_meta: Record<string, unknown> | null
   suggested_price_cents: number | null
   agent_blocked: boolean
   pipeline_step: number
@@ -47,6 +48,11 @@ export function ListingCard({
   const isProcessing = listing.status === 'intake' || (listing.status === 'id_gate' && idConfirmed)
   const photoUrl = listing.coverPhoto?.processed_url ?? listing.coverPhoto?.raw_url
 
+  const visionMeta = listing.intake_meta?.visionAnalysis as {
+    notable_features?: string[]
+    confidence_note?: string
+  } | undefined
+
   async function handleArchive(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
@@ -67,7 +73,7 @@ export function ListingCard({
       await fetch('/api/pipeline/confirm-id', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listingId: listing.id, confirmed: true }),
+body: JSON.stringify({ listingId: listing.id, confirmed: true }),
       })
       setIdConfirmed(true)
     } finally {
@@ -77,38 +83,17 @@ export function ListingCard({
 
   let photoContent: ReactNode
   if (isIdGate) {
-    const brand = listing.brand ?? 'Unknown brand'
-    const category = listing.category ?? 'unknown'
-    const condition = (listing.condition ?? 'unknown').replace(/_/g, ' ')
     photoContent = (
       <>
         {photoUrl ? (
-          <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-50" />
+          <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-40" />
         ) : (
           <div className="absolute inset-0 bg-gray-900" />
         )}
-        <div className="absolute inset-0 z-10 flex flex-col justify-end bg-gradient-to-t from-gray-950/90 via-gray-950/40 to-transparent p-3 gap-2">
-          <div>
-            <p className="text-[11px] font-semibold text-white leading-tight truncate">{brand}</p>
-            <p className="text-[10px] text-gray-400 capitalize">{category} · {condition}</p>
-          </div>
-          <p className="text-[10px] text-amber-300 font-medium">Is this correct?</p>
-          <div className="flex gap-1.5">
-            <button
-              onClick={handleConfirmId}
-              disabled={idConfirming}
-              className="flex-1 py-1.5 text-[10px] font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-colors"
-            >
-              {idConfirming ? '…' : '✓ Yes'}
-            </button>
-            <Link
-              href={`/listings/${listing.id}`}
-              onClick={(e) => e.stopPropagation()}
-              className="flex-1 py-1.5 text-[10px] font-semibold rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-center transition-colors"
-            >
-              Fix it →
-            </Link>
-          </div>
+        <div className="absolute top-2 left-2 z-10">
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-300 bg-amber-950/80 px-1.5 py-0.5 rounded">
+            Review ID
+          </span>
         </div>
       </>
     )
@@ -136,8 +121,44 @@ export function ListingCard({
     )
   }
 
+  const idGateBody = isIdGate ? (() => {
+    const brand = listing.brand ?? 'Unknown brand'
+    const category = listing.category ?? 'unknown'
+    const condition = (listing.condition ?? 'unknown').replace(/_/g, ' ')
+    const notes = listing.condition_notes
+    const features = visionMeta?.notable_features ?? []
+
+    return (
+      <div className="p-3 space-y-2.5 border-t border-amber-900/40">
+        <div className="space-y-0.5">
+          <p className="text-xs font-semibold text-gray-100">{brand}</p>
+          <p className="text-[11px] text-gray-400 capitalize">{category} · {condition}</p>
+          {notes && <p className="text-[11px] text-gray-500 leading-snug">{notes}</p>}
+        </div>
+        {features.length > 0 && (
+          <ul className="space-y-0.5">
+            {features.map((f) => (
+              <li key={f} className="text-[10px] text-gray-500 flex gap-1.5 leading-snug">
+                <span className="text-gray-700 flex-none">·</span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-[10px] text-amber-400 font-medium">Is this correct?</p>
+        <button
+          onClick={handleConfirmId}
+          disabled={idConfirming}
+          className="w-full py-1.5 text-[11px] font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-50 transition-colors"
+        >
+          {idConfirming ? '…' : '✓ Yes, that\'s correct'}
+        </button>
+      </div>
+    )
+  })() : null
+
   const inner = (
-    <div className="bg-gray-900 rounded-xl overflow-hidden border border-gray-800 hover:border-gray-700 transition-colors group">
+    <div className={`bg-gray-900 rounded-xl overflow-hidden border transition-colors group ${isIdGate ? 'border-amber-800/60 hover:border-amber-700/60' : 'border-gray-800 hover:border-gray-700'}`}>
       <div className="relative aspect-square bg-gray-800">
         {photoContent}
         <button
@@ -167,9 +188,10 @@ export function ListingCard({
           </p>
         )}
       </div>
+      {idGateBody}
     </div>
   )
 
-  if (isProcessing || isIdGate) return inner
+  if (isProcessing) return inner
   return <Link href={`/listings/${listing.id}`}>{inner}</Link>
 }
