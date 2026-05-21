@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import sharp from 'sharp'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { inngest } from '@/lib/inngest/client'
@@ -50,13 +51,30 @@ export async function POST(request: Request) {
 
   const listingId: string = listing.id
   const ext = file.name.split('.').pop() ?? 'jpg'
-  const storagePath = `intake/${listingId}/original.${ext}`
 
-  const buffer = await file.arrayBuffer()
+  const rawBuffer = Buffer.from(await file.arrayBuffer())
+  const isHeic = ['heic', 'heif'].includes(ext.toLowerCase()) ||
+    ['image/heic', 'image/heif'].includes((file.type ?? '').toLowerCase())
+
+  let uploadBuffer: Buffer
+  let finalExt: string
+  let uploadContentType: string
+  if (isHeic) {
+    uploadBuffer = await sharp(rawBuffer).jpeg({ quality: 95 }).toBuffer()
+    finalExt = 'jpg'
+    uploadContentType = 'image/jpeg'
+  } else {
+    uploadBuffer = rawBuffer
+    finalExt = ext
+    uploadContentType = file.type || 'image/jpeg'
+  }
+
+  const storagePath = `intake/${listingId}/original.${finalExt}`
+
   const { error: uploadError } = await supabase.storage
     .from('photos')
-    .upload(storagePath, buffer, {
-      contentType: file.type || 'image/jpeg',
+    .upload(storagePath, uploadBuffer, {
+      contentType: uploadContentType,
       upsert: false,
     })
 

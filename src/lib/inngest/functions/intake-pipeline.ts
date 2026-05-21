@@ -21,8 +21,16 @@ export const intakePipeline = inngest.createFunction(
       ).data.event.data
       const reason = error.message || 'Unknown pipeline error'
 
-      const stepMatch = reason.match(/^(step\d+\w*):/i)
-      const stepLabel = stepMatch ? stepMatch[1] : 'pipeline'
+      let userMessage: string
+      if (reason.includes('invalid or unsupported') || reason.includes('base64.data') || reason.includes('file format')) {
+        userMessage = 'Photo format not supported — re-upload as JPEG or PNG'
+      } else if (reason.includes('ECONNREFUSED') || reason.includes('fetch failed')) {
+        userMessage = 'Could not reach an external service — try again shortly'
+      } else {
+        const stepMatch = reason.match(/^(step\d+\w*):/i)
+        const stepLabel = stepMatch ? stepMatch[1] : 'pipeline'
+        userMessage = `${stepLabel} failed — ${reason.substring(0, 150)}`
+      }
 
       const supabase = getSupabaseAdmin()
       await supabase
@@ -30,7 +38,7 @@ export const intakePipeline = inngest.createFunction(
         .update({
           status: 'in_loop',
           agent_blocked: true,
-          agent_blocked_reason: `${stepLabel} failed after retries — ${reason.substring(0, 200)}`,
+          agent_blocked_reason: userMessage,
         })
         .eq('id', listingId)
     },

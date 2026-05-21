@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { inngest } from '@/lib/inngest/client'
 
 export async function POST(request: Request) {
@@ -14,6 +15,18 @@ export async function POST(request: Request) {
       { status: 400 }
     )
   }
+
+  // Stamp intake immediately so the card stops showing the overlay even
+  // before Inngest processes the event (which takes a few seconds).
+  const supabase = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  await supabase
+    .from('listings')
+    .update({ status: 'intake' })
+    .eq('id', body.listingId)
+    .eq('status', 'id_gate')
 
   await inngest.send({
     name: 'pipeline/id-confirmed',

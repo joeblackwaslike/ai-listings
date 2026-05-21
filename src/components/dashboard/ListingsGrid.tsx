@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ListingCard, type ListingWithCover } from './ListingCard'
 import { UploadZone } from './UploadZone'
@@ -17,6 +17,35 @@ function applyUpdate(prev: ListingWithCover[], row: ListingWithCover) {
 
 export function ListingsGrid({ initialListings }: Readonly<{ initialListings: ListingWithCover[] }>) {
   const [listings, setListings] = useState(initialListings)
+  const listingsRef = useRef(listings)
+  listingsRef.current = listings
+
+  // Poll every 5s while any listing is actively processing.
+  useEffect(() => {
+    const supabase = createClient()
+    const ACTIVE = new Set(['intake', 'id_gate'])
+
+    const interval = setInterval(async () => {
+      const activeIds = listingsRef.current
+        .filter((l) => ACTIVE.has(l.status))
+        .map((l) => l.id)
+      if (activeIds.length === 0) return
+
+      const { data } = await supabase
+        .from('listings')
+        .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, agent_blocked, pipeline_step, pipeline_total')
+        .in('id', activeIds)
+      if (data) {
+        setListings((prev) => {
+          let next = prev
+          for (const row of data) next = applyUpdate(next, row as ListingWithCover)
+          return next
+        })
+      }
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     const supabase = createClient()

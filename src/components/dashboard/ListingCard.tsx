@@ -96,8 +96,8 @@ export function ListingCard({
           <div className="absolute inset-0 bg-gray-900" />
         )}
 
-        {/* Scrollable overlay covering bottom 80% of photo */}
-        <div className="absolute top-[20%] inset-x-0 bottom-0 bg-gray-950/88 flex flex-col">
+        {/* Scrollable overlay covering full photo */}
+        <div className="absolute inset-0 bg-gray-950/88 flex flex-col">
           {/* Scroll area */}
           <div className="relative flex-1 min-h-0">
             <div className="absolute inset-0 overflow-y-auto px-3 pt-2.5 pb-2 space-y-2">
@@ -124,15 +124,22 @@ export function ListingCard({
             <div className="absolute bottom-0 inset-x-0 h-8 bg-gradient-to-t from-gray-950/95 to-transparent pointer-events-none" />
           </div>
 
-          {/* Pinned confirm button */}
-          <div className="flex-none px-3 py-2.5">
+          {/* Pinned action buttons */}
+          <div className="flex-none px-3 py-2.5 flex gap-2">
             <button
               onClick={handleConfirmId}
               disabled={idConfirming}
-              className="w-full py-1.5 text-[11px] font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-50 transition-colors"
+              className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-50 transition-colors"
             >
-              {idConfirming ? '…' : '✓ Yes, that\'s correct'}
+              {idConfirming ? '…' : '✓ Yes'}
             </button>
+            <Link
+              href={`/listings/${listing.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-center transition-colors"
+            >
+              Fix it →
+            </Link>
           </div>
         </div>
       </>

@@ -191,7 +191,7 @@ export default async function WorkspacePage({
 
       <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_1fr] xl:grid-cols-[3fr_2fr]">
         <div className="overflow-y-auto border-r border-gray-800">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-6 p-6">
+          <div className="flex flex-col gap-6 p-6">
             <PhotoPanel photos={photos} />
             <FieldsPanel listing={listing} photos={photos} comps={comps} />
           </div>

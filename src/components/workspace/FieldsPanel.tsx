@@ -119,14 +119,16 @@ export function FieldsPanel({ listing, photos, comps }: Readonly<FieldsPanelProp
                 <span className="text-xs text-gray-500">{listing.confidence_score}% confidence</span>
               )}
             </div>
-            {comps.length > 0 && (
+            {comps.length > 0 ? (
               <button
                 onClick={() => setEvidenceOpen(true)}
                 className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
               >
-                View {comps.length} pricing comp{comps.length === 1 ? '' : 's'}
+                View {comps.length} comp{comps.length === 1 ? '' : 's'}
                 <ChevronRight className="w-3 h-3" />
               </button>
+            ) : (
+              <span className="text-xs text-gray-700">No market comparables found</span>
             )}
           </div>
         )}
