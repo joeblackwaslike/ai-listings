@@ -3,7 +3,7 @@
 --       user_settings, mechmarket tables
 
 -- 1. Update listings.category constraint (add watches + keyboards)
-ALTER TABLE listings DROP CONSTRAINT listings_category_check;
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_category_check;
 ALTER TABLE listings ADD CONSTRAINT listings_category_check
   CHECK (category IN ('handbag','clothing','sneakers','electronics','jewelry','collectibles','watches','keyboards','other'));
 
@@ -11,7 +11,7 @@ ALTER TABLE listings ADD CONSTRAINT listings_category_check
 INSERT INTO sku_counters (category_prefix) VALUES ('WA'), ('KB') ON CONFLICT DO NOTHING;
 
 -- 3. Update pricing_comps.source constraint (add reddit, mercari, etsy)
-ALTER TABLE pricing_comps DROP CONSTRAINT pricing_comps_source_check;
+ALTER TABLE pricing_comps DROP CONSTRAINT IF EXISTS pricing_comps_source_check;
 ALTER TABLE pricing_comps ADD CONSTRAINT pricing_comps_source_check
   CHECK (source IN ('ebay','poshmark','therealreal','google','reddit','mercari','etsy'));
 
@@ -21,7 +21,7 @@ CREATE TABLE user_settings (
   setting_key   text NOT NULL,
   setting_value text,
   setting_type  text NOT NULL DEFAULT 'string'
-    CHECK (setting_type IN ('string', 'number', 'decimal', 'date', 'JSON', 'array', 'credential')),
+    CHECK (setting_type IN ('string', 'number', 'decimal', 'date', 'json', 'array', 'credential')),
   updated_at    timestamptz DEFAULT now(),
   PRIMARY KEY (user_id, setting_key)
 );
@@ -72,6 +72,8 @@ CREATE TABLE messages (
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users own messages" ON messages
   FOR ALL USING (auth.uid() = user_id);
+CREATE INDEX messages_user_sent_at ON messages (user_id, sent_at DESC);
+CREATE INDEX messages_user_thread ON messages (user_id, thread_id);
 
 -- 7. Create listing_platforms table
 CREATE TABLE listing_platforms (
@@ -84,6 +86,13 @@ CREATE TABLE listing_platforms (
   sync_status     text DEFAULT 'ok' CHECK (sync_status IN ('ok', 'error', 'stale')),
   PRIMARY KEY (listing_id, platform)
 );
+
+-- 7b. listing_platforms RLS
+ALTER TABLE listing_platforms ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users own listing platforms" ON listing_platforms
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM listings l WHERE l.id = listing_id AND l.user_id = auth.uid())
+  );
 
 -- 8. Create mechmarket_posts table
 CREATE TABLE mechmarket_posts (
@@ -99,6 +108,7 @@ CREATE TABLE mechmarket_posts (
 ALTER TABLE mechmarket_posts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users own mechmarket posts" ON mechmarket_posts
   FOR ALL USING (auth.uid() = user_id);
+CREATE INDEX mechmarket_posts_user_id ON mechmarket_posts (user_id);
 
 -- 9. Create mechmarket_post_items table
 CREATE TABLE mechmarket_post_items (
@@ -107,7 +117,7 @@ CREATE TABLE mechmarket_post_items (
   timestamp_photo_url        text,
   timestamp_imgur_album_url  text,
   timestamp_taken_at         timestamptz,
-  timestamp_expires_at       timestamptz GENERATED ALWAYS AS (timestamp_taken_at + interval '14 days') STORED,
+  timestamp_expires_at       timestamptz,  -- set by app: timestamp_taken_at + 14 days (GENERATED not immutable on timestamptz in PG15)
   status                     text DEFAULT 'active' CHECK (status IN ('active', 'sold', 'removed')),
   sort_order                 int DEFAULT 0,
   added_at                   timestamptz DEFAULT now(),
