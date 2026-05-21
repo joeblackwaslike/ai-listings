@@ -65,6 +65,11 @@ jobs:
     environment: production
 
     steps:
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+
       - name: Update deployment image
         env:
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}

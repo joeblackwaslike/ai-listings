@@ -66,8 +66,8 @@ export async function runStep2VisionAnalysis(
   listingId: string,
   photoUrl: string,
   step1: ProductIdData,
+  apiKeys: ApiKeys,
   corrections: string | null = null,
-  apiKeys: ApiKeys
 ): Promise<VisionAnalysis> {
   console.log(`[step2] starting vision analysis for listing ${listingId}`)
   const client = new Anthropic({ apiKey: apiKeys.anthropic })
@@ -78,13 +78,23 @@ export async function runStep2VisionAnalysis(
     ? `\n\nUSER CORRECTION: The previous identification was wrong. The user says: "${corrections}". Prioritize this correction.`
     : ''
 
+  const attrsStr = step1.knowledgeGraphAttributes
+    ? Object.entries(step1.knowledgeGraphAttributes).map(([k, v]) => `${k}: ${v}`).join(', ')
+    : null
+
+  const kgContext = [
+    step1.knowledgeGraphDescription ? `Description: ${step1.knowledgeGraphDescription}` : null,
+    attrsStr ? `Attributes: ${attrsStr}` : null,
+  ].filter(Boolean).join('\n')
+
   const prompt = `You are analyzing a product photo for a resale listing platform.
 
 Google Lens previously identified this item as: "${step1.title}" (brand: ${step1.brand}, category: ${step1.category}).
 Top lens matches: ${step1.lensMatches
-    .slice(0, 3)
+    .slice(0, 5)
     .map((m) => m.title)
     .join('; ')}.
+${kgContext ? `\nGoogle Knowledge Graph:\n${kgContext}` : ''}
 ${correctionContext}
 
 Analyze the photo carefully and extract the structured product information using the extract_product_info tool.
@@ -144,7 +154,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
             notable_features: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Key attributes: color, hardware, model number, colorway, etc. For sneakers you MUST include two entries: (1) "Size: US X" — read from box label, insole, or visible markings, use "Size: unknown" if not visible; (2) "Gender: men\'s" or "Gender: women\'s" — infer from silhouette and proportions, use "Gender: unknown" if unclear.',
+              description: 'Key attributes listed as short strings. The FIRST entry MUST be "Model: <exact model name>" — use the most specific name you can identify from the photo and Lens data (e.g., "Model: Monogram Giant Escal Cosmetic Pouch" not "Model: handbag"). If the collection or year is identifiable, include it: "Collection: Spring/Summer 2020". Then add color, hardware, material, colorway, size, etc. For sneakers you MUST also include: (1) "Size: US X" — read from box label, insole, or visible markings, use "Size: unknown" if not visible; (2) "Gender: men\'s" or "Gender: women\'s" — infer from silhouette, use "Gender: unknown" if unclear.',
             },
             inclusions: {
               type: 'array',

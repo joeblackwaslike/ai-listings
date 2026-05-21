@@ -30,6 +30,8 @@ export interface ProductIdData {
   category: ListingCategory
   sku: string
   lensMatches: Pick<LensMatch, 'title' | 'source' | 'price'>[]
+  knowledgeGraphDescription: string | null
+  knowledgeGraphAttributes: Record<string, string> | null
 }
 
 function inferCategory(matches: LensMatch[]): ListingCategory {
@@ -138,5 +140,14 @@ export async function runStep1ProductId(
     source: m.source,
     price: m.price,
   }))
-  return { ok: true, title, brand, category, sku, lensMatches: topMatches }
+  return {
+    ok: true,
+    title,
+    brand,
+    category,
+    sku,
+    lensMatches: topMatches,
+    knowledgeGraphDescription: data.knowledge_graph?.description ?? null,
+    knowledgeGraphAttributes: data.knowledge_graph?.attributes ?? null,
+  }
 }

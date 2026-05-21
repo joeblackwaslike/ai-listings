@@ -69,7 +69,7 @@ export const intakePipeline = inngest.createFunction(
     )
 
     let step2Result = await step.run('vision-analysis', () =>
-      runStep2VisionAnalysis(listingId, photoUrl, step1Result, null, apiKeys)
+      runStep2VisionAnalysis(listingId, photoUrl, step1Result, apiKeys, null)
     )
 
     let gateAttempt = 0
@@ -93,7 +93,7 @@ export const intakePipeline = inngest.createFunction(
       ).data.corrections
 
       step2Result = await step.run(`re-identify-${gateAttempt}`, () =>
-        runStep2VisionAnalysis(listingId, photoUrl, step1Result, corrections, apiKeys)
+        runStep2VisionAnalysis(listingId, photoUrl, step1Result, apiKeys, corrections)
       )
 
       gateAttempt++
