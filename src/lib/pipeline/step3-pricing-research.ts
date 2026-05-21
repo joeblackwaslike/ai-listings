@@ -248,7 +248,7 @@ export async function runStep3PricingResearch(
   const [ebayItems, serpResults, redditComps] = await Promise.all([
     fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi),
     step2.isLuxury ? fetchSerpComps(step2.brand, model, apiKeys.serpapi) : Promise.resolve([]),
-    redditCreds
+    redditCreds && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, redditCreds, apiKeys.anthropic)
       : Promise.resolve([]),
   ])
