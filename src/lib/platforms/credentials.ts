@@ -16,7 +16,6 @@ export type PlatformCreds = {
     imgurRefreshToken: string;
     usState: string;
   };
-  therealreal: { apifyApiKey: string };
 };
 
 export async function getEbayCreds(userId: string): Promise<PlatformCreds['ebay'] | null> {
@@ -69,10 +68,4 @@ export async function getMechmarketCreds(userId: string): Promise<PlatformCreds[
       !imgurClientId || !imgurClientSecret || !imgurAccessToken || !imgurRefreshToken || !usState) return null;
   return { redditClientId, redditClientSecret, redditRefreshToken, redditUsername,
            imgurClientId, imgurClientSecret, imgurAccessToken, imgurRefreshToken, usState };
-}
-
-export async function getTheRealRealCreds(userId: string): Promise<PlatformCreds['therealreal'] | null> {
-  const key = await getSetting(userId, 'apify_api_token');
-  if (!key) return null;
-  return { apifyApiKey: key };
 }

@@ -10,53 +10,22 @@ import type {
   TrackingInfo,
 } from '../types';
 import { UnsupportedOperationError } from '../errors';
-import { getTheRealRealCreds } from '@/lib/platforms/credentials';
 
-const APIFY_ACTOR = 'lexis-solutions~therealreal-com-scraper';
-const APIFY_BASE = 'https://api.apify.com/v2';
-const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 25_000; // Stay under serverless function default timeout (~30s)
-
-interface ApifyRun {
-  id: string;
-  status: string;
-  defaultDatasetId: string;
-}
-
-interface TRRItem {
+interface SerpApiOrganicResult {
   title?: string;
-  price?: string;
-  condition?: string;
-  url?: string;
-  status?: string;
+  snippet?: string;
+  link?: string;
 }
 
-async function pollApifyRun(runId: string, apiKey: string): Promise<TRRItem[]> {
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
+interface SerpApiResponse {
+  organic_results?: SerpApiOrganicResult[];
+}
 
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-
-    const statusRes = await fetch(`${APIFY_BASE}/acts/${APIFY_ACTOR}/runs/${runId}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!statusRes.ok) break;
-
-    const { data: run } = (await statusRes.json()) as { data: ApifyRun };
-
-    if (run.status === 'SUCCEEDED') {
-      const dataRes = await fetch(
-        `${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?format=json`,
-        { headers: { Authorization: `Bearer ${apiKey}` } },
-      );
-      if (!dataRes.ok) break;
-      return (await dataRes.json()) as TRRItem[];
-    }
-
-    if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(run.status)) break;
-  }
-
-  return [];
+function extractPrice(snippet: string): number | null {
+  const match = snippet.match(/\$([\d,]+(?:\.\d{2})?)/);
+  if (!match) return null;
+  const dollars = parseFloat(match[1].replace(/,/g, ''));
+  return isNaN(dollars) ? null : Math.round(dollars * 100);
 }
 
 export class TheRealRealAdapter implements PlatformSDK {
@@ -65,37 +34,37 @@ export class TheRealRealAdapter implements PlatformSDK {
   constructor(private readonly userId: string) {}
 
   async searchSoldComps(query: string, options?: { limit?: number }): Promise<PlatformComp[]> {
-    const creds = await getTheRealRealCreds(this.userId);
-    if (!creds) return [];
+    const apiKey = process.env.SERPAPI_API_KEY;
+    if (!apiKey) return [];
 
     const limit = options?.limit ?? 20;
-    const searchUrl = `https://www.therealreal.com/search?keywords=${encodeURIComponent(query)}&sort=sold`;
+    const searchUrl = new URL('https://serpapi.com/search');
+    searchUrl.searchParams.set('engine', 'google');
+    searchUrl.searchParams.set('q', `site:therealreal.com ${query}`);
+    searchUrl.searchParams.set('num', String(Math.min(limit, 20)));
+    searchUrl.searchParams.set('api_key', apiKey);
 
     try {
-      const startRes = await fetch(`${APIFY_BASE}/acts/${APIFY_ACTOR}/runs`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${creds.apifyApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ startUrls: [{ url: searchUrl }], maxItems: limit }),
-      });
+      const res = await fetch(searchUrl.toString());
+      if (!res.ok) return [];
 
-      if (!startRes.ok) return [];
+      const data = (await res.json()) as SerpApiResponse;
+      const results = data.organic_results ?? [];
 
-      const { data: run } = (await startRes.json()) as { data: ApifyRun };
-      const items = await pollApifyRun(run.id, creds.apifyApiKey);
-
-      return items
-        .filter((item) => item.status === 'Sold')
-        .map((item) => ({
-          platform: 'therealreal',
-          title: item.title ?? '',
-          soldPrice: Math.round(parseFloat((item.price ?? '0').replace(/[^0-9.]/g, '')) * 100),
-          condition: item.condition ?? '',
-          url: item.url ?? '',
-          soldAt: null,
-        }));
+      return results
+        .map((r): PlatformComp | null => {
+          const price = r.snippet ? extractPrice(r.snippet) : null;
+          if (!price) return null;
+          return {
+            platform: 'therealreal',
+            title: r.title ?? '',
+            soldPrice: price,
+            condition: '',
+            url: r.link ?? '',
+            soldAt: null,
+          };
+        })
+        .filter((c): c is PlatformComp => c !== null);
     } catch {
       return [];
     }
@@ -144,10 +113,10 @@ export class TheRealRealAdapter implements PlatformSDK {
   }
 
   async getThread(_threadId: string): Promise<PlatformMessage[]> {
-    throw new UnsupportedOperationError('therealreal', 'getThread — TRR has no messaging API');
+    throw new UnsupportedOperationError('therealreal', 'getThread');
   }
 
   async sendMessage(_threadId: string, _body: string): Promise<void> {
-    throw new UnsupportedOperationError('therealreal', 'sendMessage — TRR has no messaging API');
+    throw new UnsupportedOperationError('therealreal', 'sendMessage');
   }
 }

@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 // ── types ────────────────────────────────────────────────────────────────────
@@ -14,6 +13,7 @@ interface TextFieldDef {
 
 interface OAuthButtonDef {
   kind: 'oauth'
+  platform: string
   key: string
   label: string
 }
@@ -32,15 +32,6 @@ interface PlatformDef {
 
 const PLATFORMS: PlatformDef[] = [
   {
-    id: 'mechmarket',
-    name: 'mechmarket',
-    description: 'Reddit r/mechmarket listings require your Reddit username and US state code.',
-    fields: [
-      { kind: 'text', key: 'reddit_username', label: 'Reddit username', placeholder: 'u/yourname' },
-      { kind: 'text', key: 'us_state', label: 'US state code', placeholder: 'NY' },
-    ],
-  },
-  {
     id: 'poshmark',
     name: 'Poshmark',
     description: 'Paste your Poshmark session cookie string to enable automated listing.',
@@ -52,51 +43,56 @@ const PLATFORMS: PlatformDef[] = [
   {
     id: 'mercari',
     name: 'Mercari',
-    description: 'Enter your Mercari API token.',
+    description: 'Connect your Mercari Shops seller account. Create an app at the Mercari Shops developer portal to get credentials.',
     fields: [
-      { kind: 'password', key: 'mercari_api_token', label: 'API token', placeholder: 'Paste token…' },
+      { kind: 'text', key: 'mercari_client_id', label: 'Client ID', placeholder: 'from Mercari Shops developer portal' },
+      { kind: 'password', key: 'mercari_client_secret', label: 'Client secret' },
+      { kind: 'oauth', platform: 'mercari', key: 'mercari_api_token', label: 'Mercari' },
     ],
     supportsRules: true,
   },
   {
-    id: 'therealreal',
-    name: 'TheRealReal',
-    description: 'Enter your Apify API token for TheRealReal scraping.',
-    fields: [
-      { kind: 'password', key: 'apify_api_token', label: 'Apify API token', placeholder: 'Paste token…' },
-    ],
-  },
-  {
     id: 'imgur',
     name: 'Imgur',
-    description: 'Connect your Imgur account to host listing images.',
+    description: 'Connect your Imgur account to host listing images. Register an app at api.imgur.com first.',
     fields: [
-      { kind: 'oauth', key: 'imgur_access_token', label: 'Imgur' },
+      { kind: 'text', key: 'imgur_client_id', label: 'Client ID', placeholder: 'from api.imgur.com/#registerapp' },
+      { kind: 'password', key: 'imgur_client_secret', label: 'Client secret' },
+      { kind: 'oauth', platform: 'imgur', key: 'imgur_access_token', label: 'Imgur' },
     ],
   },
   {
     id: 'reddit',
     name: 'Reddit',
-    description: 'Connect your Reddit account for posting and replying.',
+    description: 'Connect your Reddit account for r/mechmarket posting. Create a "web app" at reddit.com/prefs/apps with redirect URI: {SITE_URL}/api/auth/callback/reddit.',
     fields: [
-      { kind: 'oauth', key: 'reddit_refresh_token', label: 'Reddit' },
+      { kind: 'text', key: 'reddit_username', label: 'Reddit username', placeholder: 'u/yourname' },
+      { kind: 'text', key: 'us_state', label: 'US state code', placeholder: 'NY' },
+      { kind: 'text', key: 'reddit_client_id', label: 'Client ID', placeholder: 'from reddit.com/prefs/apps' },
+      { kind: 'password', key: 'reddit_client_secret', label: 'Client secret' },
+      { kind: 'oauth', platform: 'reddit', key: 'reddit_refresh_token', label: 'Reddit' },
     ],
   },
   {
     id: 'etsy',
     name: 'Etsy',
-    description: 'Connect your Etsy shop to publish listings automatically.',
+    description: 'Connect your Etsy shop to publish listings automatically. Create an app at etsy.com/developers.',
     fields: [
-      { kind: 'oauth', key: 'etsy_access_token', label: 'Etsy' },
+      { kind: 'text', key: 'etsy_client_id', label: 'API key (keystring)', placeholder: 'from etsy.com/developers' },
+      { kind: 'text', key: 'etsy_shop_id', label: 'Shop ID', placeholder: 'Numeric shop ID' },
+      { kind: 'oauth', platform: 'etsy', key: 'etsy_access_token', label: 'Etsy' },
     ],
     supportsRules: true,
   },
   {
     id: 'ebay',
     name: 'eBay',
-    description: 'Connect your eBay seller account to cross-list items.',
+    description: "Connect your eBay seller account. Create an app at developer.ebay.com. The RuName is listed in your app's OAuth settings.",
     fields: [
-      { kind: 'oauth', key: 'ebay_refresh_token', label: 'eBay' },
+      { kind: 'text', key: 'ebay_client_id', label: 'App ID (client ID)', placeholder: 'from developer.ebay.com' },
+      { kind: 'password', key: 'ebay_client_secret', label: 'Cert ID (client secret)' },
+      { kind: 'text', key: 'ebay_ru_name', label: 'RuName', placeholder: 'YourName-AppName-PRxxxxxx' },
+      { kind: 'oauth', platform: 'ebay', key: 'ebay_refresh_token', label: 'eBay' },
     ],
     supportsRules: true,
   },
@@ -104,20 +100,18 @@ const PLATFORMS: PlatformDef[] = [
 
 // ── sub-components ───────────────────────────────────────────────────────────
 
-function OAuthButton({ fieldKey, label, connected }: { fieldKey: string; label: string; connected: boolean }) {
+function OAuthButton({ platform, label, connected }: { platform: string; label: string; connected: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <button
-        disabled
-        title="OAuth flow coming soon"
-        className="px-3 py-2 text-xs rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+      <a
+        href={`/api/auth/connect/${platform}`}
+        className="px-3 py-2 text-xs rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors inline-block"
       >
-        {connected ? `${label}: Connected` : `Connect ${label}`}
-      </button>
+        {connected ? `Re-connect ${label}` : `Connect ${label}`}
+      </a>
       {connected && (
-        <span className="text-[10px] text-emerald-500">Token stored</span>
+        <span className="text-[10px] text-emerald-500">Connected ✓</span>
       )}
-      <span className="text-[10px] text-gray-600 italic">(OAuth flow coming soon)</span>
     </div>
   )
 }
@@ -129,13 +123,13 @@ function TextSettingRow({
   fieldDef: TextFieldDef
   initialValue: string
 }) {
-  const router = useRouter()
   const [value, setValue] = useState(initialValue)
+  const [savedValue, setSavedValue] = useState(initialValue)
   const [pending, setPending] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
 
   async function save() {
-    if (!value.trim() || value.trim() === initialValue) return
+    if (!value.trim() || value.trim() === savedValue) return
     setPending(true)
     setStatus('idle')
     try {
@@ -149,8 +143,8 @@ function TextSettingRow({
         setTimeout(() => setStatus('idle'), 2000)
         return
       }
+      setSavedValue(value.trim())
       setStatus('saved')
-      router.refresh()
       setTimeout(() => setStatus('idle'), 2000)
     } finally {
       setPending(false)
@@ -184,7 +178,7 @@ function TextSettingRow({
           />
           <button
             onClick={() => void save()}
-            disabled={!value.trim() || value.trim() === initialValue || pending}
+            disabled={!value.trim() || value.trim() === savedValue || pending}
             className="flex-none px-3 py-2 text-xs rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {pending ? 'Saving…' : status === 'error' ? <span className="text-red-400">Failed</span> : status === 'saved' ? 'Saved' : 'Save'}
@@ -209,13 +203,14 @@ function RulesUrlRow({
   initialValue: string
 }) {
   const [value, setValue] = useState(initialValue)
+  const [savedValue, setSavedValue] = useState(initialValue)
   const [pending, setPending] = useState(false)
   const [status, setStatus] = useState<'idle' | 'cached' | 'error'>('idle')
   const [previewLength, setPreviewLength] = useState<number | null>(null)
 
   async function save() {
     const trimmed = value.trim()
-    if (!trimmed || trimmed === initialValue) return
+    if (!trimmed || trimmed === savedValue) return
     setPending(true)
     setStatus('idle')
     try {
@@ -230,6 +225,7 @@ function RulesUrlRow({
         return
       }
       const data = await res.json() as { ok: boolean; previewLength?: number }
+      setSavedValue(trimmed)
       setPreviewLength(data.previewLength ?? null)
       setStatus('cached')
       setTimeout(() => setStatus('idle'), 4000)
@@ -255,7 +251,7 @@ function RulesUrlRow({
         />
         <button
           onClick={() => void save()}
-          disabled={!value.trim() || value.trim() === initialValue || pending}
+          disabled={!value.trim() || value.trim() === savedValue || pending}
           className="flex-none px-3 py-2 text-xs rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {pending ? 'Fetching…' : status === 'error' ? <span className="text-red-400">Failed</span> : status === 'cached' ? 'Cached' : 'Fetch'}
@@ -291,7 +287,7 @@ function PlatformSection({
           field.kind === 'oauth' ? (
             <OAuthButton
               key={field.key}
-              fieldKey={field.key}
+              platform={field.platform}
               label={field.label}
               connected={Boolean(existingSettings[field.key])}
             />

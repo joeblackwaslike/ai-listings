@@ -16,7 +16,9 @@ export const PLATFORM_SETTING_KEYS = new Set([
   'imgur_refresh_token',
   // Poshmark
   'poshmark_cookies',
-  // Mercari
+  // Mercari Shops
+  'mercari_client_id',
+  'mercari_client_secret',
   'mercari_api_token',
   // Etsy
   'etsy_client_id',
@@ -26,9 +28,8 @@ export const PLATFORM_SETTING_KEYS = new Set([
   // eBay
   'ebay_client_id',
   'ebay_client_secret',
+  'ebay_ru_name',
   'ebay_refresh_token',
-  // TheRealReal
-  'apify_api_token',
 ])
 
 function getSupabaseAdmin() {
