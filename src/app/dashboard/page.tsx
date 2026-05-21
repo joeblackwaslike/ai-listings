@@ -8,7 +8,7 @@ export default async function DashboardPage() {
 
   const { data: listings } = await supabase
     .from('listings')
-    .select('id, sku, status, title, brand, suggested_price_cents, agent_blocked, pipeline_step, pipeline_total')
+    .select('id, sku, status, title, brand, category, condition, condition_notes, suggested_price_cents, agent_blocked, pipeline_step, pipeline_total')
     .neq('status', 'archived')
     .order('created_at', { ascending: false })
     .limit(100)
