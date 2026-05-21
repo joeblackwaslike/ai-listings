@@ -13,8 +13,6 @@ import type {
 } from '../types';
 import { AuthExpiredError, CooldownError, PlatformError, UnsupportedOperationError } from '../errors';
 import { getMechmarketCreds } from '../credentials';
-import { setSetting } from '@/lib/user-settings';
-import { uploadImage, refreshImgurToken } from '@/lib/imgur';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -153,8 +151,8 @@ export class MechmarketAdapter implements PlatformSDK {
       userAgent: 'ai-listings/1.0',
       clientId: creds.redditClientId,
       clientSecret: creds.redditClientSecret,
-      refreshToken: creds.redditRefreshToken,
       username: creds.redditUsername,
+      password: creds.redditPassword,
     });
   }
 
@@ -461,8 +459,7 @@ export class MechmarketAdapter implements PlatformSDK {
     const { data: posts } = await supabase
       .from('mechmarket_posts')
       .select('id, reddit_post_id, reddit_post_url, created_at, updated_at')
-      .eq('user_id', this.userId)
-      .returns<Pick<MechmarketPostRow, 'id' | 'reddit_post_id' | 'reddit_post_url' | 'created_at' | 'updated_at'>[]>();
+      .eq('user_id', this.userId) as unknown as { data: Pick<MechmarketPostRow, 'id' | 'reddit_post_id' | 'reddit_post_url' | 'created_at' | 'updated_at'>[] | null };
 
     if (!posts || posts.length === 0) return [];
 
@@ -617,31 +614,26 @@ export class MechmarketAdapter implements PlatformSDK {
   // --------------------------------------------------------------------------
 
   /**
-   * Upload a timestamp photo to Imgur, auto-refreshing the token if needed.
-   * Returns the direct Imgur image URL.
+   * Upload a timestamp photo to Supabase Storage.
+   * Returns the public URL.
    */
   async uploadTimestampPhoto(
     imageBuffer: Buffer,
     mimeType: string,
+    listingId: string,
   ): Promise<string> {
-    const creds = await getMechmarketCreds(this.userId);
-    if (!creds) throw new AuthExpiredError('mechmarket');
+    const supabase = getSupabaseAdmin();
+    const ext = mimeType.split('/')[1] ?? 'jpg';
+    const path = `${this.userId}/${listingId}/timestamp-${Date.now()}.${ext}`;
 
-    try {
-      return await uploadImage(imageBuffer, mimeType, creds.imgurAccessToken);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('Imgur auth expired')) {
-        const newTokens = await refreshImgurToken(
-          creds.imgurClientId,
-          creds.imgurClientSecret,
-          creds.imgurRefreshToken,
-        );
-        await setSetting(this.userId, 'imgur_access_token', newTokens.accessToken);
-        await setSetting(this.userId, 'imgur_refresh_token', newTokens.refreshToken);
-        return await uploadImage(imageBuffer, mimeType, newTokens.accessToken);
-      }
-      throw err;
-    }
+    const { error } = await supabase.storage
+      .from('listings')
+      .upload(path, imageBuffer, { contentType: mimeType, upsert: true });
+
+    if (error) throw new PlatformError('mechmarket', `Failed to upload timestamp photo: ${error.message}`);
+
+    const baseUrl = process.env.SUPABASE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+    return `${baseUrl}/storage/v1/object/public/listings/${path}`;
   }
 
   /**

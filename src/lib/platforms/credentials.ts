@@ -8,12 +8,8 @@ export type PlatformCreds = {
   mechmarket: {
     redditClientId: string;
     redditClientSecret: string;
-    redditRefreshToken: string;
+    redditPassword: string;
     redditUsername: string;
-    imgurClientId: string;
-    imgurClientSecret: string;
-    imgurAccessToken: string;
-    imgurRefreshToken: string;
     usState: string;
   };
 };
@@ -52,20 +48,13 @@ export async function getEtsyCreds(userId: string): Promise<PlatformCreds['etsy'
 }
 
 export async function getMechmarketCreds(userId: string): Promise<PlatformCreds['mechmarket'] | null> {
-  const [redditClientId, redditClientSecret, redditRefreshToken, redditUsername,
-         imgurClientId, imgurClientSecret, imgurAccessToken, imgurRefreshToken, usState] = await Promise.all([
+  const [redditClientId, redditClientSecret, redditPassword, redditUsername, usState] = await Promise.all([
     getSetting(userId, 'reddit_client_id'),
     getSetting(userId, 'reddit_client_secret'),
-    getSetting(userId, 'reddit_refresh_token'),
+    getSetting(userId, 'reddit_password'),
     getSetting(userId, 'reddit_username'),
-    getSetting(userId, 'imgur_client_id'),
-    getSetting(userId, 'imgur_client_secret'),
-    getSetting(userId, 'imgur_access_token'),
-    getSetting(userId, 'imgur_refresh_token'),
     getSetting(userId, 'us_state'),
   ]);
-  if (!redditClientId || !redditClientSecret || !redditRefreshToken || !redditUsername ||
-      !imgurClientId || !imgurClientSecret || !imgurAccessToken || !imgurRefreshToken || !usState) return null;
-  return { redditClientId, redditClientSecret, redditRefreshToken, redditUsername,
-           imgurClientId, imgurClientSecret, imgurAccessToken, imgurRefreshToken, usState };
+  if (!redditClientId || !redditClientSecret || !redditPassword || !redditUsername || !usState) return null;
+  return { redditClientId, redditClientSecret, redditPassword, redditUsername, usState };
 }
