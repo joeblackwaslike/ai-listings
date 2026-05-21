@@ -13,6 +13,8 @@ export type ListingCategory =
   | 'electronics'
   | 'jewelry'
   | 'collectibles'
+  | 'watches'
+  | 'keyboards'
   | 'other';
 
 export type ConditionValue =
@@ -38,6 +40,8 @@ export const CATEGORY_PREFIXES: Record<ListingCategory, string> = {
   electronics: 'EL',
   jewelry: 'JW',
   collectibles: 'CO',
+  watches: 'WA',
+  keyboards: 'KB',
   other: 'OT',
 };
 
