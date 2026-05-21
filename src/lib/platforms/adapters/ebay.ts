@@ -42,7 +42,11 @@ interface EbayOffer {
 
 interface EbayOrder {
   orderId: string;
-  lineItems?: Array<{ legacyItemId?: string }>;
+  lineItems?: Array<{
+    /** Order line item ID — used as lineItemId in Sell Fulfillment v1 API */
+    lineItemId?: string;
+    legacyItemId?: string;
+  }>;
   buyer?: { username?: string };
   pricingSummary?: { total?: { value?: string } };
   orderFulfillmentStatus?: string;
@@ -133,6 +137,8 @@ export class EbayAdapter implements PlatformSDK {
   platform = 'ebay' as const;
   private creds: { clientId: string; clientSecret: string; refreshToken: string };
   private _client: InstanceType<typeof eBayApi> | null = null;
+  private _accessToken: string | null = null;
+  private _tokenExpiresAt = 0;
 
   constructor(creds: { clientId: string; clientSecret: string; refreshToken: string }) {
     this.creds = creds;
@@ -140,6 +146,11 @@ export class EbayAdapter implements PlatformSDK {
 
   // Lazy-init the eBay client and return a valid access token.
   private async getAccessToken(): Promise<string> {
+    // Return cached token if still valid (with 60-second buffer)
+    if (this._accessToken && Date.now() < this._tokenExpiresAt - 60_000) {
+      return this._accessToken;
+    }
+
     if (!this._client) {
       this._client = new eBayApi({
         appId: this.creds.clientId,
@@ -160,7 +171,11 @@ export class EbayAdapter implements PlatformSDK {
 
     try {
       const token = await this._client.oAuth2.refreshToken();
-      return token.access_token as string;
+      this._accessToken = token.access_token as string;
+      // eBay access tokens expire in 7200 seconds (2h). Use expires_in if available.
+      const expiresIn = (token.expires_in as number | undefined) ?? 7200;
+      this._tokenExpiresAt = Date.now() + expiresIn * 1000;
+      return this._accessToken;
     } catch (err) {
       throw new AuthExpiredError(this.platform);
     }
@@ -385,6 +400,7 @@ export class EbayAdapter implements PlatformSDK {
     const token = await this.getAccessToken();
     const statusParam = filters?.status ? `&status=${filters.status.toUpperCase()}` : '';
     const res = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+      // TODO: implement cursor pagination for more than 200 results (use `next` href from response)
       `https://api.ebay.com/sell/inventory/v1/offer?marketplace_id=EBAY_US&limit=200${statusParam}`,
       { method: 'GET' },
       token,
@@ -419,6 +435,7 @@ export class EbayAdapter implements PlatformSDK {
     const filter = since
       ? `creationdate:[${since.toISOString()}...]`
       : '';
+    // TODO: implement cursor pagination for more than 50 results (use `next` href from response)
     const params = new URLSearchParams({ limit: '50' });
     if (filter) params.set('filter', filter);
 
@@ -455,8 +472,9 @@ export class EbayAdapter implements PlatformSDK {
       {
         method: 'POST',
         body: JSON.stringify({
+          // lineItemId is the Sell Fulfillment v1 identifier — NOT legacyItemId
           lineItems: (order.lineItems ?? []).map((li) => ({
-            lineItemId: li.legacyItemId ?? orderId,
+            lineItemId: li.lineItemId ?? li.legacyItemId ?? orderId,
           })),
           shippedDate: new Date().toISOString(),
           shippingCarrierCode: tracking.carrier,

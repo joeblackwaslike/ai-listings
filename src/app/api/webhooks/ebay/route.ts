@@ -1,5 +1,16 @@
+import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+
+function verifyEbaySignature(rawBody: Buffer, signature: string, clientSecret: string): boolean {
+  if (!signature || !clientSecret) return false;
+  const expected = createHmac('sha256', clientSecret).update(rawBody).digest('base64');
+  try {
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  } catch {
+    return false;
+  }
+}
 
 // eBay notification type shapes (minimal)
 interface EbayWebhookBody {
@@ -14,9 +25,25 @@ interface EbayWebhookBody {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // --- Signature verification ---
+  // eBay signs webhook payloads with HMAC-SHA256 using the client secret.
+  // We verify before processing to prevent spoofed notifications.
+  const EBAY_CLIENT_SECRET = process.env.EBAY_CLIENT_SECRET ?? '';
+  const rawBody = Buffer.from(await req.arrayBuffer());
+  const signature = req.headers.get('x-ebay-signature') ?? '';
+
+  if (!verifyEbaySignature(rawBody, signature, EBAY_CLIENT_SECRET)) {
+    if (!EBAY_CLIENT_SECRET) {
+      // TODO: set EBAY_CLIENT_SECRET in env to enable signature verification
+      console.warn('eBay webhook: EBAY_CLIENT_SECRET not set — skipping signature verification');
+    } else {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+    }
+  }
+
   let body: EbayWebhookBody;
   try {
-    body = (await req.json()) as EbayWebhookBody;
+    body = JSON.parse(rawBody.toString('utf8')) as EbayWebhookBody;
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
