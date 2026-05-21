@@ -3,16 +3,31 @@ import { createClient } from '@supabase/supabase-js'
 export type SettingType = 'string' | 'number' | 'decimal' | 'date' | 'json' | 'array' | 'credential'
 
 export const PLATFORM_SETTING_KEYS = new Set([
+  // Reddit / mechmarket
   'reddit_username',
+  'reddit_client_id',
+  'reddit_client_secret',
+  'reddit_refresh_token',
   'us_state',
+  // Imgur
+  'imgur_client_id',
+  'imgur_client_secret',
   'imgur_access_token',
   'imgur_refresh_token',
-  'reddit_refresh_token',
+  // Poshmark
   'poshmark_cookies',
+  // Mercari
   'mercari_api_token',
+  // Etsy
+  'etsy_client_id',
+  'etsy_shop_id',
   'etsy_access_token',
   'etsy_refresh_token',
+  // eBay
+  'ebay_client_id',
+  'ebay_client_secret',
   'ebay_refresh_token',
+  // TheRealReal
   'apify_api_token',
 ])
 

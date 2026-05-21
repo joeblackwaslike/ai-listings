@@ -10,6 +10,7 @@ import {
   getPoshmarkCreds,
   getMercariCreds,
 } from '@/lib/platforms/credentials'
+import { UnsupportedOperationError } from '@/lib/platforms/errors'
 
 const PLATFORM_CRED_KEYS = [
   { platform: 'ebay', credKey: 'ebay_refresh_token' },
@@ -100,6 +101,7 @@ export const syncPlatformNotifications = inngest.createFunction(
               }
             }
           } catch (err) {
+            if (err instanceof UnsupportedOperationError) continue
             console.error(
               `[sync-platform-notifications] error for platform=${platform} userId=${userId}:`,
               err,

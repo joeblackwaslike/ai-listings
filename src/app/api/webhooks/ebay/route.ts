@@ -1,44 +1,52 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
+
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+}
 
 function verifyEbaySignature(rawBody: Buffer, signature: string, clientSecret: string): boolean {
   if (!signature || !clientSecret) return false;
-  const expected = createHmac('sha256', clientSecret).update(rawBody).digest('base64');
+  const expectedBuf = createHmac('sha256', clientSecret).update(rawBody).digest();
+  const sigBuf = Buffer.from(signature, 'base64');
+  if (expectedBuf.length !== sigBuf.length) return false;
   try {
-    return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    return timingSafeEqual(expectedBuf, sigBuf);
   } catch {
     return false;
   }
 }
 
-// eBay notification type shapes (minimal)
 interface EbayWebhookBody {
   challenge?: string;
   notificationId?: string;
-  metadata?: {
-    topic?: string;
-    schemaVersion?: string;
-    deprecated?: boolean;
-  };
+  metadata?: { topic?: string };
   data?: Record<string, unknown>;
 }
 
+const TYPE_MAP: Record<string, string> = {
+  'ITEM_SOLD': 'item_sold',
+  'FIXED_PRICE_TRANSACTION': 'order_placed',
+  'BEST_OFFER': 'offer_received',
+  'MESSAGE_CREATED': 'reddit_message',
+};
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // --- Signature verification ---
-  // eBay signs webhook payloads with HMAC-SHA256 using the client secret.
-  // We verify before processing to prevent spoofed notifications.
   const EBAY_CLIENT_SECRET = process.env.EBAY_CLIENT_SECRET ?? '';
+
+  if (!EBAY_CLIENT_SECRET) {
+    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
+  }
+
   const rawBody = Buffer.from(await req.arrayBuffer());
   const signature = req.headers.get('x-ebay-signature') ?? '';
 
   if (!verifyEbaySignature(rawBody, signature, EBAY_CLIENT_SECRET)) {
-    if (!EBAY_CLIENT_SECRET) {
-      // TODO: set EBAY_CLIENT_SECRET in env to enable signature verification
-      console.warn('eBay webhook: EBAY_CLIENT_SECRET not set — skipping signature verification');
-    } else {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-    }
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
   let body: EbayWebhookBody;
@@ -48,44 +56,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // eBay endpoint verification challenge — must respond with challengeResponse
   if (body.challenge) {
     return NextResponse.json({ challengeResponse: body.challenge });
   }
 
-  const notifType = body.metadata?.topic ?? body.notificationId ?? 'other';
+  const topic = body.metadata?.topic ?? '';
+  const mappedType = TYPE_MAP[topic.toUpperCase()] ?? 'other';
 
+  // Insert with user_id=null: webhook events arrive without session context.
+  // A follow-up reconciliation job can match notificationId to a seller account.
   try {
-    const supabase = await createClient();
-
-    // Map eBay topic to our notification type
-    const typeMap: Record<string, string> = {
-      'MARKETPLACE_ACCOUNT_DELETION': 'other',
-      'ITEM_SOLD': 'order',
-      'FIXED_PRICE_TRANSACTION': 'order',
-      'FEEDBACK_LEFT': 'other',
-      'BEST_OFFER': 'offer',
-      'CHECKOUT_BUYER_REQUESTS_TOTAL': 'order',
-      'MESSAGE_CREATED': 'message',
-      'SHIPPING_FULFILLMENT': 'shipped',
-    };
-
-    const mappedType = typeMap[notifType.toUpperCase()] ?? 'other';
-
-    // Insert into notifications table — userId resolution requires matching the
-    // seller's eBay account to a user record (handled in a follow-up).
+    const supabase = getAdminClient();
     await supabase.from('notifications').insert({
+      user_id: null,
       platform: 'ebay',
-      notification_id: body.notificationId ?? `ebay-${Date.now()}`,
       type: mappedType,
-      title: notifType,
+      title: topic || 'eBay notification',
       preview: JSON.stringify(body.data ?? {}).slice(0, 200),
-      read: false,
-      metadata: body as Record<string, unknown>,
-      created_at: new Date().toISOString(),
+      metadata: { ...body, platformNotificationId: body.notificationId ?? `ebay-${Date.now()}` },
     });
   } catch (err) {
-    // Log but don't fail — eBay requires a 200 response or it will retry
+    // Log but return 200 — eBay retries on non-2xx which would cause duplicates
     console.error('eBay webhook insert error:', err);
   }
 

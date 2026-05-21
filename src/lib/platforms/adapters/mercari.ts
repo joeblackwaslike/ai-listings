@@ -13,7 +13,8 @@ import type {
 import { UnsupportedOperationError, AuthExpiredError, PlatformError } from '../errors';
 
 const SHOPS_API = 'https://api.mercari-shops.com/v1/graphql';
-const CONSUMER_API = 'https://api.mercari.jp/v2/entities:search';
+// US marketplace — mercari.jp returns JPY which would be misinterpreted as USD cents
+const CONSUMER_API = 'https://api.mercari.com/v2/entities:search';
 
 export class MercariAdapter implements PlatformSDK {
   platform = 'mercari' as const;
@@ -65,7 +66,7 @@ export class MercariAdapter implements PlatformSDK {
         title: item.name ?? '',
         soldPrice: Math.round((item.price ?? 0) * 100),
         condition: mapMercariCondition(item.itemConditionId),
-        url: `https://jp.mercari.com/item/${item.id}`,
+        url: `https://www.mercari.com/us/item/${item.id}`,
         soldAt: item.updated ? new Date(item.updated * 1000) : null,
       }));
     } catch (err) {
@@ -170,7 +171,7 @@ export class MercariAdapter implements PlatformSDK {
     }
   }
 
-  async getOrders(): Promise<PlatformOrder[]> {
+  async getOrders(since?: Date): Promise<PlatformOrder[]> {
     const query = `
       query ListOrders {
         orders(status: PENDING) {
@@ -185,7 +186,8 @@ export class MercariAdapter implements PlatformSDK {
     `;
     try {
       const data = await this.gql.request<{ orders: { nodes: MercariShopsOrder[] } }>(query);
-      return (data.orders.nodes ?? []).map(mapShopsOrder);
+      const orders = (data.orders.nodes ?? []).map(mapShopsOrder);
+      return since ? orders.filter((o) => o.createdAt >= since) : orders;
     } catch (err) {
       throw mapMercariError(err, this.platform);
     }

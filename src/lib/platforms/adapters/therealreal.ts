@@ -15,7 +15,7 @@ import { getTheRealRealCreds } from '@/lib/platforms/credentials';
 const APIFY_ACTOR = 'lexis-solutions~therealreal-com-scraper';
 const APIFY_BASE = 'https://api.apify.com/v2';
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 60_000;
+const POLL_TIMEOUT_MS = 25_000; // Stay under serverless function default timeout (~30s)
 
 interface ApifyRun {
   id: string;
