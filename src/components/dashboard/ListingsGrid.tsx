@@ -33,7 +33,7 @@ export function ListingsGrid({ initialListings }: Readonly<{ initialListings: Li
 
       const { data } = await supabase
         .from('listings')
-        .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, agent_blocked, pipeline_step, pipeline_total')
+        .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, agent_blocked, agent_blocked_reason, pipeline_step, pipeline_total')
         .in('id', activeIds)
       if (data) {
         setListings((prev) => {
