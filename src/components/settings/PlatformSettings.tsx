@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -51,18 +51,16 @@ const PLATFORMS: PlatformDef[] = [
       { kind: 'oauth', platform: 'mercari', key: 'mercari_api_token', label: 'Mercari' },
     ],
     supportsRules: true,
-    devPortalUrl: 'https://open.mercari.com/',
   },
   {
     id: 'imgur',
     name: 'Imgur',
-    description: 'Connect your Imgur account to host listing images.',
+    description: 'Connect your Imgur account to host listing images. Note: Imgur app registration is currently broken — new apps cannot be created.',
     fields: [
       { kind: 'text', key: 'imgur_client_id', label: 'Client ID', placeholder: 'from api.imgur.com/#registerapp' },
       { kind: 'password', key: 'imgur_client_secret', label: 'Client secret' },
       { kind: 'oauth', platform: 'imgur', key: 'imgur_access_token', label: 'Imgur' },
     ],
-    devPortalUrl: 'https://api.imgur.com/#registerapp',
   },
   {
     id: 'reddit',
@@ -87,7 +85,7 @@ const PLATFORMS: PlatformDef[] = [
       { kind: 'oauth', platform: 'etsy', key: 'etsy_access_token', label: 'Etsy' },
     ],
     supportsRules: true,
-    devPortalUrl: 'https://www.etsy.com/developers/your-account/apps/create',
+    devPortalUrl: 'https://www.etsy.com/developers',
   },
   {
     id: 'ebay',
@@ -106,7 +104,7 @@ const PLATFORMS: PlatformDef[] = [
 
 // ── sub-components ───────────────────────────────────────────────────────────
 
-function OAuthButton({ platform, label, connected }: { platform: string; label: string; connected: boolean }) {
+function OAuthButton({ platform, label, connected }: Readonly<{ platform: string; label: string; connected: boolean }>) {
   return (
     <div className="flex items-center gap-3">
       <a
@@ -125,10 +123,10 @@ function OAuthButton({ platform, label, connected }: { platform: string; label: 
 function TextSettingRow({
   fieldDef,
   initialValue,
-}: {
+}: Readonly<{
   fieldDef: TextFieldDef
   initialValue: string
-}) {
+}>) {
   const [value, setValue] = useState(initialValue)
   const [savedValue, setSavedValue] = useState(initialValue)
   const [pending, setPending] = useState(false)
@@ -160,11 +158,18 @@ function TextSettingRow({
   const sharedClass =
     'bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-700 outline-none focus:border-gray-600 transition-colors'
 
+  const fieldId = `field-${fieldDef.key}`
+  let saveLabel: ReactNode = 'Save'
+  if (pending) saveLabel = 'Saving…'
+  else if (status === 'error') saveLabel = <span className="text-red-400">Failed</span>
+  else if (status === 'saved') saveLabel = 'Saved'
+
   return (
     <div className="space-y-1.5">
-      <label className="block text-[10px] text-gray-500">{fieldDef.label}</label>
+      <label htmlFor={fieldId} className="block text-[10px] text-gray-500">{fieldDef.label}</label>
       {fieldDef.kind === 'textarea' ? (
         <textarea
+          id={fieldId}
           rows={3}
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -175,6 +180,7 @@ function TextSettingRow({
       ) : (
         <div className="flex gap-2">
           <input
+            id={fieldId}
             type={fieldDef.kind === 'password' ? 'password' : 'text'}
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -187,7 +193,7 @@ function TextSettingRow({
             disabled={!value.trim() || value.trim() === savedValue || pending}
             className="flex-none px-3 py-2 text-xs rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {pending ? 'Saving…' : status === 'error' ? <span className="text-red-400">Failed</span> : status === 'saved' ? 'Saved' : 'Save'}
+            {saveLabel}
           </button>
         </div>
       )}
@@ -204,10 +210,10 @@ function TextSettingRow({
 function RulesUrlRow({
   platform,
   initialValue,
-}: {
+}: Readonly<{
   platform: string
   initialValue: string
-}) {
+}>) {
   const [value, setValue] = useState(initialValue)
   const [savedValue, setSavedValue] = useState(initialValue)
   const [pending, setPending] = useState(false)
@@ -243,11 +249,18 @@ function RulesUrlRow({
   const sharedClass =
     'bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-700 outline-none focus:border-gray-600 transition-colors'
 
+  const rulesFieldId = `rules-url-${platform}`
+  let fetchLabel: ReactNode = 'Fetch'
+  if (pending) fetchLabel = 'Fetching…'
+  else if (status === 'error') fetchLabel = <span className="text-red-400">Failed</span>
+  else if (status === 'cached') fetchLabel = 'Cached'
+
   return (
     <div className="space-y-1.5">
-      <label className="block text-[10px] text-gray-500">Listing rules URL</label>
+      <label htmlFor={rulesFieldId} className="block text-[10px] text-gray-500">Listing rules URL</label>
       <div className="flex gap-2">
         <input
+          id={rulesFieldId}
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -260,7 +273,7 @@ function RulesUrlRow({
           disabled={!value.trim() || value.trim() === savedValue || pending}
           className="flex-none px-3 py-2 text-xs rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {pending ? 'Fetching…' : status === 'error' ? <span className="text-red-400">Failed</span> : status === 'cached' ? 'Cached' : 'Fetch'}
+          {fetchLabel}
         </button>
       </div>
       {status === 'cached' && previewLength !== null && (
@@ -278,12 +291,12 @@ function PlatformSection({
   existingSettings,
   existingRules,
   siteUrl,
-}: {
+}: Readonly<{
   platform: PlatformDef
   existingSettings: Record<string, string>
   existingRules?: Record<string, string>
   siteUrl: string
-}) {
+}>) {
   const hasOAuth = platform.fields.some((f) => f.kind === 'oauth')
   const callbackUrl = hasOAuth ? `${siteUrl}/api/auth/callback/${platform.id}` : null
 
