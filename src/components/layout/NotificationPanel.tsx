@@ -46,12 +46,7 @@ export function NotificationPanel({ onClose, onCountChange }: NotificationPanelP
   const [loading, setLoading] = useState(true)
   const [thread, setThread] = useState<{ platform: string; threadId: string } | null>(null)
 
-  useEffect(() => {
-    void load()
-  }, [])
-
   async function load() {
-    setLoading(true)
     try {
       const res = await fetch('/api/notifications')
       if (!res.ok) return
@@ -61,6 +56,10 @@ export function NotificationPanel({ onClose, onCountChange }: NotificationPanelP
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    void load()
+  }, [])
 
   async function markAllRead() {
     const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.id)

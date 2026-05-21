@@ -39,16 +39,7 @@ export function MessageThreadPanel({ platform, threadId, onClose }: MessageThrea
   const [replyText, setReplyText] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    void load()
-  }, [platform, threadId])
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
   async function load() {
-    setLoading(true)
     try {
       const supabase = createClient()
       const { data, error } = await supabase
@@ -65,6 +56,14 @@ export function MessageThreadPanel({ platform, threadId, onClose }: MessageThrea
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    void load()
+  }, [platform, threadId])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   const platformLabel = platform.charAt(0).toUpperCase() + platform.slice(1).replace(/_/g, ' ')
 
