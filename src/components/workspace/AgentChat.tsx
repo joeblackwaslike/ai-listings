@@ -327,7 +327,7 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
           }
           return (
             <div key={msg.id} className="flex justify-start">
-              <div className="max-w-[90%] rounded-2xl rounded-tl-sm px-3 py-2">
+              <div className="max-w-[90%] rounded-2xl rounded-tl-sm px-3 py-2 bg-gray-900 border border-gray-700">
                 <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
               </div>
             </div>

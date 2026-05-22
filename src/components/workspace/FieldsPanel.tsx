@@ -155,6 +155,14 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
                 <span className="text-xs text-gray-500">{listing.confidence_score}% confidence</span>
               )}
             </div>
+            {listing.price_to_move_cents != null && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-amber-400 font-medium">{formatPrice(listing.price_to_move_cents)}</span>
+                <span className="text-xs text-gray-500">
+                  to move{listing.price_to_move_discount_pct != null && <> · {Math.round(listing.price_to_move_discount_pct)}% off moves faster</>}
+                </span>
+              </div>
+            )}
             {comps.length > 0 ? (
               <button
                 onClick={() => setEvidenceOpen(true)}

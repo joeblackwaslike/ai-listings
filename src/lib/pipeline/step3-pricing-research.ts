@@ -309,6 +309,9 @@ function calcConfidenceScore(compCount: number): number {
   return 20
 }
 
+const COMP_RELEVANCE_THRESHOLD = 6
+const COMP_FILTER_BATCH = 25
+
 async function filterRelevantComps(
   comps: Array<{ title: string }>,
   brand: string,
@@ -317,46 +320,49 @@ async function filterRelevantComps(
   anthropicApiKey: string
 ): Promise<Set<number>> {
   if (comps.length === 0) return new Set()
+  const keepIndices = new Set<number>()
   try {
-    const titlesBlock = comps.map((c, i) => `${i}. ${c.title}`).join('\n')
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': anthropicApiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+    const client = new Anthropic({ apiKey: anthropicApiKey })
+    for (let start = 0; start < comps.length; start += COMP_FILTER_BATCH) {
+      const batch = comps.slice(start, start + COMP_FILTER_BATCH)
+      const titlesBlock = batch.map((c, i) => `${start + i}. ${c.title}`).join('\n')
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5',
         max_tokens: 512,
         messages: [
           {
             role: 'user',
-            content: `I'm finding sold comps for: "${brand} ${model}" (category: ${category}).
+            content: `Score each title by semantic similarity to: "${brand} ${model}" (${category}).
 
-Filter this list to ONLY keep items that are genuinely the same product type. Remove items that are:
-- A different product type (e.g. if searching sneakers, remove stationery, clothing, bags, watches, accessories)
-- Clearly a different product from a different category
-- Accessories or related merchandise, not the item itself
+Scale 0–10:
+10 = exact same item (brand + model + product type all match)
+7–9 = same brand and product type, minor variant (colorway, size)
+4–6 = same general category but possibly different model or brand
+0–3 = different product entirely
 
-Return ONLY a JSON array of the 0-based indices to KEEP. Example: [0, 3, 7]
-If none are relevant, return [].
+Return ONLY a JSON object mapping index → score. Example: {"0":8,"1":2,"3":9}
 
 Titles:
 ${titlesBlock}`,
           },
         ],
-      }),
-    })
-    if (!res.ok) return new Set(comps.map((_, i) => i))
-    const data = (await res.json()) as { content: { type: string; text: string }[] }
-    const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
-    const match = text.match(/\[[\d,\s]*\]/)
-    if (!match) return new Set(comps.map((_, i) => i))
-    const indices = JSON.parse(match[0]) as number[]
-    return new Set(indices)
+      })
+      const textBlock = response.content.find((b) => b.type === 'text')
+      if (textBlock?.type !== 'text') continue
+      const match = /\{[^}]+\}/.exec(textBlock.text)
+      if (!match) continue
+      let scores: Record<string, number>
+      try {
+        scores = JSON.parse(match[0]) as Record<string, number>
+      } catch {
+        continue
+      }
+      for (const [idx, score] of Object.entries(scores)) {
+        if (score >= COMP_RELEVANCE_THRESHOLD) keepIndices.add(Number(idx))
+      }
+    }
+    return keepIndices
   } catch {
-    // Non-fatal — if filtering fails, keep everything
     return new Set(comps.map((_, i) => i))
   }
 }
