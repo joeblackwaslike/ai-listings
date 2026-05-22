@@ -309,6 +309,58 @@ function calcConfidenceScore(compCount: number): number {
   return 20
 }
 
+async function filterRelevantComps(
+  comps: Array<{ title: string }>,
+  brand: string,
+  model: string,
+  category: string,
+  anthropicApiKey: string
+): Promise<Set<number>> {
+  if (comps.length === 0) return new Set()
+  try {
+    const titlesBlock = comps.map((c, i) => `${i}. ${c.title}`).join('\n')
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': anthropicApiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        messages: [
+          {
+            role: 'user',
+            content: `I'm finding sold comps for: "${brand} ${model}" (category: ${category}).
+
+Filter this list to ONLY keep items that are genuinely the same product type. Remove items that are:
+- A different product type (e.g. if searching sneakers, remove stationery, clothing, bags, watches, accessories)
+- Clearly a different product from a different category
+- Accessories or related merchandise, not the item itself
+
+Return ONLY a JSON array of the 0-based indices to KEEP. Example: [0, 3, 7]
+If none are relevant, return [].
+
+Titles:
+${titlesBlock}`,
+          },
+        ],
+      }),
+    })
+    if (!res.ok) return new Set(comps.map((_, i) => i))
+    const data = (await res.json()) as { content: { type: string; text: string }[] }
+    const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
+    const match = text.match(/\[[\d,\s]*\]/)
+    if (!match) return new Set(comps.map((_, i) => i))
+    const indices = JSON.parse(match[0]) as number[]
+    return new Set(indices)
+  } catch {
+    // Non-fatal — if filtering fails, keep everything
+    return new Set(comps.map((_, i) => i))
+  }
+}
+
 export async function runStep3PricingResearch(
   listingId: string,
   step2: VisionAnalysis,
@@ -395,16 +447,22 @@ export async function runStep3PricingResearch(
     })
   }
 
-  if (compRows.length > 0) {
-    const { error } = await supabase.from('pricing_comps').insert(compRows)
+  // Filter out irrelevant comps (wrong product type, unrelated merchandise)
+  const relevantIndices = apiKeys.anthropic
+    ? await filterRelevantComps(compRows, step2.brand, model, step2.category, apiKeys.anthropic)
+    : new Set(compRows.map((_, i) => i))
+  const filteredComps = compRows.filter((_, i) => relevantIndices.has(i))
+
+  if (filteredComps.length > 0) {
+    const { error } = await supabase.from('pricing_comps').insert(filteredComps)
     if (error) {
       throw new Error(`step3: pricing_comps insert failed — ${error.message}`)
     }
   }
 
-  const confidenceScore = calcConfidenceScore(compRows.length)
+  const confidenceScore = calcConfidenceScore(filteredComps.length)
 
-  const prices = compRows.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+  const prices = filteredComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
   const mid = Math.floor(prices.length / 2)
   const suggestedPriceCents =
     prices.length === 0
@@ -436,10 +494,10 @@ export async function runStep3PricingResearch(
     .eq('listing_id', listingId)
     .order('created_at', { ascending: true })
 
-  const sources = [...new Set(compRows.map((r) => r.source))]
+  const sources = [...new Set(filteredComps.map((r) => r.source))]
   const methodologyText = apiKeys.anthropic
     ? await generatePricingMethodology(
-        compRows.length,
+        filteredComps.length,
         sources,
         suggestedPriceCents,
         priceToMoveCents,
@@ -476,7 +534,7 @@ export async function runStep3PricingResearch(
         listing_id: listingId,
         event_type: 'initial',
         price_cents: suggestedPriceCents,
-        note: `Initial pricing — ${compRows.length} comps, ${Math.round(confidenceScore)}% confidence`,
+        note: `Initial pricing — ${filteredComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
       })
     }
   } catch {

@@ -152,7 +152,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
             },
             condition_notes: {
               type: 'string',
-              description: 'Specific condition details visible in this photo',
+              description: 'Specific condition details visible in this photo. Be accurate and precise — describe exactly where wear appears and what areas are in good condition. Write from a marketplace seller perspective: be specific about location and severity (e.g. "minor scuffs on white rubber outsole near heel" not "heavy wear throughout"). Note what is clean and intact alongside what shows wear. Never use vague language like "general soiling", "wear throughout", or "heavily" unless the damage is clearly severe and widespread across multiple areas. Only describe what you can definitively see.',
             },
             notable_features: {
               type: 'array',
