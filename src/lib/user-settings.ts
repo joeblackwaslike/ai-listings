@@ -3,11 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 export type SettingType = 'string' | 'number' | 'decimal' | 'date' | 'json' | 'array' | 'credential'
 
 export const PLATFORM_SETTING_KEYS = new Set([
-  // Reddit / mechmarket (script app — no OAuth redirect)
-  'reddit_username',
-  'reddit_password',
-  'reddit_client_id',
-  'reddit_client_secret',
+  // Reddit / mechmarket (token_v2 cookie — no app required)
+  'reddit_token_v2',
   'us_state',
   // Poshmark (cookie-based)
   'poshmark_cookies',
