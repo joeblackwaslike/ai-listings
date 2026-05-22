@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { X, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import { relativeDate, formatPrice } from '@/lib/utils'
 import type { PricingComp, ListingPriceEvent } from '@/types/listings'
 
@@ -205,7 +206,9 @@ export function EvidenceDrawer({
                 Methodology
               </button>
               {methodologyOpen && (
-                <p className="mt-2 text-xs text-gray-500 leading-relaxed">{pricingMethodology}</p>
+                <div className="mt-2 text-xs text-gray-500 leading-relaxed prose prose-invert prose-xs max-w-none [&_h1]:text-[11px] [&_h2]:text-[11px] [&_h3]:text-[11px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:text-gray-400 [&_h2]:text-gray-400 [&_h3]:text-gray-400 [&_ul]:pl-3 [&_li]:my-0 [&_strong]:text-gray-400 [&_p]:my-1">
+                  <ReactMarkdown>{pricingMethodology}</ReactMarkdown>
+                </div>
               )}
             </div>
           )}

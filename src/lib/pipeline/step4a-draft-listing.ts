@@ -101,7 +101,8 @@ ${rulesSection}Rules:
 - Poshmark title: natural, 60 chars max
 - eBay item specifics: brand, style/model, color, material, condition, size/dimensions where relevant
 - eBay category_id: use standard eBay category ID numbers (Handbags: 169291, Sneakers: 155202, Electronics/phones: 9355, Clothing tops: 53159)
-- Descriptions should be factual, buyer-oriented, no filler phrases like "don't miss out"`
+- Descriptions should be factual, buyer-oriented, no filler phrases like "don't miss out"
+- Do NOT end descriptions with a "Condition: X — ..." summary block — condition is displayed separately in the listing fields. Condition context may be woven naturally into the description body where relevant, but never as a labeled "Condition:" section at the end.`
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
