@@ -195,7 +195,7 @@ function TextSettingRow({
           </button>
         </div>
       )}
-      {status === 'saved' && fieldDef.kind === 'textarea' && (
+      {status === 'saved' && (
         <p className="text-[10px] text-emerald-500">Saved</p>
       )}
       {status === 'error' && (
