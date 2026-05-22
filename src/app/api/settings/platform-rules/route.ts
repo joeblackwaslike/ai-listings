@@ -123,7 +123,9 @@ export async function PATCH(req: Request) {
     if (err instanceof Error && err.name === 'AbortError') {
       return Response.json({ error: 'Timed out fetching rules page' }, { status: 422 })
     }
-    return Response.json({ error: 'Failed to fetch rules page' }, { status: 422 })
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[platform-rules] fetch failed:', msg)
+    return Response.json({ error: `Failed to fetch rules page: ${msg}` }, { status: 422 })
   }
 
   const admin = getSupabaseAdmin()

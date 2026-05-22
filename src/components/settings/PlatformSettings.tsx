@@ -216,6 +216,7 @@ function RulesUrlRow({
   const [savedValue, setSavedValue] = useState(initialValue)
   const [pending, setPending] = useState(false)
   const [status, setStatus] = useState<'idle' | 'cached' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [previewLength, setPreviewLength] = useState<number | null>(null)
 
   async function save() {
@@ -230,8 +231,10 @@ function RulesUrlRow({
         body: JSON.stringify({ platform, rulesUrl: trimmed }),
       })
       if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string }
+        setErrorMsg(errData.error ?? 'Failed to fetch rules page')
         setStatus('error')
-        setTimeout(() => setStatus('idle'), 3000)
+        setTimeout(() => setStatus('idle'), 5000)
         return
       }
       const data = await res.json() as { ok: boolean; previewLength?: number }
@@ -278,7 +281,7 @@ function RulesUrlRow({
         <p className="text-[10px] text-emerald-500">Rules cached ({previewLength} chars)</p>
       )}
       {status === 'error' && (
-        <p className="text-[10px] text-red-400">Failed to fetch rules page</p>
+        <p className="text-[10px] text-red-400">{errorMsg ?? 'Failed to fetch rules page'}</p>
       )}
     </div>
   )
