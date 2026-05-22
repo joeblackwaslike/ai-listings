@@ -1,12 +1,17 @@
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { removeBackground } from './remove-background'
 
+// Categories where background removal makes the item look worse (chains, delicate jewelry)
+const SKIP_BG_REMOVAL = new Set(['jewelry'])
+
 export async function runStep4bPhotoRoom(
   listingId: string,
   photoUrl: string,
   intakePhotoId: string,
-  apiKeys: ApiKeys
+  apiKeys: ApiKeys,
+  category?: string
 ): Promise<void> {
+  if (category && SKIP_BG_REMOVAL.has(category.toLowerCase())) return
   const storagePath = `intake/${listingId}/processed.png`
   await removeBackground(intakePhotoId, photoUrl, storagePath, apiKeys)
 }

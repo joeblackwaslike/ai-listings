@@ -267,6 +267,28 @@ ${postsText}`,
   }
 }
 
+function parseSoldDate(extensions?: string[]): string | null {
+  if (!extensions) return null
+  for (const ext of extensions) {
+    const m = /Sold\s+([A-Za-z]+ \d+,\s*\d{4})/i.exec(ext)
+    if (m) {
+      try { return new Date(m[1]).toISOString() } catch { /* ignore */ }
+    }
+  }
+  return null
+}
+
+function removeOutlierComps<T extends { adjusted_price_cents: number }>(comps: T[]): T[] {
+  if (comps.length < 4) return comps
+  const sorted = [...comps].sort((a, b) => a.adjusted_price_cents - b.adjusted_price_cents)
+  const q1 = sorted[Math.floor(sorted.length * 0.25)].adjusted_price_cents
+  const q3 = sorted[Math.floor(sorted.length * 0.75)].adjusted_price_cents
+  const iqr = q3 - q1
+  const lo = q1 - 1.5 * iqr
+  const hi = q3 + 1.5 * iqr
+  return comps.filter((c) => c.adjusted_price_cents >= lo && c.adjusted_price_cents <= hi)
+}
+
 function conditionDelta(
   listingCondition: string,
   compCondition: string
@@ -317,10 +339,15 @@ async function filterRelevantComps(
   brand: string,
   model: string,
   category: string,
+  notableFeatures: string[],
   anthropicApiKey: string
 ): Promise<Set<number>> {
   if (comps.length === 0) return new Set()
   const keepIndices = new Set<number>()
+  const featureHints = notableFeatures.slice(0, 4).join(', ')
+  const targetDesc = featureHints
+    ? `"${brand} ${model}" (${category}) — key attributes: ${featureHints}`
+    : `"${brand} ${model}" (${category})`
   try {
     const client = new Anthropic({ apiKey: anthropicApiKey })
     for (let start = 0; start < comps.length; start += COMP_FILTER_BATCH) {
@@ -332,13 +359,15 @@ async function filterRelevantComps(
         messages: [
           {
             role: 'user',
-            content: `Score each title by semantic similarity to: "${brand} ${model}" (${category}).
+            content: `Score each title by how well it matches this specific item: ${targetDesc}.
 
 Scale 0–10:
-10 = exact same item (brand + model + product type all match)
-7–9 = same brand and product type, minor variant (colorway, size)
-4–6 = same general category but possibly different model or brand
-0–3 = different product entirely
+10 = exact match (brand, model, AND key attributes like color/material all match)
+7–9 = same brand and model, minor variant (slightly different colorway or size)
+4–6 = same brand and product type but wrong color, pattern, or model
+0–3 = different product, wrong brand, or unrelated item
+
+Key attributes like color and material MUST match to score above 6. If the target has a specific colorway (e.g. "graffiti", "black", "sterling silver") and the comp title mentions a different one, cap the score at 5.
 
 Return ONLY a JSON object mapping index → score. Example: {"0":8,"1":2,"3":9}
 
@@ -409,7 +438,7 @@ export async function runStep3PricingResearch(
       title: item.title,
       sale_price_cents: priceCents,
       condition,
-      sold_at: null,
+      sold_at: parseSoldDate(item.extensions),
       listing_url: item.link,
       condition_delta: delta,
       adjusted_price_cents: adjustForCondition(priceCents, delta),
@@ -453,11 +482,14 @@ export async function runStep3PricingResearch(
     })
   }
 
-  // Filter out irrelevant comps (wrong product type, unrelated merchandise)
+  // Filter out irrelevant comps (wrong product type, wrong color/variant, unrelated merchandise)
   const relevantIndices = apiKeys.anthropic
-    ? await filterRelevantComps(compRows, step2.brand, model, step2.category, apiKeys.anthropic)
+    ? await filterRelevantComps(compRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
     : new Set(compRows.map((_, i) => i))
-  const filteredComps = compRows.filter((_, i) => relevantIndices.has(i))
+  const relevantComps = compRows.filter((_, i) => relevantIndices.has(i))
+
+  // Remove statistical price outliers (IQR method) to prevent bulk lots / data errors from skewing the median
+  const filteredComps = removeOutlierComps(relevantComps)
 
   if (filteredComps.length > 0) {
     const { error } = await supabase.from('pricing_comps').insert(filteredComps)

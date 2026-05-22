@@ -120,7 +120,7 @@ export const intakePipeline = inngest.createFunction(
         runStep4aDraftListing(listingId, step2Result, suggestedPriceCents, apiKeys)
       ),
       step.run('photoroom-process', () =>
-        runStep4bPhotoRoom(listingId, photoUrl, intakePhotoId, apiKeys)
+        runStep4bPhotoRoom(listingId, photoUrl, intakePhotoId, apiKeys, step2Result.category)
       ),
     ])
 
