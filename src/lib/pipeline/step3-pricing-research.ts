@@ -278,11 +278,42 @@ function parseSoldDate(extensions?: string[]): string | null {
   return null
 }
 
+function deduplicateComps<T extends { adjusted_price_cents: number; title: string }>(comps: T[]): T[] {
+  // Remove bulk-lot duplicates: same seller listing same item 10+ times at identical price
+  const kept: T[] = []
+  const priceBucketCount = new Map<number, number>()
+  for (const c of comps) {
+    const bucket = Math.round(c.adjusted_price_cents / 100) // bucket by dollar
+    const count = priceBucketCount.get(bucket) ?? 0
+    if (count < 2) {
+      kept.push(c)
+      priceBucketCount.set(bucket, count + 1)
+    }
+  }
+  return kept
+}
+
 function removeOutlierComps<T extends { adjusted_price_cents: number }>(comps: T[]): T[] {
   if (comps.length < 4) return comps
   const sorted = [...comps].sort((a, b) => a.adjusted_price_cents - b.adjusted_price_cents)
-  const q1 = sorted[Math.floor(sorted.length * 0.25)].adjusted_price_cents
-  const q3 = sorted[Math.floor(sorted.length * 0.75)].adjusted_price_cents
+  const prices = sorted.map((c) => c.adjusted_price_cents)
+
+  // Detect bimodal distribution: find the largest relative gap between consecutive prices
+  let maxGapIdx = 0
+  let maxGapRatio = 0
+  for (let i = 1; i < prices.length; i++) {
+    const ratio = prices[i] / prices[i - 1]
+    if (ratio > maxGapRatio) { maxGapRatio = ratio; maxGapIdx = i }
+  }
+
+  // If the gap is > 4× (e.g. $375 → $3,750), use only the lower cluster (single items vs. bulk lots)
+  if (maxGapRatio > 4 && maxGapIdx >= 2) {
+    return sorted.slice(0, maxGapIdx)
+  }
+
+  // Otherwise fall back to IQR
+  const q1 = prices[Math.floor(prices.length * 0.25)]
+  const q3 = prices[Math.floor(prices.length * 0.75)]
   const iqr = q3 - q1
   const lo = q1 - 1.5 * iqr
   const hi = q3 + 1.5 * iqr
@@ -362,12 +393,15 @@ async function filterRelevantComps(
             content: `Score each title by how well it matches this specific item: ${targetDesc}.
 
 Scale 0–10:
-10 = exact match (brand, model, AND key attributes like color/material all match)
-7–9 = same brand and model, minor variant (slightly different colorway or size)
-4–6 = same brand and product type but wrong color, pattern, or model
-0–3 = different product, wrong brand, or unrelated item
+10 = exact match (brand, model, AND key attributes like color/material/sub-type all match)
+7–9 = same brand, model, and sub-type; minor variant (slightly different colorway or size)
+4–6 = same brand and sub-type but wrong color, pattern, or model variant
+0–3 = wrong sub-type, wrong brand, or unrelated item
 
-Key attributes like color and material MUST match to score above 6. If the target has a specific colorway (e.g. "graffiti", "black", "sterling silver") and the comp title mentions a different one, cap the score at 5.
+Rules:
+- Sub-type MUST match to score above 3. A card holder is not a wallet. A bifold wallet is not a zip-around. A pendant necklace is not a bracelet. A backpack is not a tote. Wrong sub-type = 0–3.
+- Color/material MUST match to score above 6. If the target has a specific colorway or pattern (e.g. "graffiti", "sterling silver", "white lambskin") and the comp mentions a different one, cap at 5.
+- Bulk lots (e.g. "lot of 10", clearly re-seller inventory) = 0.
 
 Return ONLY a JSON object mapping index → score. Example: {"0":8,"1":2,"3":9}
 
@@ -482,13 +516,16 @@ export async function runStep3PricingResearch(
     })
   }
 
+  // Deduplicate same-price clusters before relevance filtering (catches bulk-lot duplicate listings)
+  const dedupedRows = deduplicateComps(compRows)
+
   // Filter out irrelevant comps (wrong product type, wrong color/variant, unrelated merchandise)
   const relevantIndices = apiKeys.anthropic
-    ? await filterRelevantComps(compRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
-    : new Set(compRows.map((_, i) => i))
-  const relevantComps = compRows.filter((_, i) => relevantIndices.has(i))
+    ? await filterRelevantComps(dedupedRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
+    : new Set(dedupedRows.map((_, i) => i))
+  const relevantComps = dedupedRows.filter((_, i) => relevantIndices.has(i))
 
-  // Remove statistical price outliers (IQR method) to prevent bulk lots / data errors from skewing the median
+  // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
 
   if (filteredComps.length > 0) {
