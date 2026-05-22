@@ -183,7 +183,6 @@ interface RedditPost {
 interface RedditExtracted {
   title: string
   price_cents: number
-  sold_at_approx: string | null
 }
 
 async function fetchRedditMechmarketComps(
@@ -232,7 +231,7 @@ async function fetchRedditMechmarketComps(
       messages: [
         {
           role: 'user',
-          content: `Extract selling prices for ${brand} ${model} from these mechmarket posts. Return a JSON array only (no prose, no markdown fences): [{ "title": string, "price_cents": number, "sold_at_approx": string | null }]. Only include posts that appear to be actual sale listings with a clear price. If no qualifying posts exist, return [].
+          content: `Extract selling prices for ${brand} ${model} from these mechmarket posts. Return a JSON array only (no prose, no markdown fences): [{ "title": string, "price_cents": number }]. Only include posts that appear to be actual sale listings with a clear price. If no qualifying posts exist, return [].
 
 ${postsText}`,
         },
@@ -261,24 +260,13 @@ ${postsText}`,
           source: 'reddit',
           title: e.title,
           sale_price_cents: Math.round(e.price_cents),
-          sold_at: e.sold_at_approx ?? null,
+          sold_at: matchedPost ? new Date(matchedPost.created_utc * 1000).toISOString() : null,
           listing_url: matchedPost?.url ?? `https://www.reddit.com/r/mechmarket/search/?q=${encodeURIComponent(brand + ' ' + model)}`,
         }
       })
   } catch {
     return []
   }
-}
-
-function parseSoldDate(extensions?: string[]): string | null {
-  if (!extensions) return null
-  for (const ext of extensions) {
-    const m = /Sold\s+([A-Za-z]+ \d+,\s*\d{4})/i.exec(ext)
-    if (m) {
-      try { return new Date(m[1]).toISOString() } catch { /* ignore */ }
-    }
-  }
-  return null
 }
 
 function deduplicateComps<T extends { adjusted_price_cents: number; title: string }>(comps: T[]): T[] {
@@ -482,7 +470,7 @@ export async function runStep3PricingResearch(
       title: item.title,
       sale_price_cents: priceCents,
       condition,
-      sold_at: parseSoldDate(item.extensions),
+      sold_at: null,
       listing_url: item.link,
       condition_delta: delta,
       adjusted_price_cents: adjustForCondition(priceCents, delta),
