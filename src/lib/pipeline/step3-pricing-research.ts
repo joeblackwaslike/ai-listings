@@ -33,9 +33,12 @@ async function fetchSerpEbayComps(
   brand: string,
   category: string,
   model: string,
-  apiKey: string
+  apiKey: string,
+  refNumber?: string
 ): Promise<SerpEbayResult[]> {
-  const query = `${brand} ${model} ${category}`
+  const query = refNumber
+    ? `${brand} ${model} ${refNumber}`
+    : `${brand} ${model} ${category}`
   const url = new URL('https://serpapi.com/search')
   url.searchParams.set('engine', 'ebay')
   url.searchParams.set('_nkw', query)
@@ -400,7 +403,8 @@ Scale 0–10:
 
 Rules:
 - Sub-type MUST match to score above 3. A card holder is not a wallet. A bifold wallet is not a zip-around. A pendant necklace is not a bracelet. A backpack is not a tote. Wrong sub-type = 0–3.
-- Color/material MUST match to score above 6. If the target has a specific colorway or pattern (e.g. "graffiti", "sterling silver", "white lambskin") and the comp mentions a different one, cap at 5.
+- Product generation/version MUST match to score above 3. MK3 ≠ MK2 ≠ MK1. Gen 2 ≠ Gen 1. v3 ≠ v2. iPhone 14 ≠ iPhone 13. Wrong generation = 0–3.
+- Color/material MUST match to score above 6. If the target has a specific colorway or pattern (e.g. "graffiti", "sterling silver", "white lambskin", "tie-dye") and the comp mentions a different one, cap at 5.
 - Bulk lots (e.g. "lot of 10", clearly re-seller inventory) = 0.
 
 Return ONLY a JSON object mapping index → score. Example: {"0":8,"1":2,"3":9}
@@ -440,8 +444,14 @@ export async function runStep3PricingResearch(
 
   const isKeyboard = step2.category?.toLowerCase() === 'keyboards'
 
+  // For watches, extract ref number from notableFeatures for more specific eBay query
+  const isWatch = step2.category?.toLowerCase() === 'watches'
+  const refNumber = isWatch
+    ? step2.notableFeatures.map((f) => /ref\.?\s*([\w.-]+)/i.exec(f)?.[1]).find(Boolean)
+    : undefined
+
   const [ebayItems, serpResults, redditComps, retailResult] = await Promise.all([
-    fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi),
+    fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi, refNumber),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, apiKeys.anthropic)
