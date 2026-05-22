@@ -14,7 +14,8 @@ export const intakePipeline = inngest.createFunction(
     id: 'intake-pipeline',
     name: 'Intake Pipeline',
     triggers: [{ event: 'photo/uploaded' }],
-    retries: 3,
+    retries: 5,
+    concurrency: { limit: 4 },
     onFailure: async ({ error, event }) => {
       const { listingId } = (
         event as unknown as { data: { event: PhotoUploadedEvent } }
@@ -24,6 +25,8 @@ export const intakePipeline = inngest.createFunction(
       let userMessage: string
       if (reason.includes('invalid or unsupported') || reason.includes('base64.data') || reason.includes('file format')) {
         userMessage = 'Photo format not supported — re-upload as JPEG or PNG'
+      } else if (reason.includes('529') || reason.toLowerCase().includes('overloaded')) {
+        userMessage = 'AI API temporarily overloaded — all retries exhausted. Re-upload this item to try again.'
       } else if (reason.includes('ECONNREFUSED') || reason.includes('fetch failed')) {
         userMessage = 'Could not reach an external service — try again shortly'
       } else {
