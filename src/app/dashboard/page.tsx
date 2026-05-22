@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { ListingsGrid } from '@/components/dashboard/ListingsGrid'
 import type { ListingWithCover } from '@/components/dashboard/ListingCard'
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
+import { BlockedListingsBanner } from '@/components/dashboard/BlockedListingsBanner'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -40,9 +41,12 @@ export default async function DashboardPage() {
     coverPhoto: coverByListing.get(l.id) ?? undefined,
   }))
 
+  const blockedCount = listingsWithCovers.filter((l) => l.agent_blocked).length
+
   return (
     <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
       <DashboardHeader listingsCount={listingsWithCovers.length} />
+      {blockedCount > 0 && <BlockedListingsBanner blockedCount={blockedCount} />}
       <ListingsGrid initialListings={listingsWithCovers} />
     </main>
   )
