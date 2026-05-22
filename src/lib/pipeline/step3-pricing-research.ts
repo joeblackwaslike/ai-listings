@@ -186,12 +186,6 @@ interface RedditExtracted {
 async function fetchRedditMechmarketComps(
   brand: string,
   model: string,
-  redditCreds: {
-    clientId: string
-    clientSecret: string
-    refreshToken: string
-    userAgent: string
-  },
   anthropicApiKey: string
 ): Promise<Array<{
   source: string
@@ -201,26 +195,26 @@ async function fetchRedditMechmarketComps(
   listing_url: string
 }>> {
   try {
-    // Dynamic import to avoid bundling issues with snoowrap's CommonJS deps
-    const Snoowrap = (await import('snoowrap')).default
-    const r = new Snoowrap({
-      userAgent: redditCreds.userAgent,
-      clientId: redditCreds.clientId,
-      clientSecret: redditCreds.clientSecret,
-      refreshToken: redditCreds.refreshToken,
-    })
-
     const searchQuery = `[H] ${brand} ${model}`
-    const posts = await r.getSubreddit('mechmarket').search({
-      query: searchQuery,
+    const params = new URLSearchParams({
+      q: searchQuery,
       sort: 'new',
-      limit: 25,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
+      limit: '25',
+      restrict_sr: '1',
+      type: 'link',
+    })
+    const res = await fetch(
+      `https://www.reddit.com/r/mechmarket/search.json?${params.toString()}`,
+      { headers: { 'User-Agent': 'ai-listings/1.0' } }
+    )
+    if (!res.ok) return []
 
-    if (!posts || posts.length === 0) return []
+    const data = (await res.json()) as { data: { children: Array<{ data: RedditPost }> } }
+    const posts = (data?.data?.children ?? []).map((c) => c.data)
 
-    const top = (posts as RedditPost[]).slice(0, 15)
+    if (posts.length === 0) return []
+
+    const top = posts.slice(0, 15)
     const postsText = top
       .map(
         (p, i) =>
@@ -247,7 +241,6 @@ ${postsText}`,
 
     let extracted: RedditExtracted[] = []
     try {
-      // Strip markdown fences if Claude wrapped it anyway
       const json = raw.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
       extracted = JSON.parse(json)
       if (!Array.isArray(extracted)) return []
@@ -270,7 +263,6 @@ ${postsText}`,
         }
       })
   } catch {
-    // Never throw — Reddit is a best-effort enrichment
     return []
   }
 }
@@ -327,24 +319,11 @@ export async function runStep3PricingResearch(
 
   const isKeyboard = step2.category?.toLowerCase() === 'keyboards'
 
-  const redditCreds =
-    isKeyboard &&
-    process.env.REDDIT_CLIENT_ID &&
-    process.env.REDDIT_CLIENT_SECRET &&
-    process.env.REDDIT_REFRESH_TOKEN
-      ? {
-          clientId: process.env.REDDIT_CLIENT_ID,
-          clientSecret: process.env.REDDIT_CLIENT_SECRET,
-          refreshToken: process.env.REDDIT_REFRESH_TOKEN,
-          userAgent: process.env.REDDIT_USER_AGENT ?? 'ai-listings-bot/1.0 (by /u/joeblackwaslike)',
-        }
-      : null
-
   const [ebayItems, serpResults, redditComps, retailResult] = await Promise.all([
     fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
-    redditCreds && apiKeys.anthropic
-      ? fetchRedditMechmarketComps(step2.brand, model, redditCreds, apiKeys.anthropic)
+    isKeyboard && apiKeys.anthropic
+      ? fetchRedditMechmarketComps(step2.brand, model, apiKeys.anthropic)
       : Promise.resolve([]),
     fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
   ])

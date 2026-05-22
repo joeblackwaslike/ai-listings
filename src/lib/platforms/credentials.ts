@@ -6,10 +6,7 @@ export type PlatformCreds = {
   mercari: { accessToken: string };
   etsy: { clientId: string; accessToken: string; refreshToken: string; shopId: string };
   mechmarket: {
-    redditClientId: string;
-    redditClientSecret: string;
-    redditPassword: string;
-    redditUsername: string;
+    redditToken: string;
     usState: string;
   };
 };
@@ -48,13 +45,10 @@ export async function getEtsyCreds(userId: string): Promise<PlatformCreds['etsy'
 }
 
 export async function getMechmarketCreds(userId: string): Promise<PlatformCreds['mechmarket'] | null> {
-  const [redditClientId, redditClientSecret, redditPassword, redditUsername, usState] = await Promise.all([
-    getSetting(userId, 'reddit_client_id'),
-    getSetting(userId, 'reddit_client_secret'),
-    getSetting(userId, 'reddit_password'),
-    getSetting(userId, 'reddit_username'),
+  const [redditToken, usState] = await Promise.all([
+    getSetting(userId, 'reddit_token_v2'),
     getSetting(userId, 'us_state'),
   ]);
-  if (!redditClientId || !redditClientSecret || !redditPassword || !redditUsername || !usState) return null;
-  return { redditClientId, redditClientSecret, redditPassword, redditUsername, usState };
+  if (!redditToken || !usState) return null;
+  return { redditToken, usState };
 }

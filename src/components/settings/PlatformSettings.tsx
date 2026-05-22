@@ -52,16 +52,21 @@ const PLATFORMS: PlatformDef[] = [
   },
   {
     id: 'reddit',
-    name: 'Reddit',
-    description: 'Connect your Reddit account for r/mechmarket posting. Create a "script" app (not web app) at reddit.com/prefs/apps — use http://localhost as the redirect URI.',
+    name: 'Reddit / r/mechmarket',
+    description:
+      'Paste your Reddit session token to enable r/mechmarket posting — no app required. ' +
+      'Open reddit.com in Chrome → F12 (DevTools) → Application tab → Cookies → reddit.com → ' +
+      'find "token_v2" → copy its full value and paste below. ' +
+      'With "Remember me" checked this token lasts ~2 years.',
     fields: [
-      { kind: 'text', key: 'reddit_username', label: 'Reddit username', placeholder: 'u/yourname' },
-      { kind: 'password', key: 'reddit_password', label: 'Reddit password' },
-      { kind: 'text', key: 'us_state', label: 'US state code', placeholder: 'NY' },
-      { kind: 'text', key: 'reddit_client_id', label: 'Client ID', placeholder: 'from reddit.com/prefs/apps' },
-      { kind: 'password', key: 'reddit_client_secret', label: 'Client secret' },
+      {
+        kind: 'password' as const,
+        key: 'reddit_token_v2',
+        label: 'Reddit session token (token_v2)',
+        placeholder: 'eyJhbGciOiJSUzI1NiIsImtpZCI6...',
+      },
+      { kind: 'text' as const, key: 'us_state', label: 'US state code', placeholder: 'NY' },
     ],
-    devPortalUrl: 'https://www.reddit.com/prefs/apps',
   },
   {
     id: 'etsy',
@@ -78,11 +83,16 @@ const PLATFORMS: PlatformDef[] = [
   {
     id: 'ebay',
     name: 'eBay',
-    description: "Connect your eBay seller account. The RuName is listed in your app's OAuth settings.",
+    description:
+      'Connect your eBay seller account via OAuth. Setup: ' +
+      '(1) Go to developer.ebay.com → Application Keys → your app → OAuth Settings. ' +
+      '(2) Under "eBay Redirect URL (RuName)", add a new entry and set the accepted URL to the Redirect URI shown below → save. ' +
+      '(3) Copy the RuName value (looks like YourName-YourApp-PRD-XXXXXXXX). ' +
+      '(4) Enter App ID, Cert ID, and RuName below → click Connect eBay.',
     fields: [
       { kind: 'text', key: 'ebay_client_id', label: 'App ID (client ID)', placeholder: 'from developer.ebay.com' },
       { kind: 'password', key: 'ebay_client_secret', label: 'Cert ID (client secret)' },
-      { kind: 'text', key: 'ebay_ru_name', label: 'RuName', placeholder: 'YourName-AppName-PRxxxxxx' },
+      { kind: 'text', key: 'ebay_ru_name', label: 'RuName (from eBay OAuth Settings)', placeholder: 'YourName-YourApp-PRD-XXXXXXXX' },
       { kind: 'oauth', platform: 'ebay', key: 'ebay_refresh_token', label: 'eBay' },
     ],
     supportsRules: true,

@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getSetting, setSetting } from '@/lib/user-settings'
 import { cookies } from 'next/headers'
 
-const SUPPORTED = new Set(['reddit', 'imgur', 'etsy', 'ebay', 'mercari'])
+const SUPPORTED = new Set(['imgur', 'etsy', 'ebay', 'mercari'])
 
 export async function GET(req: Request) {
   const supabase = await createClient()
@@ -38,25 +38,7 @@ export async function GET(req: Request) {
   if (!clientId) return Response.redirect(`${settingsUrl}?error=missing_client_id`)
 
   try {
-    if (platform === 'reddit') {
-      const clientSecret = await getSetting(user.id, 'reddit_client_secret')
-      if (!clientSecret) return Response.redirect(`${settingsUrl}?error=missing_client_secret`)
-      const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-      const res = await fetch('https://www.reddit.com/api/v1/access_token', {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${creds}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'ai-listings/1.0',
-        },
-        body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: callbackUri }),
-      })
-      if (!res.ok) return Response.redirect(`${settingsUrl}?error=token_exchange_failed`)
-      const data = await res.json() as { refresh_token?: string }
-      if (!data.refresh_token) return Response.redirect(`${settingsUrl}?error=no_refresh_token`)
-      await setSetting(user.id, 'reddit_refresh_token', data.refresh_token, 'credential')
-
-    } else if (platform === 'imgur') {
+    if (platform === 'imgur') {
       const clientSecret = await getSetting(user.id, 'imgur_client_secret')
       if (!clientSecret) return Response.redirect(`${settingsUrl}?error=missing_client_secret`)
       const res = await fetch('https://api.imgur.com/oauth2/token', {

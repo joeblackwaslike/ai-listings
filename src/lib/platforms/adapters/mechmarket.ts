@@ -1,4 +1,3 @@
-import type Snoowrap from 'snoowrap';
 import { createClient } from '@supabase/supabase-js';
 import type {
   PlatformSDK,
@@ -109,25 +108,47 @@ interface ListingRow {
   description: string;
 }
 
-// Snoowrap objects are "thenables" (they have .then()) — awaiting them directly
-// triggers TS1062 "circular then". Cast through unknown/Record to avoid this.
-interface RedditPost {
-  id: string;
-  url: string;
-  edit(text: string): Promise<void>;
+// ---------------------------------------------------------------------------
+// Reddit API helpers
+// ---------------------------------------------------------------------------
+
+const REDDIT_BASE = 'https://www.reddit.com';
+const REDDIT_UA = 'ai-listings/1.0 (by /u/ai-listings-bot)';
+
+interface RedditAuth {
+  cookie: string;
+  modhash: string;
 }
 
-interface RedditMessage {
+interface RedditMeResponse {
+  data: { modhash: string };
+}
+
+interface RedditSubmitResponse {
+  json: { data: { id: string; url: string }; errors: unknown[] };
+}
+
+interface RedditSearchChild {
+  data: { title: string; selftext: string };
+}
+
+interface RedditSearchResponse {
+  data: { children: RedditSearchChild[] };
+}
+
+interface RedditMessageData {
   name: string;
   subject: string;
   body: string;
-  author: { name: string } | null;
+  author: string | null;
   created_utc: number;
   new: boolean;
   first_message_name: string;
-  replies: RedditMessage[] | { fetchMore?(opts: object): Promise<RedditMessage[]> };
-  fetch(): Promise<RedditMessage>;
-  reply(text: string): Promise<unknown>;
+  replies: { data?: { children?: Array<{ data: RedditMessageData }> } } | string;
+}
+
+interface RedditInboxResponse {
+  data: { children: Array<{ data: RedditMessageData }> };
 }
 
 // ---------------------------------------------------------------------------
@@ -143,17 +164,18 @@ export class MechmarketAdapter implements PlatformSDK {
   // Private helpers
   // --------------------------------------------------------------------------
 
-  private async getReddit(): Promise<Snoowrap> {
+  private async getRedditAuth(): Promise<RedditAuth> {
     const creds = await getMechmarketCreds(this.userId);
     if (!creds) throw new AuthExpiredError('mechmarket');
-    const SnoowrapCtor = (await import('snoowrap')).default;
-    return new SnoowrapCtor({
-      userAgent: 'ai-listings/1.0',
-      clientId: creds.redditClientId,
-      clientSecret: creds.redditClientSecret,
-      username: creds.redditUsername,
-      password: creds.redditPassword,
+    const cookie = `token_v2=${creds.redditToken}`;
+    const res = await fetch(`${REDDIT_BASE}/api/me.json`, {
+      headers: { Cookie: cookie, 'User-Agent': REDDIT_UA },
     });
+    if (!res.ok) throw new AuthExpiredError('mechmarket');
+    const data = (await res.json()) as RedditMeResponse;
+    const modhash = data?.data?.modhash;
+    if (!modhash) throw new AuthExpiredError('mechmarket');
+    return { cookie, modhash };
   }
 
   /** Fetch all items for a post and rebuild the Reddit post body. */
@@ -207,14 +229,16 @@ export class MechmarketAdapter implements PlatformSDK {
     return buildPostBody(postItems, albumUrl);
   }
 
-  /** Get a Submission object cast to our safe interface. */
-  private getSubmission(r: Snoowrap, postId: string): RedditPost {
-    return r.getSubmission(postId) as unknown as RedditPost;
+  private redditHeaders(auth: RedditAuth): Record<string, string> {
+    return { Cookie: auth.cookie, 'X-Modhash': auth.modhash, 'User-Agent': REDDIT_UA };
   }
 
-  /** Get a PrivateMessage object cast to our safe interface. */
-  private getMessage(r: Snoowrap, msgId: string): RedditMessage {
-    return r.getMessage(msgId) as unknown as RedditMessage;
+  private async redditPost(auth: RedditAuth, path: string, body: Record<string, string>): Promise<Response> {
+    return fetch(`${REDDIT_BASE}${path}`, {
+      method: 'POST',
+      headers: { ...this.redditHeaders(auth), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body).toString(),
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -225,14 +249,19 @@ export class MechmarketAdapter implements PlatformSDK {
     if (!process.env.ANTHROPIC_API_KEY) return [];
 
     try {
-      const r = await this.getReddit();
-      const postsRaw = await (r.search({
-        query: `[H] ${query}`,
+      const params = new URLSearchParams({
+        q: `[H] ${query}`,
         sort: 'new',
-        limit: 25,
-        subreddit: 'mechmarket',
-        restrictSr: true,
-      }) as unknown as Promise<Array<{ title: string; selftext: string }>>);
+        limit: '25',
+        restrict_sr: '1',
+        type: 'link',
+      });
+      const res = await fetch(`${REDDIT_BASE}/r/mechmarket/search.json?${params.toString()}`, {
+        headers: { 'User-Agent': REDDIT_UA },
+      });
+      if (!res.ok) return [];
+      const data = (await res.json()) as RedditSearchResponse;
+      const postsRaw = (data?.data?.children ?? []).map((c) => c.data);
 
       const top15 = postsRaw.slice(0, 15);
       const postsText = top15
@@ -319,7 +348,7 @@ export class MechmarketAdapter implements PlatformSDK {
       }
     }
 
-    const r = await this.getReddit();
+    const auth = await this.getRedditAuth();
     const title = buildPostTitle(creds.usState, [listing.title]);
     const body = buildPostBody([
       {
@@ -334,12 +363,20 @@ export class MechmarketAdapter implements PlatformSDK {
       },
     ]);
 
-    const post = await (r.submitSelfpost({
-      subredditName: 'mechmarket',
+    const submitRes = await this.redditPost(auth, '/api/submit', {
+      api_type: 'json',
+      sr: 'mechmarket',
+      kind: 'self',
       title,
       text: body,
-      sendReplies: true,
-    }) as unknown as Promise<{ id: string; url: string }>);
+      sendreplies: 'true',
+    });
+    if (!submitRes.ok) throw new PlatformError('mechmarket', `Reddit submit failed: ${submitRes.status}`);
+    const submitData = (await submitRes.json()) as RedditSubmitResponse;
+    if (submitData.json.errors?.length) {
+      throw new PlatformError('mechmarket', `Reddit submit error: ${JSON.stringify(submitData.json.errors)}`);
+    }
+    const post = submitData.json.data;
 
     const now = new Date();
     const nextEligible = new Date(now.getTime() + COOLDOWN_MS);
@@ -384,9 +421,13 @@ export class MechmarketAdapter implements PlatformSDK {
     platformId: string,
     _updates: Partial<UnifiedListing>,
   ): Promise<void> {
-    const r = await this.getReddit();
+    const auth = await this.getRedditAuth();
     const newBody = await this.rebuildPostBody(platformId);
-    await this.getSubmission(r, platformId).edit(newBody);
+    await this.redditPost(auth, '/api/editusertext', {
+      api_type: 'json',
+      thing_id: `t3_${platformId}`,
+      text: newBody,
+    });
   }
 
   async deleteListing(platformId: string): Promise<void> {
@@ -408,9 +449,13 @@ export class MechmarketAdapter implements PlatformSDK {
     if (updateError) throw new PlatformError('mechmarket', `DB update failed: ${updateError.message}`);
 
     try {
-      const r = await this.getReddit();
+      const auth = await this.getRedditAuth();
       const newBody = await this.rebuildPostBody(platformId);
-      await this.getSubmission(r, platformId).edit(newBody);
+      await this.redditPost(auth, '/api/editusertext', {
+        api_type: 'json',
+        thing_id: `t3_${platformId}`,
+        text: newBody,
+      });
     } catch {
       // Non-fatal — Reddit edit failure should not block the DB state change
     }
@@ -517,29 +562,32 @@ export class MechmarketAdapter implements PlatformSDK {
   // --------------------------------------------------------------------------
 
   async getNotifications(since?: Date): Promise<PlatformNotification[]> {
-    const r = await this.getReddit();
-    const messagesRaw = await (r.getUnreadMessages({}) as unknown as Promise<RedditMessage[]>);
+    const auth = await this.getRedditAuth();
+    const res = await fetch(`${REDDIT_BASE}/message/unread.json`, {
+      headers: this.redditHeaders(auth),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as RedditInboxResponse;
+    const messages = (data?.data?.children ?? []).map((c) => c.data);
 
-    const filtered = messagesRaw.filter(
-      (m) => !since || new Date(m.created_utc * 1000) > since,
-    );
-
-    return filtered.map((m) => ({
-      platform: 'mechmarket',
-      notificationId: m.name,
-      type: 'message' as const,
-      title: m.subject,
-      preview: m.body?.slice(0, 200) ?? '',
-      url: undefined,
-      read: !m.new,
-      createdAt: new Date(m.created_utc * 1000),
-      metadata: { from: m.author?.name ?? '' } as Record<string, unknown>,
-    }));
+    return messages
+      .filter((m) => !since || new Date(m.created_utc * 1000) > since)
+      .map((m) => ({
+        platform: 'mechmarket' as const,
+        notificationId: m.name,
+        type: 'message' as const,
+        title: m.subject,
+        preview: m.body?.slice(0, 200) ?? '',
+        url: undefined,
+        read: !m.new,
+        createdAt: new Date(m.created_utc * 1000),
+        metadata: { from: m.author ?? '' } as Record<string, unknown>,
+      }));
   }
 
   async markNotificationRead(notificationId: string): Promise<void> {
-    const r = await this.getReddit();
-    await (r.markMessagesAsRead([notificationId]) as unknown as Promise<void>);
+    const auth = await this.getRedditAuth();
+    await this.redditPost(auth, '/api/read_message', { id: notificationId });
   }
 
   // --------------------------------------------------------------------------
@@ -547,11 +595,16 @@ export class MechmarketAdapter implements PlatformSDK {
   // --------------------------------------------------------------------------
 
   async getThreads(): Promise<PlatformThread[]> {
-    const r = await this.getReddit();
-    const inboxRaw = await (r.getInbox({ filter: 'messages' }) as unknown as Promise<RedditMessage[]>);
+    const auth = await this.getRedditAuth();
+    const res = await fetch(`${REDDIT_BASE}/message/messages.json`, {
+      headers: this.redditHeaders(auth),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as RedditInboxResponse;
+    const inboxRaw = (data?.data?.children ?? []).map((c) => c.data);
 
     // Group by thread root (first_message_name falls back to own name for root messages)
-    const threadMap = new Map<string, RedditMessage[]>();
+    const threadMap = new Map<string, RedditMessageData[]>();
     for (const msg of inboxRaw) {
       const threadId = msg.first_message_name || msg.name;
       if (!threadMap.has(threadId)) threadMap.set(threadId, []);
@@ -568,7 +621,7 @@ export class MechmarketAdapter implements PlatformSDK {
         platform: 'mechmarket',
         threadId,
         messageId: latest.name,
-        from: latest.author?.name ?? '',
+        from: latest.author ?? '',
         body: latest.body ?? '',
         sentAt: new Date(latest.created_utc * 1000),
         read: !latest.new,
@@ -577,7 +630,7 @@ export class MechmarketAdapter implements PlatformSDK {
       threads.push({
         platform: 'mechmarket',
         threadId,
-        withUser: latest.author?.name ?? '',
+        withUser: latest.author ?? '',
         lastMessage: lastMsg,
         unreadCount: unread,
       });
@@ -587,17 +640,19 @@ export class MechmarketAdapter implements PlatformSDK {
   }
 
   async getThread(threadId: string): Promise<PlatformMessage[]> {
-    const r = await this.getReddit();
-    const msg = this.getMessage(r, threadId);
-    const fetched = await msg.fetch();
-    const repliesRaw = Array.isArray(fetched.replies) ? fetched.replies as RedditMessage[] : [];
-    const all = [fetched, ...repliesRaw];
+    const auth = await this.getRedditAuth();
+    const res = await fetch(`${REDDIT_BASE}/message/messages/${threadId}.json`, {
+      headers: this.redditHeaders(auth),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as RedditInboxResponse;
+    const msgs = (data?.data?.children ?? []).map((c) => c.data);
 
-    return all.map((m) => ({
-      platform: 'mechmarket',
+    return msgs.map((m) => ({
+      platform: 'mechmarket' as const,
       threadId,
       messageId: m.name,
-      from: m.author?.name ?? '',
+      from: m.author ?? '',
       body: m.body ?? '',
       sentAt: new Date(m.created_utc * 1000),
       read: !m.new,
@@ -605,8 +660,12 @@ export class MechmarketAdapter implements PlatformSDK {
   }
 
   async sendMessage(threadId: string, body: string): Promise<void> {
-    const r = await this.getReddit();
-    await this.getMessage(r, threadId).reply(body);
+    const auth = await this.getRedditAuth();
+    await this.redditPost(auth, '/api/comment', {
+      api_type: 'json',
+      parent: threadId,
+      text: body,
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -672,9 +731,13 @@ export class MechmarketAdapter implements PlatformSDK {
       sort_order: maxOrder + 1,
     });
 
-    const r = await this.getReddit();
+    const auth = await this.getRedditAuth();
     const newBody = await this.rebuildPostBody(redditPostId);
-    await this.getSubmission(r, redditPostId).edit(newBody);
+    await this.redditPost(auth, '/api/editusertext', {
+      api_type: 'json',
+      thing_id: `t3_${redditPostId}`,
+      text: newBody,
+    });
   }
 
   /**
@@ -697,8 +760,12 @@ export class MechmarketAdapter implements PlatformSDK {
       .eq('post_id', postRow.id)
       .eq('listing_id', listingId);
 
-    const r = await this.getReddit();
+    const auth = await this.getRedditAuth();
     const newBody = await this.rebuildPostBody(redditPostId);
-    await this.getSubmission(r, redditPostId).edit(newBody);
+    await this.redditPost(auth, '/api/editusertext', {
+      api_type: 'json',
+      thing_id: `t3_${redditPostId}`,
+      text: newBody,
+    });
   }
 }

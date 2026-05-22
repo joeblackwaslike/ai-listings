@@ -3,7 +3,7 @@ import { getSetting } from '@/lib/user-settings'
 import { createHash, randomBytes } from 'crypto'
 import { cookies } from 'next/headers'
 
-const SUPPORTED = new Set(['reddit', 'imgur', 'etsy', 'ebay', 'mercari'])
+const SUPPORTED = new Set(['imgur', 'etsy', 'ebay', 'mercari'])
 
 export async function GET(req: Request) {
   const supabase = await createClient()
@@ -37,17 +37,7 @@ export async function GET(req: Request) {
 
   let authUrl: string
 
-  if (platform === 'reddit') {
-    const u = new URL('https://www.reddit.com/api/v1/authorize')
-    u.searchParams.set('client_id', clientId)
-    u.searchParams.set('response_type', 'code')
-    u.searchParams.set('state', state)
-    u.searchParams.set('redirect_uri', callbackUri)
-    u.searchParams.set('duration', 'permanent')
-    u.searchParams.set('scope', 'identity submit read')
-    authUrl = u.toString()
-
-  } else if (platform === 'imgur') {
+  if (platform === 'imgur') {
     const u = new URL('https://api.imgur.com/oauth2/authorize')
     u.searchParams.set('client_id', clientId)
     u.searchParams.set('response_type', 'code')
