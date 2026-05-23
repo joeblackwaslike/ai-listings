@@ -1,6 +1,7 @@
 export type ListingStatus =
   | 'intake'
   | 'id_gate'
+  | 'gender_gate'
   | 'in_loop'
   | 'finalizing'
   | 'published'
@@ -30,7 +31,13 @@ export type ConditionValue =
 
 export type PhotoType = 'intake' | 'processed' | 'auth_card' | 'studio';
 
-export type CompSource = 'ebay' | 'poshmark' | 'therealreal' | 'google' | 'reddit';
+export type CompSource =
+  | 'ebay'
+  | 'poshmark' | 'poshmark_active'
+  | 'therealreal' | 'therealreal_active'
+  | 'google' | 'google_active'
+  | 'mercari' | 'mercari_active'
+  | 'reddit';
 
 export type ConversationRole = 'user' | 'assistant';
 

@@ -608,7 +608,8 @@ export async function runStep3PricingResearch(
   listingId: string,
   step2: VisionAnalysis,
   model: string,
-  apiKeys: ApiKeys
+  apiKeys: ApiKeys,
+  gender?: string | null
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
 
@@ -620,7 +621,8 @@ export async function runStep3PricingResearch(
     ? step2.notableFeatures.map((f) => /ref\.?\s*([\w.-]+)/i.exec(f)?.[1]).find(Boolean)
     : undefined
 
-  const searchQuery = `${step2.brand} ${model}`
+  const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
+  const searchQuery = `${genderPrefix}${step2.brand} ${model}`
   const [ebayItems, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, mercariSold, mercariActive] = await Promise.all([
     fetchEbayFindingComps(step2.brand, step2.category, model, apiKeys.ebayAppId, refNumber),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),

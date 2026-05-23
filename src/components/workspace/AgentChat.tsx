@@ -29,6 +29,7 @@ interface AgentChatProps {
   readonly firstMessage?: string | null
   readonly suggestions?: Suggestion[] | null
   readonly pendingIdGate?: boolean
+  readonly pendingGenderGate?: boolean
 }
 
 type AgentEvent =
@@ -115,7 +116,7 @@ async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setM
   }
 }
 
-export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate }: AgentChatProps) {
+export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
@@ -132,6 +133,9 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const idGateResolvedRef = useRef(false)
+  const genderGateResolvedRef = useRef(false)
+  const [pendingGender, setPendingGender] = useState<string | null>(null)
+  const [awaitingSize, setAwaitingSize] = useState(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -208,6 +212,28 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
       setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Confirmed! Running pricing research now — the listing will update in a moment." }])
       return
     }
+    if (suggestion.confirmGender) {
+      setSuggestionsDismissed(true)
+      setMessages((prev) => [...prev, { id: uid(), role: 'user', content: suggestion.message ?? suggestion.label }])
+      if (suggestion.needsSize) {
+        // Collect size first before firing the event
+        setPendingGender(suggestion.confirmGender)
+        setAwaitingSize(true)
+        const sizePrompt = suggestion.confirmGender === 'mens' ? "Got it — Men's. What's the size?" : "Got it — Women's. What's the size?"
+        setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: sizePrompt }])
+        setTimeout(() => textareaRef.current?.focus(), 50)
+      } else {
+        // No size needed — confirm immediately
+        genderGateResolvedRef.current = true
+        await fetch('/api/pipeline/confirm-gender', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ listingId, gender: suggestion.confirmGender, size: null }),
+        })
+        setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Got it — running pricing research now. The listing will update in a moment." }])
+      }
+      return
+    }
     await doSend(suggestion.message ?? suggestion.label, [])
   }
 
@@ -215,6 +241,20 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     const text = input.trim()
     if ((!text && pendingImages.length === 0) || streaming) return
     setInput('')
+    if (awaitingSize && pendingGender && text) {
+      setAwaitingSize(false)
+      const g = pendingGender
+      setPendingGender(null)
+      genderGateResolvedRef.current = true
+      setMessages((prev) => [...prev, { id: uid(), role: 'user', content: text }])
+      await fetch('/api/pipeline/confirm-gender', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId, gender: g, size: text }),
+      })
+      setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Perfect — running pricing research now. The listing will update in a moment." }])
+      return
+    }
     if (pendingIdGate && !idGateResolvedRef.current && text) {
       idGateResolvedRef.current = true
       setSuggestionsDismissed(true)

@@ -102,9 +102,38 @@ export const intakePipeline = inngest.createFunction(
       gateAttempt++
     }
 
+    const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
+    const SIZE_CATEGORIES = new Set(['clothing', 'sneakers'])
+    const needsGender = GENDER_CATEGORIES.has(step2Result.category?.toLowerCase() ?? '')
+    const needsSize = SIZE_CATEGORIES.has(step2Result.category?.toLowerCase() ?? '')
+
+    let gender: string | null = null
+    let size: string | null = null
+
+    if (needsGender) {
+      await step.run('gender-gate-start', () =>
+        supabase.from('listings').update({ status: 'gender_gate' }).eq('id', listingId)
+      )
+
+      const genderConfirmation = await step.waitForEvent('gender-gate-confirm', {
+        event: 'pipeline/gender-confirmed',
+        timeout: '7d',
+        match: 'data.listingId',
+      })
+
+      if (genderConfirmation) {
+        const gd = (genderConfirmation as unknown as { data: { gender: string; size: string | null } }).data
+        gender = gd.gender
+        size = needsSize ? (gd.size ?? null) : null
+        await step.run('store-gender', () =>
+          supabase.from('listings').update({ gender, item_size: size }).eq('id', listingId)
+        )
+      }
+    }
+
     const titleForComps = (step2Result.notableFeatures[0] ?? '').replace(/^Model:\s*/i, '').trim()
     await step.run('pricing-research', () =>
-      runStep3PricingResearch(listingId, step2Result, titleForComps, apiKeys)
+      runStep3PricingResearch(listingId, step2Result, titleForComps, apiKeys, gender)
     )
 
     const { data: listingAfterStep3 } = await supabase

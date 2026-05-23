@@ -119,6 +119,21 @@ function idGateContext(listing: Listing): WorkspaceContext {
   ])
 }
 
+function genderGateContext(listing: Listing): WorkspaceContext {
+  const category = listing.category ?? 'item'
+  const needsSize = ['clothing', 'sneakers'].includes(category.toLowerCase())
+
+  const message = needsSize
+    ? `Quick question before I run pricing — what's the gender and size for this ${category}? Pick the gender below, then I'll ask for the size.`
+    : `Quick question before I run pricing — is this ${category} Men's or Women's?`
+
+  return ctx(message, [
+    { label: "Men's", confirmGender: 'mens', needsSize, message: "Men's" },
+    { label: "Women's", confirmGender: 'womens', needsSize, message: "Women's" },
+    ...(needsSize ? [] : [{ label: 'Unisex', confirmGender: 'unisex', message: 'Unisex' }]),
+  ])
+}
+
 function buildWorkspaceContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
   if (listing.agent_blocked && listing.agent_blocked_reason) {
     return { firstMessage: listing.agent_blocked_reason, suggestions: null }
@@ -131,6 +146,9 @@ function buildWorkspaceContext(listing: Listing, photos: Photo[], hasHistory: bo
   }
   if (listing.status === 'id_gate') {
     return idGateContext(listing)
+  }
+  if (listing.status === 'gender_gate') {
+    return genderGateContext(listing)
   }
   if (listing.status !== 'in_loop') {
     return { firstMessage: "I'm working on this listing. Ask me anything or check back shortly.", suggestions: null }
@@ -220,6 +238,7 @@ export default async function WorkspacePage({
               created_at: m.created_at as string,
             }))}
             pendingIdGate={listing.status === 'id_gate'}
+            pendingGenderGate={listing.status === 'gender_gate'}
             firstMessage={firstMessage}
             suggestions={suggestions}
           />

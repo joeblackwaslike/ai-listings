@@ -6,6 +6,8 @@ export interface Suggestion {
   openFilePicker?: boolean
   confirmPhotos?: boolean
   confirmId?: boolean
+  confirmGender?: string  // 'mens' | 'womens'
+  needsSize?: boolean     // if true, ask for size after gender is selected
   focusInput?: boolean
 }
 

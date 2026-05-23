@@ -32,6 +32,15 @@ export interface PipelineIdConfirmedEvent {
   }
 }
 
+export interface PipelineGenderConfirmedEvent {
+  name: 'pipeline/gender-confirmed'
+  data: {
+    listingId: string
+    gender: string
+    size: string | null
+  }
+}
+
 export interface StudioUploadedEvent {
   name: 'studio/uploaded'
   data: {
