@@ -3,57 +3,66 @@ import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
 
-interface SerpEbayResult {
+interface EbayFindingItem {
   title: string
-  price?: { raw: string; extracted: number }
-  condition?: string
-  link: string
-  extensions?: string[]
+  soldPriceCents: number
+  condition: string
+  soldAt: string
+  listingUrl: string
 }
 
-interface SerpEbayResponse {
-  organic_results?: SerpEbayResult[]
-  error?: string
-}
-
-interface SerpShoppingResult {
-  title: string
-  price: { value: string; extracted_value: number; currency: string }
-  link: string
-  source: string
-  condition?: string
-}
-
-interface SerpApiShoppingResponse {
-  shopping_results?: SerpShoppingResult[]
-  error?: string
-}
-
-async function fetchSerpEbayComps(
+async function fetchEbayFindingComps(
   brand: string,
   category: string,
   model: string,
-  apiKey: string,
+  appId: string,
   refNumber?: string
-): Promise<SerpEbayResult[]> {
-  const query = refNumber
-    ? `${brand} ${model} ${refNumber}`
-    : `${brand} ${model} ${category}`
-  const url = new URL('https://serpapi.com/search')
-  url.searchParams.set('engine', 'ebay')
-  url.searchParams.set('_nkw', query)
-  url.searchParams.set('LH_Sold', '1')
-  url.searchParams.set('LH_Complete', '1')
-  url.searchParams.set('api_key', apiKey)
+): Promise<EbayFindingItem[]> {
+  if (!appId) return []
+  const keywords = refNumber ? `${brand} ${model} ${refNumber}` : `${brand} ${model} ${category}`
+  const params = new URLSearchParams({
+    'OPERATION-NAME': 'findCompletedItems',
+    'SERVICE-VERSION': '1.0.0',
+    'SECURITY-APPNAME': appId,
+    'RESPONSE-DATA-FORMAT': 'JSON',
+    'keywords': keywords,
+    'itemFilter(0).name': 'SoldItemsOnly',
+    'itemFilter(0).value': 'true',
+    'itemFilter(1).name': 'ListingType',
+    'itemFilter(1).value(0)': 'AuctionWithBIN',
+    'itemFilter(1).value(1)': 'FixedPrice',
+    'itemFilter(1).value(2)': 'Auction',
+    'sortOrder': 'EndTimeSoonest',
+    'paginationInput.entriesPerPage': '50',
+  })
 
-  const response = await fetch(url.toString())
+  const res = await fetch(`https://svcs.ebay.com/services/search/FindingService/v1?${params.toString()}`)
+  if (!res.ok) throw new Error(`step3: eBay Finding API returned HTTP ${res.status}`)
 
-  if (!response.ok) {
-    throw new Error(`step3: SerpAPI eBay returned HTTP ${response.status}`)
+  type FindingItem = {
+    title: [string]
+    sellingStatus: [{ currentPrice: [{ __value__: string }]; sellingState: [string] }]
+    listingInfo: [{ endTime: [string] }]
+    condition?: [{ conditionDisplayName: [string] }]
+    viewItemURL: [string]
+  }
+  type FindingResp = {
+    findCompletedItemsResponse?: [{ searchResult?: [{ item?: FindingItem[] }] }]
   }
 
-  const data = (await response.json()) as SerpEbayResponse
-  return data.organic_results ?? []
+  const data = await res.json() as FindingResp
+  const items = data?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item ?? []
+
+  return items
+    .filter((item) => item.sellingStatus[0].sellingState[0] === 'EndedWithSales')
+    .map((item) => ({
+      title: item.title[0],
+      soldPriceCents: Math.round(parseFloat(item.sellingStatus[0].currentPrice[0].__value__) * 100),
+      condition: item.condition?.[0]?.conditionDisplayName?.[0] ?? 'Not specified',
+      soldAt: item.listingInfo[0].endTime[0],
+      listingUrl: item.viewItemURL[0],
+    }))
+    .filter((item) => item.soldPriceCents > 0)
 }
 
 async function fetchSerpComps(
@@ -439,7 +448,7 @@ export async function runStep3PricingResearch(
     : undefined
 
   const [ebayItems, serpResults, redditComps, retailResult] = await Promise.all([
-    fetchSerpEbayComps(step2.brand, step2.category, model, apiKeys.serpapi, refNumber),
+    fetchEbayFindingComps(step2.brand, step2.category, model, apiKeys.ebayAppId, refNumber),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, apiKeys.anthropic)
@@ -460,20 +469,17 @@ export async function runStep3PricingResearch(
   }> = []
 
   for (const item of ebayItems) {
-    const priceCents = item.price?.extracted ? Math.round(item.price.extracted * 100) : 0
-    if (priceCents === 0) continue
-    const condition = item.condition ?? 'Not specified'
-    const delta = conditionDelta(step2.condition, condition)
+    const delta = conditionDelta(step2.condition, item.condition)
     compRows.push({
       listing_id: listingId,
       source: 'ebay',
       title: item.title,
-      sale_price_cents: priceCents,
-      condition,
-      sold_at: null,
-      listing_url: item.link,
+      sale_price_cents: item.soldPriceCents,
+      condition: item.condition,
+      sold_at: item.soldAt,
+      listing_url: item.listingUrl,
       condition_delta: delta,
-      adjusted_price_cents: adjustForCondition(priceCents, delta),
+      adjusted_price_cents: adjustForCondition(item.soldPriceCents, delta),
     })
   }
 
