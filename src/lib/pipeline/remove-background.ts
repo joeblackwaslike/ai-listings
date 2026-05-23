@@ -33,12 +33,16 @@ export async function removeBackground(
 
   const rawProcessedBuffer = Buffer.from(await wbgResponse.arrayBuffer())
 
-  // Auto-crop to the non-transparent bounding box of the subject
-  const processedBuffer = await sharp(rawProcessedBuffer).trim({ threshold: 10 }).toBuffer()
+  // Auto-crop transparent borders, then flatten onto white (transparent PNG looks terrible in UI)
+  const processedBuffer = await sharp(rawProcessedBuffer)
+    .trim({ threshold: 10 })
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .jpeg({ quality: 92 })
+    .toBuffer()
 
   const { error: uploadError } = await supabase.storage
     .from('photos')
-    .upload(storagePath, processedBuffer, { contentType: 'image/png', upsert: true })
+    .upload(storagePath, processedBuffer, { contentType: 'image/jpeg', upsert: true })
 
   if (uploadError) {
     throw new Error(`removeBackground: Supabase storage upload failed — ${uploadError.message}`)

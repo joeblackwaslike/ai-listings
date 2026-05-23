@@ -11,6 +11,32 @@ interface EbayFindingItem {
   listingUrl: string
 }
 
+interface SerpShoppingResult {
+  title: string
+  link: string
+  source?: string
+  condition?: string
+  price?: { extracted_value?: number }
+}
+
+interface SerpApiShoppingResponse {
+  shopping_results?: SerpShoppingResult[]
+  error?: string
+}
+
+interface SerpEbayResult {
+  title: string
+  link: string
+  price?: { extracted_value?: number }
+  condition?: string
+  extensions?: string[]
+}
+
+interface SerpEbayResponse {
+  organic_results?: SerpEbayResult[]
+  error?: string
+}
+
 async function fetchEbayFindingComps(
   brand: string,
   category: string,
@@ -278,6 +304,153 @@ ${postsText}`,
   }
 }
 
+const MERCARI_CONSUMER_API = 'https://api.mercari.com/v2/entities:search'
+
+async function fetchPoshmarkSoldComps(
+  query: string,
+  cookies: string
+): Promise<Array<{ title: string; priceCents: number; soldAt: string | null; listingUrl: string }>> {
+  if (!cookies) return []
+  try {
+    const params = new URLSearchParams({
+      app_version: '2.55',
+      count: '30',
+      max_id: '0',
+      q: query,
+      sort_by: 'best_match',
+      availability: 'sold_out',
+      summarize: 'true',
+      _: Date.now().toString(),
+    })
+    const res = await fetch(`https://poshmark.com/vm-rest/posts?${params}`, {
+      headers: {
+        Cookie: cookies,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+      },
+    })
+    if (!res.ok) return []
+    const data = (await res.json()) as { data?: Array<{ id: string; title?: string; price?: string; updated_at?: string }> }
+    return (data.data ?? [])
+      .filter((item) => item.title && item.price)
+      .map((item) => {
+        const match = (item.price ?? '').match(/[\d.]+/)
+        const priceCents = match ? Math.round(parseFloat(match[0]) * 100) : 0
+        return { title: item.title ?? '', priceCents, soldAt: item.updated_at ?? null, listingUrl: `https://poshmark.com/listing/${item.id}` }
+      })
+      .filter((item) => item.priceCents > 0)
+  } catch {
+    return []
+  }
+}
+
+async function fetchPoshmarkActiveFloor(
+  query: string,
+  cookies: string
+): Promise<Array<{ title: string; priceCents: number; listingUrl: string }>> {
+  if (!cookies) return []
+  try {
+    const params = new URLSearchParams({
+      app_version: '2.55',
+      count: '10',
+      max_id: '0',
+      q: query,
+      sort_by: 'price_asc',
+      availability: 'available',
+      summarize: 'true',
+      _: Date.now().toString(),
+    })
+    const res = await fetch(`https://poshmark.com/vm-rest/posts?${params}`, {
+      headers: {
+        Cookie: cookies,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+      },
+    })
+    if (!res.ok) return []
+    const data = (await res.json()) as { data?: Array<{ id: string; title?: string; price?: string }> }
+    return (data.data ?? [])
+      .filter((item) => item.title && item.price)
+      .map((item) => {
+        const match = (item.price ?? '').match(/[\d.]+/)
+        const priceCents = match ? Math.round(parseFloat(match[0]) * 100) : 0
+        return { title: item.title ?? '', priceCents, listingUrl: `https://poshmark.com/listing/${item.id}` }
+      })
+      .filter((item) => item.priceCents > 0)
+  } catch {
+    return []
+  }
+}
+
+async function fetchMercariSoldComps(
+  query: string,
+  accessToken: string
+): Promise<Array<{ title: string; priceCents: number; soldAt: string | null; listingUrl: string }>> {
+  if (!accessToken) return []
+  try {
+    const body = {
+      pageToken: '',
+      searchSessionId: crypto.randomUUID(),
+      indexRouting: 'INDEX_ROUTING_UNSPECIFIED',
+      searchCondition: { keyword: query, status: ['STATUS_SOLD_OUT'], categoryId: [], brandId: [] },
+      defaultDatasets: ['DATASET_TYPE_MERCARI'],
+      serviceFrom: 'suruga',
+    }
+    const res = await fetch(MERCARI_CONSUMER_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) return []
+    const data = (await res.json()) as { items?: Array<{ id: string; name: string; price: number; updated: number }> }
+    return (data.items ?? [])
+      .filter((item) => item.name && item.price > 0)
+      .map((item) => ({
+        title: item.name,
+        priceCents: Math.round(item.price * 100),
+        soldAt: item.updated ? new Date(item.updated * 1000).toISOString() : null,
+        listingUrl: `https://www.mercari.com/us/item/${item.id}`,
+      }))
+  } catch {
+    return []
+  }
+}
+
+async function fetchMercariActiveFloor(
+  query: string,
+  accessToken: string
+): Promise<Array<{ title: string; priceCents: number; listingUrl: string }>> {
+  if (!accessToken) return []
+  try {
+    const body = {
+      pageToken: '',
+      searchSessionId: crypto.randomUUID(),
+      indexRouting: 'INDEX_ROUTING_UNSPECIFIED',
+      searchCondition: { keyword: query, status: ['STATUS_ON_SALE'], categoryId: [], brandId: [] },
+      defaultDatasets: ['DATASET_TYPE_MERCARI'],
+      serviceFrom: 'suruga',
+      sort: { by: 'SORT_PRICE', order: 'ORDER_ASC' },
+      paging: { limit: 10, offset: 0 },
+    }
+    const res = await fetch(MERCARI_CONSUMER_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) return []
+    const data = (await res.json()) as { items?: Array<{ id: string; name: string; price: number }> }
+    return (data.items ?? [])
+      .filter((item) => item.name && item.price > 0)
+      .map((item) => ({
+        title: item.name,
+        priceCents: Math.round(item.price * 100),
+        listingUrl: `https://www.mercari.com/us/item/${item.id}`,
+      }))
+  } catch {
+    return []
+  }
+}
+
 function deduplicateComps<T extends { adjusted_price_cents: number; title: string }>(comps: T[]): T[] {
   // Remove bulk-lot duplicates: same seller listing same item 10+ times at identical price
   const kept: T[] = []
@@ -447,13 +620,18 @@ export async function runStep3PricingResearch(
     ? step2.notableFeatures.map((f) => /ref\.?\s*([\w.-]+)/i.exec(f)?.[1]).find(Boolean)
     : undefined
 
-  const [ebayItems, serpResults, redditComps, retailResult] = await Promise.all([
+  const searchQuery = `${step2.brand} ${model}`
+  const [ebayItems, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, mercariSold, mercariActive] = await Promise.all([
     fetchEbayFindingComps(step2.brand, step2.category, model, apiKeys.ebayAppId, refNumber),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, apiKeys.anthropic)
       : Promise.resolve([]),
     fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
+    fetchPoshmarkSoldComps(searchQuery, apiKeys.poshmarkCookies),
+    fetchPoshmarkActiveFloor(searchQuery, apiKeys.poshmarkCookies),
+    fetchMercariSoldComps(searchQuery, apiKeys.mercariToken),
+    fetchMercariActiveFloor(searchQuery, apiKeys.mercariToken),
   ])
 
   const compRows: Array<{
@@ -487,10 +665,10 @@ export async function runStep3PricingResearch(
     if (!result.price?.extracted_value) continue
     const priceCents = Math.round(result.price.extracted_value * 100)
     const source = result.source?.toLowerCase().includes('poshmark')
-      ? 'poshmark'
+      ? 'poshmark_active'
       : result.source?.toLowerCase().includes('therealreal')
-        ? 'therealreal'
-        : 'google'
+        ? 'therealreal_active'
+        : 'google_active'
     const delta = conditionDelta(step2.condition, result.condition ?? 'unknown')
     compRows.push({
       listing_id: listingId,
@@ -520,8 +698,48 @@ export async function runStep3PricingResearch(
     })
   }
 
+  for (const item of poshmarkSold) {
+    const delta = conditionDelta(step2.condition, 'Not specified')
+    compRows.push({
+      listing_id: listingId, source: 'poshmark', title: item.title,
+      sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
+      listing_url: item.listingUrl, condition_delta: delta,
+      adjusted_price_cents: adjustForCondition(item.priceCents, delta),
+    })
+  }
+
+  for (const item of mercariSold) {
+    const delta = conditionDelta(step2.condition, 'Not specified')
+    compRows.push({
+      listing_id: listingId, source: 'mercari', title: item.title,
+      sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
+      listing_url: item.listingUrl, condition_delta: delta,
+      adjusted_price_cents: adjustForCondition(item.priceCents, delta),
+    })
+  }
+
+  // Active market comps — context only, excluded from sold-price median
+  const activeRows: typeof compRows = []
+  for (const item of poshmarkActive) {
+    activeRows.push({
+      listing_id: listingId, source: 'poshmark_active', title: item.title,
+      sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
+      listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
+    })
+  }
+  for (const item of mercariActive) {
+    activeRows.push({
+      listing_id: listingId, source: 'mercari_active', title: item.title,
+      sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
+      listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
+    })
+  }
+  // Move any _active rows that ended up in compRows (from SerpAPI) into activeRows
+  const soldRows = compRows.filter((r) => !r.source.endsWith('_active'))
+  activeRows.push(...compRows.filter((r) => r.source.endsWith('_active')))
+
   // Deduplicate same-price clusters before relevance filtering (catches bulk-lot duplicate listings)
-  const dedupedRows = deduplicateComps(compRows)
+  const dedupedRows = deduplicateComps(soldRows)
 
   // Filter out irrelevant comps (wrong product type, wrong color/variant, unrelated merchandise)
   const relevantIndices = apiKeys.anthropic
@@ -532,8 +750,10 @@ export async function runStep3PricingResearch(
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
 
-  if (filteredComps.length > 0) {
-    const { error } = await supabase.from('pricing_comps').insert(filteredComps)
+  // Insert all: filtered sold comps + active market context
+  const toInsert = [...filteredComps, ...activeRows]
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from('pricing_comps').insert(toInsert)
     if (error) {
       throw new Error(`step3: pricing_comps insert failed — ${error.message}`)
     }
