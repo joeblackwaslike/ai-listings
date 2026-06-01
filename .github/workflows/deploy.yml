@@ -15,9 +15,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
-
     steps:
       - uses: actions/checkout@v4
 
@@ -73,13 +70,8 @@ jobs:
           curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
 
-      - name: Update deployment image
-        env:
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-        run: |
-          kubectl set image deployment/ai-listings \
-            ai-listings=${{ env.IMAGE }}:${IMAGE_TAG} \
-            -n ai-listings
+      - name: Restart deployment
+        run: kubectl rollout restart deployment/ai-listings -n ai-listings
 
       - name: Wait for rollout
         run: kubectl rollout status deployment/ai-listings -n ai-listings --timeout=300s
