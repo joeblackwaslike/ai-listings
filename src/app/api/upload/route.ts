@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import sharp from 'sharp'
 import { inngest } from '@/lib/inngest/client'
+import { uploadFile } from '@/lib/storage'
 
 function getSupabaseAdmin() {
   return createSupabaseClient(
@@ -65,19 +66,13 @@ export async function POST(request: Request) {
   const listingId: string = listing.id
   const storagePath = `intake/${listingId}/original.${ext}`
 
-  const { error: uploadError } = await supabase.storage
-    .from('photos')
-    .upload(storagePath, rawBuffer, {
-      contentType: ext === 'png' ? 'image/png' : (file.type || 'image/jpeg'),
-      upsert: false,
-    })
-
-  if (uploadError) {
+  const contentType = ext === 'png' ? 'image/png' : (file.type || 'image/jpeg')
+  let photoUrl: string
+  try {
+    photoUrl = await uploadFile(storagePath, rawBuffer, contentType)
+  } catch {
     return NextResponse.json({ error: 'Storage upload failed' }, { status: 500 })
   }
-
-  const { data: urlData } = supabase.storage.from('photos').getPublicUrl(storagePath)
-  const photoUrl = urlData.publicUrl
 
   const { data: photoRow, error: photoError } = await supabase
     .from('photos')

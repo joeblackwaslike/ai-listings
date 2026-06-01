@@ -2,6 +2,7 @@ import sharp from 'sharp'
 import { getSupabaseAdmin } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { toInternalUrl } from './to-public-url'
+import { uploadFile } from '@/lib/storage'
 
 export async function removeBackground(
   photoId: string,
@@ -40,19 +41,11 @@ export async function removeBackground(
     .jpeg({ quality: 92 })
     .toBuffer()
 
-  const { error: uploadError } = await supabase.storage
-    .from('photos')
-    .upload(storagePath, processedBuffer, { contentType: 'image/jpeg', upsert: true })
-
-  if (uploadError) {
-    throw new Error(`removeBackground: Supabase storage upload failed — ${uploadError.message}`)
-  }
-
-  const { data: urlData } = supabase.storage.from('photos').getPublicUrl(storagePath)
+  const processedUrl = await uploadFile(storagePath, processedBuffer, 'image/jpeg')
 
   const { error: photoUpdateError } = await supabase
     .from('photos')
-    .update({ processed_url: urlData.publicUrl, photoroom_meta: {} })
+    .update({ processed_url: processedUrl, photoroom_meta: {} })
     .eq('id', photoId)
 
   if (photoUpdateError) {

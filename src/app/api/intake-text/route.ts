@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { inngest } from '@/lib/inngest/client'
+import { uploadFile } from '@/lib/storage'
 
 const UPC_REGEX = /^\d{8,14}$/
 
@@ -182,20 +183,16 @@ export async function POST(request: Request) {
       const fetched = await fetchImageBuffer(resolved.imageUrl)
       if (fetched) {
         const storagePath = `intake/${listingId}/original.${fetched.ext}`
-        const { error: uploadError } = await supabase.storage
-          .from('photos')
-          .upload(storagePath, fetched.buffer, { contentType: fetched.contentType, upsert: false })
-
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage.from('photos').getPublicUrl(storagePath)
-          uploadedImageUrl = urlData.publicUrl
-
+        try {
+          uploadedImageUrl = await uploadFile(storagePath, fetched.buffer, fetched.contentType)
           await supabase.from('photos').insert({
             listing_id: listingId,
             type: 'intake',
             raw_url: uploadedImageUrl,
             display_order: 0,
           })
+        } catch {
+          // skip photo if upload fails
         }
       }
     }

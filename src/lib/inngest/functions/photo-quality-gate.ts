@@ -3,6 +3,7 @@ import { inngest } from '../client'
 import type { StudioUploadedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { toPublicUrl, toInternalUrl } from '@/lib/pipeline/to-public-url'
+import { uploadFile } from '@/lib/storage'
 
 interface QualityOutput {
   passed: boolean
@@ -133,16 +134,11 @@ export const photoQualityGate = inngest.createFunction(
     const processedBuffer = Buffer.from(await prResponse.arrayBuffer())
     const storagePath = `studio/${listingId}/processed-${photoId}.png`
 
-    await supabase.storage.from('photos').upload(storagePath, processedBuffer, {
-      contentType: 'image/png',
-      upsert: true,
-    })
-
-    const { data: urlData } = supabase.storage.from('photos').getPublicUrl(storagePath)
+    const processedUrl = await uploadFile(storagePath, processedBuffer, 'image/png')
 
     await supabase
       .from('photos')
-      .update({ processed_url: urlData.publicUrl })
+      .update({ processed_url: processedUrl })
       .eq('id', photoId)
 
     return { ok: true, listingId, photoId }

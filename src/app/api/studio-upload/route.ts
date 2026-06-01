@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { inngest } from '@/lib/inngest/client'
+import { uploadFile } from '@/lib/storage'
 
 function getSupabaseAdmin() {
   return createSupabaseClient(
@@ -30,20 +31,13 @@ export async function POST(request: Request) {
   const ext = file.name.split('.').pop() ?? 'jpg'
   const storagePath = `studio/${listingId}/${timestamp}.${ext}`
 
-  const buffer = await file.arrayBuffer()
-  const { error: uploadError } = await supabase.storage
-    .from('photos')
-    .upload(storagePath, buffer, {
-      contentType: file.type || 'image/jpeg',
-      upsert: false,
-    })
-
-  if (uploadError) {
+  const buffer = Buffer.from(await file.arrayBuffer())
+  let photoUrl: string
+  try {
+    photoUrl = await uploadFile(storagePath, buffer, file.type || 'image/jpeg')
+  } catch {
     return NextResponse.json({ error: 'Storage upload failed' }, { status: 500 })
   }
-
-  const { data: urlData } = supabase.storage.from('photos').getPublicUrl(storagePath)
-  const photoUrl = urlData.publicUrl
 
   const { data: photoRow, error: photoError } = await supabase
     .from('photos')

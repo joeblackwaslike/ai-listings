@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { uploadFile } from '@/lib/storage';
 import type {
   PlatformSDK,
   PlatformComp,
@@ -681,18 +682,9 @@ export class MechmarketAdapter implements PlatformSDK {
     mimeType: string,
     listingId: string,
   ): Promise<string> {
-    const supabase = getSupabaseAdmin();
     const ext = mimeType.split('/')[1] ?? 'jpg';
     const path = `${this.userId}/${listingId}/timestamp-${Date.now()}.${ext}`;
-
-    const { error } = await supabase.storage
-      .from('listings')
-      .upload(path, imageBuffer, { contentType: mimeType, upsert: true });
-
-    if (error) throw new PlatformError('mechmarket', `Failed to upload timestamp photo: ${error.message}`);
-
-    const baseUrl = process.env.SUPABASE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-    return `${baseUrl}/storage/v1/object/public/listings/${path}`;
+    return uploadFile(path, imageBuffer, mimeType);
   }
 
   /**
