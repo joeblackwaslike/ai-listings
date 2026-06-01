@@ -12,3 +12,80 @@ export function relativeDate(isoString: string | null | undefined): string {
   if (days < 365) return `${Math.floor(days / 30)}mo ago`
   return `${Math.floor(days / 365)}y ago`
 }
+
+export function detectClothingSubType(notableFeatures: string[]): import('@/types/listings').ClothingSubType | null {
+  const model = notableFeatures.find((f) => f.startsWith('Model:'))?.slice(7).toLowerCase() ?? ''
+  if (/\bjeans?\b|denim|\b5[0-9][0-9]\b/.test(model)) return 'jeans'
+  if (/\bshorts?\b/.test(model)) return 'shorts'
+  if (/formal.*pant|dress.*pant|trousers?|slacks?/.test(model)) return 'pants_formal'
+  if (/\bpants?\b|\bchinos?\b|\bkhakis?\b/.test(model)) return 'pants'
+  if (/t.?shirt|tee\b|crew.?neck/.test(model)) return 'tshirt'
+  if (/\bshirt\b|button.?down|oxford|polo|dress\s+shirt/.test(model)) return 'shirt'
+  if (/\bdress\b/.test(model)) return 'dress'
+  if (/jacket|blazer|\bcoat\b|hoodie|sweatshirt/.test(model)) return 'jacket'
+  if (/\bskirt\b/.test(model)) return 'skirt'
+  return null
+}
+
+export function getMeasurementFields(
+  category: string,
+  subType: import('@/types/listings').ClothingSubType | null
+): import('@/types/listings').MeasurementField[] {
+  if (category === 'sneakers') {
+    return [{ key: 'us_size', label: 'US Size', hint: 'e.g. 9.5' }]
+  }
+  if (category === 'clothing') {
+    switch (subType) {
+      case 'jeans':
+      case 'pants':
+        return [
+          { key: 'waist', label: 'Waist', hint: 'in inches (e.g. 32)' },
+          { key: 'inseam', label: 'Inseam', hint: 'in inches (e.g. 30)' },
+        ]
+      case 'pants_formal':
+        return [
+          { key: 'waist', label: 'Waist', hint: 'in inches' },
+          { key: 'inseam', label: 'Inseam', hint: 'in inches' },
+          { key: 'rise', label: 'Rise', hint: 'low, mid, or high', useChips: true, chipOptions: ['Low', 'Mid', 'High'] },
+        ]
+      case 'shorts':
+        return [{ key: 'waist', label: 'Waist', hint: 'in inches' }]
+      case 'tshirt':
+        return [
+          { key: 'chest', label: 'Chest', hint: 'lay flat across, double it (inches)' },
+          { key: 'length', label: 'Length', hint: 'collar to hem (inches)' },
+        ]
+      case 'shirt':
+      case 'jacket':
+        return [
+          { key: 'chest', label: 'Chest', hint: 'lay flat across, double it (inches)' },
+          { key: 'sleeve', label: 'Sleeve', hint: 'neck to cuff (inches)' },
+          { key: 'length', label: 'Length', hint: 'collar to hem (inches)' },
+        ]
+      case 'dress':
+        return [
+          { key: 'bust', label: 'Bust', hint: 'in inches' },
+          { key: 'waist', label: 'Waist', hint: 'in inches' },
+          { key: 'hips', label: 'Hips', hint: 'in inches' },
+          { key: 'length', label: 'Length', hint: 'in inches' },
+        ]
+      case 'skirt':
+        return [
+          { key: 'waist', label: 'Waist', hint: 'in inches' },
+          { key: 'length', label: 'Length', hint: 'in inches' },
+        ]
+      default:
+        return [
+          { key: 'chest', label: 'Chest', hint: 'in inches (if applicable)' },
+          { key: 'length', label: 'Length', hint: 'in inches' },
+        ]
+    }
+  }
+  // Everything else (handbag, small_leather_goods, electronics, keyboards,
+  // collectibles, watches, jewelry, other, etc.) — 3D dimensions
+  return [
+    { key: 'height', label: 'Height', hint: 'in inches' },
+    { key: 'width', label: 'Width', hint: 'in inches' },
+    { key: 'depth', label: 'Depth', hint: 'in inches' },
+  ]
+}

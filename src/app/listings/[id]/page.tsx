@@ -5,15 +5,19 @@ import { FieldsPanel } from '@/components/workspace/FieldsPanel'
 import { AgentChat } from '@/components/workspace/AgentChat'
 import { ArchiveButton } from '@/components/workspace/ArchiveButton'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
-import type { Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
+import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
+import { detectClothingSubType, getMeasurementFields } from '@/lib/utils'
+
+const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
 
 type WorkspaceContext = {
   firstMessage: string | null
   suggestions: Suggestion[] | null
+  detailGateContext?: DetailGateContext
 }
 
-function ctx(firstMessage: string, suggestions: Suggestion[]): WorkspaceContext {
-  return { firstMessage, suggestions }
+function ctx(firstMessage: string, suggestions: Suggestion[], detailGateContext?: DetailGateContext): WorkspaceContext {
+  return { firstMessage, suggestions, detailGateContext }
 }
 
 const NO_CONTEXT: WorkspaceContext = { firstMessage: null, suggestions: null }
@@ -121,17 +125,36 @@ function idGateContext(listing: Listing): WorkspaceContext {
 
 function genderGateContext(listing: Listing): WorkspaceContext {
   const category = listing.category ?? 'item'
-  const needsSize = ['clothing', 'sneakers'].includes(category.toLowerCase())
+  const categoryNeedsGender = GENDER_CATEGORIES.has(category.toLowerCase())
+  const notableFeatures = (listing.intake_meta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
+  const clothingSubTypeHint = category === 'clothing' ? detectClothingSubType(notableFeatures) : null
+  const measurementFields = getMeasurementFields(category, clothingSubTypeHint)
+  const categoryNeedsMeasurements = measurementFields.length > 0
 
-  const message = needsSize
-    ? `Quick question before I run pricing — what's the gender and size for this ${category}? Pick the gender below, then I'll ask for the size.`
+  const detailGateContext: DetailGateContext = {
+    category,
+    categoryNeedsGender,
+    clothingSubTypeHint,
+    categoryNeedsMeasurements,
+    measurementFields,
+  }
+
+  if (!categoryNeedsGender) {
+    const message = categoryNeedsMeasurements
+      ? `Quick question before I run pricing — I need a few measurements for this ${category} to find accurate comps.`
+      : `Getting ready to run pricing research for this ${category}.`
+    return ctx(message, [{ label: 'Enter measurements', focusInput: false }], detailGateContext)
+  }
+
+  const message = categoryNeedsMeasurements
+    ? `Quick question before I run pricing — what's the gender and size for this ${category}? Pick the gender below, then I'll ask for measurements.`
     : `Quick question before I run pricing — is this ${category} Men's or Women's?`
 
   return ctx(message, [
-    { label: "Men's", confirmGender: 'mens', needsSize, message: "Men's" },
-    { label: "Women's", confirmGender: 'womens', needsSize, message: "Women's" },
-    ...(needsSize ? [] : [{ label: 'Unisex', confirmGender: 'unisex', message: 'Unisex' }]),
-  ])
+    { label: "Men's", confirmGender: 'mens', needsSize: false, message: "Men's" },
+    { label: "Women's", confirmGender: 'womens', needsSize: false, message: "Women's" },
+    { label: 'Unisex', confirmGender: 'unisex', message: 'Unisex' },
+  ], detailGateContext)
 }
 
 function buildWorkspaceContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
@@ -200,9 +223,9 @@ export default async function WorkspacePage({
   const priceHistory = (priceHistoryResult.data ?? []) as unknown as ListingPriceEvent[]
 
   const hasHistory = history.length > 0
-  const { firstMessage, suggestions } = !hasHistory || listing.status === 'id_gate'
+  const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate'
     ? buildWorkspaceContext(listing, photos, hasHistory)
-    : { firstMessage: null, suggestions: null }
+    : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
   return (
     <div className="h-screen flex flex-col">
@@ -239,6 +262,7 @@ export default async function WorkspacePage({
             }))}
             pendingIdGate={listing.status === 'id_gate'}
             pendingGenderGate={listing.status === 'gender_gate'}
+            detailGateContext={detailGateContext}
             firstMessage={firstMessage}
             suggestions={suggestions}
           />

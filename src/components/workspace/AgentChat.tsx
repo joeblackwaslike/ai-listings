@@ -5,6 +5,8 @@ import Image from 'next/image'
 import { Send, Zap, Check, X, AlertCircle, ImagePlus } from 'lucide-react'
 import { SuggestedReplies } from './SuggestedReplies'
 import type { Suggestion } from './SuggestedReplies'
+import { MeasurementFields } from './MeasurementFields'
+import type { DetailGateContext, Measurements } from '@/types/listings'
 
 interface ChatMessage {
   id: string
@@ -30,6 +32,7 @@ interface AgentChatProps {
   readonly suggestions?: Suggestion[] | null
   readonly pendingIdGate?: boolean
   readonly pendingGenderGate?: boolean
+  readonly detailGateContext?: DetailGateContext
 }
 
 type AgentEvent =
@@ -116,7 +119,7 @@ async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setM
   }
 }
 
-export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate }: AgentChatProps) {
+export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
@@ -135,11 +138,31 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   const idGateResolvedRef = useRef(false)
   const genderGateResolvedRef = useRef(false)
   const [pendingGender, setPendingGender] = useState<string | null>(null)
-  const [awaitingSize, setAwaitingSize] = useState(false)
+  const [showMeasurements, setShowMeasurements] = useState(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // For non-gendered categories, auto-show measurements form when the gate is active
+  useEffect(() => {
+    if (pendingGenderGate && detailGateContext && !detailGateContext.categoryNeedsGender && detailGateContext.categoryNeedsMeasurements && !genderGateResolvedRef.current) {
+      setShowMeasurements(true)
+    }
+  }, [pendingGenderGate, detailGateContext])
+
+  async function handleMeasurementsSubmit(measurements: Partial<Measurements>) {
+    genderGateResolvedRef.current = true
+    setShowMeasurements(false)
+    setSuggestionsDismissed(true)
+    setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Got it — running pricing research now. The listing will update in a moment." }])
+    await fetch('/api/pipeline/confirm-gender', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listingId, gender: pendingGender, measurements }),
+    })
+    setPendingGender(null)
+  }
 
   async function uploadImages(files: File[]): Promise<string[]> {
     return Promise.all(files.map(async (file) => {
@@ -215,22 +238,19 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     if (suggestion.confirmGender) {
       setSuggestionsDismissed(true)
       setMessages((prev) => [...prev, { id: uid(), role: 'user', content: suggestion.message ?? suggestion.label }])
-      if (suggestion.needsSize) {
-        // Collect size first before firing the event
-        setPendingGender(suggestion.confirmGender)
-        setAwaitingSize(true)
-        const sizePrompt = suggestion.confirmGender === 'mens' ? "Got it — Men's. What's the size?" : "Got it — Women's. What's the size?"
-        setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: sizePrompt }])
-        setTimeout(() => textareaRef.current?.focus(), 50)
+      setPendingGender(suggestion.confirmGender)
+      if (detailGateContext?.categoryNeedsMeasurements) {
+        setShowMeasurements(true)
+        setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Got it — now I need a few measurements. Fill these in and hit Continue." }])
       } else {
-        // No size needed — confirm immediately
         genderGateResolvedRef.current = true
         await fetch('/api/pipeline/confirm-gender', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ listingId, gender: suggestion.confirmGender, size: null }),
+          body: JSON.stringify({ listingId, gender: suggestion.confirmGender, measurements: null }),
         })
         setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Got it — running pricing research now. The listing will update in a moment." }])
+        setPendingGender(null)
       }
       return
     }
@@ -241,20 +261,7 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     const text = input.trim()
     if ((!text && pendingImages.length === 0) || streaming) return
     setInput('')
-    if (awaitingSize && pendingGender && text) {
-      setAwaitingSize(false)
-      const g = pendingGender
-      setPendingGender(null)
-      genderGateResolvedRef.current = true
-      setMessages((prev) => [...prev, { id: uid(), role: 'user', content: text }])
-      await fetch('/api/pipeline/confirm-gender', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listingId, gender: g, size: text }),
-      })
-      setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Perfect — running pricing research now. The listing will update in a moment." }])
-      return
-    }
+
     if (pendingIdGate && !idGateResolvedRef.current && text) {
       idGateResolvedRef.current = true
       setSuggestionsDismissed(true)
@@ -377,7 +384,13 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
       </div>
 
       <div className="flex-none border-t border-gray-800 px-4 py-3 space-y-2">
-        {!suggestionsDismissed && suggestions && suggestions.length > 0 && (
+        {showMeasurements && detailGateContext?.measurementFields && detailGateContext.measurementFields.length > 0 && (
+          <MeasurementFields
+            fields={detailGateContext.measurementFields}
+            onSubmit={(m) => void handleMeasurementsSubmit(m)}
+          />
+        )}
+        {!showMeasurements && !suggestionsDismissed && suggestions && suggestions.length > 0 && (
           <SuggestedReplies suggestions={suggestions} onSelect={(s) => void handleSuggestionSelect(s)} />
         )}
         {pendingImages.length > 0 && (

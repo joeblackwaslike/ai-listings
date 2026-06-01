@@ -99,6 +99,54 @@ export interface ListingUrls {
   [platform: string]: string | undefined;
 }
 
+export type ClothingSubType =
+  | 'jeans'
+  | 'pants'
+  | 'pants_formal'
+  | 'shorts'
+  | 'tshirt'
+  | 'shirt'
+  | 'dress'
+  | 'jacket'
+  | 'skirt'
+  | 'other';
+
+export interface Measurements {
+  // clothing
+  waist?: number;
+  inseam?: number;
+  chest?: number;
+  sleeve?: number;
+  length?: number;
+  bust?: number;
+  hips?: number;
+  rise?: 'low' | 'mid' | 'high';
+  // bags / small leather goods / electronics / collectibles / any non-clothing item
+  height?: number;
+  width?: number;
+  depth?: number;
+  // sneakers
+  us_size?: number;
+  // general
+  weight_oz?: number;
+}
+
+export interface MeasurementField {
+  key: keyof Measurements;
+  label: string;
+  hint: string;
+  useChips?: true;
+  chipOptions?: string[];
+}
+
+export interface DetailGateContext {
+  category: string;
+  categoryNeedsGender: boolean;
+  clothingSubTypeHint: ClothingSubType | null;
+  categoryNeedsMeasurements: boolean;
+  measurementFields: MeasurementField[];
+}
+
 export interface Listing {
   id: string;
   sku: string | null;
@@ -113,6 +161,10 @@ export interface Listing {
   brand: string | null;
   condition: ConditionValue | null;
   condition_notes: string | null;
+  gender: string | null;
+  item_size: string | null;
+  clothing_sub_type: ClothingSubType | null;
+  measurements: Measurements | null;
   tags: string[];
   inclusions: Inclusion[];
 
