@@ -52,3 +52,6 @@
 # - linear.api-key
 # - github.org
 # - github.repo
+
+# Use the shared Dolt server (port 3308) for all projects (prevents per-project drift).
+dolt.shared-server: true
