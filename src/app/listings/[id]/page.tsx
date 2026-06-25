@@ -6,7 +6,7 @@ import { ArchiveButton } from '@/components/workspace/ArchiveButton'
 import { PhotoSection } from '@/components/workspace/PhotoSection'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
-import { detectClothingSubType, getMeasurementFields } from '@/lib/utils'
+import { detectClothingSubType, getMeasurementFields, studioPhotosReady } from '@/lib/utils'
 
 const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
 
@@ -25,7 +25,7 @@ const NO_CONTEXT: WorkspaceContext = { firstMessage: null, suggestions: null }
 function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
   const studioPhotos = photos.filter((p) => p.type === 'studio')
   const hasStudio = studioPhotos.length > 0
-  const allProcessed = hasStudio && (listing.skip_background_removal || studioPhotos.every((p) => p.processed_url))
+  const allProcessed = studioPhotosReady(listing, photos)
   const pendingAuthCount = listing.auth_plan.filter((s) => s.status === 'pending').length
   const needsInclusions = listing.inclusions.length === 0
 
