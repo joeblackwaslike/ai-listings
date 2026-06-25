@@ -17,6 +17,17 @@ export async function PATCH(
   }
 
   const supabase = getSupabaseAdmin()
+
+  // Verify the listing belongs to the caller before updating with the admin client (RLS is bypassed here).
+  const { data: listing } = await supabase
+    .from('listings')
+    .select('user_id')
+    .eq('id', id)
+    .single()
+  if (!listing || listing.user_id !== user.id) {
+    return Response.json({ error: 'Not found' }, { status: 404 })
+  }
+
   const { error } = await supabase
     .from('listings')
     .update({ skip_background_removal: body.skip })

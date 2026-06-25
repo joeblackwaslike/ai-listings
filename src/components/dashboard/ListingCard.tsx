@@ -176,11 +176,12 @@ export function ListingCard({
     const next = !skipBg
     setSkipBg(next)
     try {
-      await fetch(`/api/listings/${listing.id}/skip-bg`, {
+      const res = await fetch(`/api/listings/${listing.id}/skip-bg`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skip: next }),
       })
+      if (!res.ok) throw new Error(`skip-bg update failed (${res.status})`)
     } catch {
       setSkipBg(!next)
     } finally {

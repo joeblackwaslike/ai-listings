@@ -20,11 +20,12 @@ export function PhotoSection({ photos, listingId, initialSkip }: PhotoSectionPro
     const next = !skip
     setSkip(next)
     try {
-      await fetch(`/api/listings/${listingId}/skip-bg`, {
+      const res = await fetch(`/api/listings/${listingId}/skip-bg`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skip: next }),
       })
+      if (!res.ok) throw new Error(`skip-bg update failed (${res.status})`)
     } catch {
       setSkip(!next)
     } finally {
