@@ -47,11 +47,11 @@ function humanStepState(conditions: { done: boolean; ready: boolean }): StepStat
 }
 
 function buildHumanSteps(listing: Listing, photos: Photo[]): Step[] {
-  const { status, is_luxury, auth_plan, photos_confirmed } = listing
+  const { status, is_luxury, auth_plan, photos_confirmed, skip_background_removal } = listing
   const isPublished = status === 'published'
   const studioPhotos = photos.filter((p) => p.type === 'studio')
   const hasStudio = studioPhotos.length > 0
-  const allProcessed = hasStudio && studioPhotos.every((p) => p.processed_url)
+  const allProcessed = hasStudio && (skip_background_removal || studioPhotos.every((p) => p.processed_url))
   const authAllDone = !is_luxury || (auth_plan.length > 0 && auth_plan.every((s) => s.status === 'done'))
 
   return [
@@ -61,8 +61,8 @@ function buildHumanSteps(listing: Listing, photos: Photo[]): Step[] {
       state: humanStepState({ done: isPublished || hasStudio, ready: true }),
     },
     {
-      label: 'Remove Backgrounds',
-      sublabel: 'Auto-processed after upload',
+      label: skip_background_removal ? 'Keep Original Backgrounds' : 'Remove Backgrounds',
+      sublabel: skip_background_removal ? 'Background removal turned off' : 'Auto-processed after upload',
       state: humanStepState({ done: isPublished || allProcessed, ready: hasStudio }),
     },
     {

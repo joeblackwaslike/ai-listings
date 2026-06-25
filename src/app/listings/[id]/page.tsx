@@ -25,7 +25,7 @@ const NO_CONTEXT: WorkspaceContext = { firstMessage: null, suggestions: null }
 function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
   const studioPhotos = photos.filter((p) => p.type === 'studio')
   const hasStudio = studioPhotos.length > 0
-  const allProcessed = hasStudio && studioPhotos.every((p) => p.processed_url)
+  const allProcessed = hasStudio && (listing.skip_background_removal || studioPhotos.every((p) => p.processed_url))
   const pendingAuthCount = listing.auth_plan.filter((s) => s.status === 'pending').length
   const needsInclusions = listing.inclusions.length === 0
 
@@ -53,11 +53,15 @@ function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): 
 
   if (!listing.photos_confirmed) {
     return ctx(
-      "Your photos have been processed — backgrounds removed. Take a look and let me know if they look good to continue.",
+      listing.skip_background_removal
+        ? "Background removal is off for this listing, so I've kept your original photos. Take a look and let me know if they look good to continue."
+        : "Your photos have been processed — backgrounds removed. Take a look and let me know if they look good to continue.",
       [
         { label: 'Looks good ✓', message: 'The photos look great, ready to continue.', confirmPhotos: true },
         { label: 'There are problems', focusInput: true },
-        { label: 'Redo background removal', message: "Please redo the background removal on my photos." },
+        listing.skip_background_removal
+          ? { label: 'Turn on background removal', message: "I'd like to turn background removal back on for my photos." }
+          : { label: 'Redo background removal', message: "Please redo the background removal on my photos." },
       ]
     )
   }
