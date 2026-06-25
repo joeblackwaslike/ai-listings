@@ -1,3 +1,5 @@
+import type { Listing, Photo } from '@/types/listings'
+
 export function formatPrice(cents: number | null): string {
   if (cents == null) return '—'
   return `$${(cents / 100).toFixed(0)}`
@@ -88,4 +90,12 @@ export function getMeasurementFields(
     { key: 'width', label: 'Width', hint: 'in inches' },
     { key: 'depth', label: 'Depth', hint: 'in inches' },
   ]
+}
+
+// Studio photos are "ready" for confirmation once their backgrounds are processed,
+// or immediately when background removal is skipped (the originals are kept as-is).
+export function studioPhotosReady(listing: Listing, photos: Photo[]): boolean {
+  const studio = photos.filter((p) => p.type === 'studio')
+  if (studio.length === 0) return false
+  return listing.skip_background_removal || studio.every((p) => p.processed_url !== null)
 }

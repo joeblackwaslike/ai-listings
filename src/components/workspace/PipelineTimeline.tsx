@@ -1,5 +1,6 @@
 import { Check, Loader2, Circle } from 'lucide-react'
 import type { Listing, Photo } from '@/types/listings'
+import { studioPhotosReady } from '@/lib/utils'
 
 type StepState = 'done' | 'active' | 'pending'
 
@@ -51,7 +52,7 @@ function buildHumanSteps(listing: Listing, photos: Photo[]): Step[] {
   const isPublished = status === 'published'
   const studioPhotos = photos.filter((p) => p.type === 'studio')
   const hasStudio = studioPhotos.length > 0
-  const allProcessed = hasStudio && (skip_background_removal || studioPhotos.every((p) => p.processed_url))
+  const allProcessed = studioPhotosReady(listing, photos)
   const authAllDone = !is_luxury || (auth_plan.length > 0 && auth_plan.every((s) => s.status === 'done'))
 
   return [
