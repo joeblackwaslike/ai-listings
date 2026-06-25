@@ -192,6 +192,7 @@ export interface Listing {
   auto_discount_interval_days: number | null;
 
   photos_confirmed: boolean;
+  skip_background_removal: boolean;
   is_luxury: boolean;
   intake_meta: Record<string, unknown> | null;
 
