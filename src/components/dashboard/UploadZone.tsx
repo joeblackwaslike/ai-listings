@@ -42,6 +42,7 @@ export function UploadZone({ onUpload }: Readonly<{ onUpload?: (listing: Listing
             agent_blocked_reason: null,
             pipeline_step: 0,
             pipeline_total: 5,
+            skip_background_removal: false,
             coverPhoto: { raw_url: data.photoUrl, processed_url: null },
           })
         } catch {

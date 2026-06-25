@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Archive, Loader2 } from 'lucide-react'
+import { Archive, ImageOff, Loader2 } from 'lucide-react'
 import { StatusBadge } from './StatusBadge'
 import { formatPrice } from '@/lib/utils'
 import type { ListingStatus } from '@/types/listings'
@@ -23,6 +23,7 @@ interface CardListing {
   agent_blocked_reason: string | null
   pipeline_step: number
   pipeline_total: number
+  skip_background_removal: boolean
 }
 
 interface CoverPhoto {
@@ -129,11 +130,15 @@ export function ListingCard({
   const [isArchiving, setIsArchiving] = useState(false)
   const [idConfirmed, setIdConfirmed] = useState(false)
   const [idConfirming, setIdConfirming] = useState(false)
+  const [skipBg, setSkipBg] = useState(listing.skip_background_removal)
+  const [isTogglingSkip, setIsTogglingSkip] = useState(false)
 
   const isBlocked = listing.agent_blocked && listing.status === 'in_loop'
   const isIdGate = listing.status === 'id_gate' && !idConfirmed
   const isProcessing = listing.status === 'intake' || (listing.status === 'id_gate' && idConfirmed)
-  const photoUrl = listing.coverPhoto?.processed_url ?? listing.coverPhoto?.raw_url
+  const photoUrl = skipBg
+    ? listing.coverPhoto?.raw_url
+    : (listing.coverPhoto?.processed_url ?? listing.coverPhoto?.raw_url)
   const features = (listing.intake_meta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
 
   async function handleArchive(e: React.MouseEvent) {
@@ -161,6 +166,26 @@ export function ListingCard({
       setIdConfirmed(true)
     } finally {
       setIdConfirming(false)
+    }
+  }
+
+  async function handleToggleSkipBg(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsTogglingSkip(true)
+    const next = !skipBg
+    setSkipBg(next)
+    try {
+      const res = await fetch(`/api/listings/${listing.id}/skip-bg`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skip: next }),
+      })
+      if (!res.ok) throw new Error(`skip-bg update failed (${res.status})`)
+    } catch {
+      setSkipBg(!next)
+    } finally {
+      setIsTogglingSkip(false)
     }
   }
 
@@ -200,6 +225,18 @@ export function ListingCard({
             <span className="text-gray-700 text-xs">No photo</span>
           </div>
         )}
+        <button
+          onClick={handleToggleSkipBg}
+          disabled={isTogglingSkip}
+          title={skipBg ? 'Background removal skipped — click to re-enable' : 'Skip background removal'}
+          className={`absolute top-1.5 left-1.5 z-20 transition-opacity rounded p-1 ${
+            skipBg
+              ? 'opacity-100 bg-amber-900/80 hover:bg-amber-800/80'
+              : 'opacity-0 group-hover:opacity-100 bg-gray-900/80 hover:bg-gray-800/80'
+          }`}
+        >
+          <ImageOff className={`w-3.5 h-3.5 ${skipBg ? 'text-amber-400' : 'text-gray-400'}`} />
+        </button>
         <button
           onClick={handleArchive}
           disabled={isArchiving}

@@ -105,6 +105,16 @@ export const photoQualityGate = inngest.createFunction(
       return { ok: false, listingId, photoId, issues: quality.issues }
     }
 
+    const { data: listingRow } = await supabase
+      .from('listings')
+      .select('skip_background_removal')
+      .eq('id', listingId)
+      .single()
+
+    if (listingRow?.skip_background_removal) {
+      return { ok: true, listingId, photoId, skipped: true }
+    }
+
     const { data: photoRow } = await supabase
       .from('photos')
       .select('raw_url')

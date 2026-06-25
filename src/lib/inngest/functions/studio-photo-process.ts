@@ -16,18 +16,20 @@ export const studioPhotoProcess = inngest.createFunction(
 
     const supabase = getSupabaseAdmin()
 
-    const apiKeys = await step.run('fetch-api-keys', async () => {
+    const fetchResult = await step.run('fetch-api-keys', async () => {
       const { data: listingRow } = await supabase
         .from('listings')
-        .select('user_id')
+        .select('user_id, skip_background_removal')
         .eq('id', listingId)
         .single()
-      return getUserApiKeys(listingRow?.user_id ?? null)
+      return { apiKeys: await getUserApiKeys(listingRow?.user_id ?? null), skip: listingRow?.skip_background_removal ?? false }
     })
+
+    if (fetchResult.skip) return { ok: true, listingId, photoId, skipped: true }
 
     const storagePath = `studio/${listingId}/${photoId}-processed.png`
     await step.run('remove-background', () =>
-      removeBackground(photoId, photoUrl, storagePath, apiKeys)
+      removeBackground(photoId, photoUrl, storagePath, fetchResult.apiKeys)
     )
 
     return { ok: true, listingId, photoId }

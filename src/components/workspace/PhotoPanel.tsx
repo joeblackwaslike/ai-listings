@@ -6,17 +6,18 @@ import type { Photo } from '@/types/listings'
 
 interface PhotoPanelProps {
   readonly photos: Photo[]
+  readonly skipBgRemoval?: boolean
 }
 
 const PHOTO_RANK: Record<string, number> = { studio: 0, processed: 1, auth_card: 2 }
 function photoRank(p: Photo): number { return PHOTO_RANK[p.type] ?? 3 }
 
-export function PhotoPanel({ photos }: PhotoPanelProps) {
+export function PhotoPanel({ photos, skipBgRemoval = false }: PhotoPanelProps) {
   const [selectedIdx, setSelectedIdx] = useState(0)
 
   const displayPhotos = [...photos].sort((a, b) => photoRank(a) - photoRank(b) || a.display_order - b.display_order)
   const main = displayPhotos[selectedIdx]
-  const mainUrl = main?.processed_url ?? main?.raw_url
+  const mainUrl = skipBgRemoval ? main?.raw_url : (main?.processed_url ?? main?.raw_url)
 
   return (
     <div className="space-y-6">
@@ -35,7 +36,7 @@ export function PhotoPanel({ photos }: PhotoPanelProps) {
           {displayPhotos.length > 1 && (
             <div className="flex gap-1.5 overflow-x-auto pb-1">
               {displayPhotos.map((photo, i) => {
-                const url = photo.processed_url ?? photo.raw_url
+                const url = skipBgRemoval ? photo.raw_url : (photo.processed_url ?? photo.raw_url)
                 return (
                   <button
                     key={photo.id}
