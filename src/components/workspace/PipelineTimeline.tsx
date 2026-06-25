@@ -61,8 +61,8 @@ function buildHumanSteps(listing: Listing, photos: Photo[]): Step[] {
       state: humanStepState({ done: isPublished || hasStudio, ready: true }),
     },
     {
-      label: 'Remove Backgrounds',
-      sublabel: 'Auto-processed after upload',
+      label: skip_background_removal ? 'Keep Original Backgrounds' : 'Remove Backgrounds',
+      sublabel: skip_background_removal ? 'Background removal turned off' : 'Auto-processed after upload',
       state: humanStepState({ done: isPublished || allProcessed, ready: hasStudio }),
     },
     {

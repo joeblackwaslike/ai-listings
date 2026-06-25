@@ -59,7 +59,9 @@ function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): 
       [
         { label: 'Looks good ✓', message: 'The photos look great, ready to continue.', confirmPhotos: true },
         { label: 'There are problems', focusInput: true },
-        { label: 'Redo background removal', message: "Please redo the background removal on my photos." },
+        listing.skip_background_removal
+          ? { label: 'Turn on background removal', message: "I'd like to turn background removal back on for my photos." }
+          : { label: 'Redo background removal', message: "Please redo the background removal on my photos." },
       ]
     )
   }
