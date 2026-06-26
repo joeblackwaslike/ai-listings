@@ -2,8 +2,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { inngest } from '../client'
 import type { StudioUploadedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
-import { toPublicUrl, toInternalUrl } from '@/lib/pipeline/to-public-url'
-import { uploadFile } from '@/lib/storage'
+import { toPublicUrl } from '@/lib/pipeline/to-public-url'
+import { removeBackground } from '@/lib/pipeline/remove-background'
+import { getUserApiKeys } from '@/lib/user-api-keys'
 
 interface QualityOutput {
   passed: boolean
@@ -107,7 +108,7 @@ export const photoQualityGate = inngest.createFunction(
 
     const { data: listingRow } = await supabase
       .from('listings')
-      .select('skip_background_removal')
+      .select('user_id, skip_background_removal')
       .eq('id', listingId)
       .single()
 
@@ -125,31 +126,9 @@ export const photoQualityGate = inngest.createFunction(
       throw new Error(`photo-quality-gate: photo ${photoId} has no raw_url`)
     }
 
-    const photoResponse = await fetch(toInternalUrl(photoRow.raw_url as string))
-    const photoBuffer = await photoResponse.arrayBuffer()
-
-    const formData = new FormData()
-    formData.append('file', new Blob([photoBuffer], { type: 'image/jpeg' }), 'photo.jpg')
-
-    const prResponse = await fetch('https://api.withoutbg.com/v1.0/image-without-background', {
-      method: 'POST',
-      headers: { 'X-API-Key': process.env.WITHOUTBG_API_KEY! },
-      body: formData,
-    })
-
-    if (!prResponse.ok) {
-      throw new Error(`photo-quality-gate: withoutBG HTTP ${prResponse.status}`)
-    }
-
-    const processedBuffer = Buffer.from(await prResponse.arrayBuffer())
+    const apiKeys = await getUserApiKeys(listingRow?.user_id ?? null)
     const storagePath = `studio/${listingId}/processed-${photoId}.png`
-
-    const processedUrl = await uploadFile(storagePath, processedBuffer, 'image/png')
-
-    await supabase
-      .from('photos')
-      .update({ processed_url: processedUrl })
-      .eq('id', photoId)
+    await removeBackground(photoId, photoRow.raw_url as string, storagePath, apiKeys)
 
     return { ok: true, listingId, photoId }
   }

@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { toInternalUrl } from './to-public-url'
 import { uploadFile } from '@/lib/storage'
+import { getBgRemovalProvider } from './bg-removal'
 
 export async function removeBackground(
   photoId: string,
@@ -18,21 +19,8 @@ export async function removeBackground(
   }
   const photoBuffer = await photoResponse.arrayBuffer()
 
-  const formData = new FormData()
-  formData.append('file', new Blob([photoBuffer], { type: 'image/jpeg' }), 'photo.jpg')
-
-  const wbgResponse = await fetch('https://api.withoutbg.com/v1.0/image-without-background', {
-    method: 'POST',
-    headers: { 'X-API-Key': apiKeys.withoutbg },
-    body: formData,
-  })
-
-  if (!wbgResponse.ok) {
-    const errText = await wbgResponse.text()
-    throw new Error(`removeBackground: withoutBG returned HTTP ${wbgResponse.status} — ${errText}`)
-  }
-
-  const rawProcessedBuffer = Buffer.from(await wbgResponse.arrayBuffer())
+  const provider = getBgRemovalProvider(apiKeys)
+  const rawProcessedBuffer = await provider.removeBackground(Buffer.from(photoBuffer))
 
   // Auto-crop transparent borders, then flatten onto white (transparent PNG looks terrible in UI)
   const processedBuffer = await sharp(rawProcessedBuffer)
