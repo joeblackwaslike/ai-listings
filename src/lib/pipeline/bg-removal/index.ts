@@ -13,8 +13,13 @@ export function getBgRemovalProvider(apiKeys: ApiKeys): BgRemovalProvider {
   switch (id) {
     case 'withoutbg':
       return createWithoutBgProvider(apiKeys.withoutbg)
-    case 'birefnet':
-      return createBiRefNetProvider(process.env.BIREFNET_BASE_URL)
+    case 'birefnet': {
+      const baseUrl = process.env.BIREFNET_BASE_URL?.trim()
+      if (!baseUrl) {
+        throw new Error('BG_REMOVAL_PROVIDER=birefnet requires BIREFNET_BASE_URL to be set')
+      }
+      return createBiRefNetProvider(baseUrl)
+    }
     default:
       throw new Error(`Unknown BG_REMOVAL_PROVIDER: ${id}`)
   }
