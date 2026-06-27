@@ -34,18 +34,27 @@ export async function searchEbayActive(query: string, limit = 20): Promise<Activ
         'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
       },
     })
-    if (!res.ok) return []
+    // Fail soft so pricing never crashes — but surface auth/quota problems instead
+    // of silently degrading to "no listings found".
+    if (!res.ok) {
+      console.warn(`[ebay-browse] item_summary/search HTTP ${res.status} for "${query}"`)
+      return []
+    }
 
     const data = (await res.json()) as { itemSummaries?: BrowseItemSummary[] }
     return (data.itemSummaries ?? [])
-      .map((it) => ({
-        title: it.title ?? '',
-        priceCents: it.price?.value ? Math.round(parseFloat(it.price.value) * 100) : 0,
-        url: it.itemWebUrl ?? '',
-        condition: it.condition ?? 'Not specified',
-      }))
+      .map((it) => {
+        const price = it.price?.value ? parseFloat(it.price.value) : NaN
+        return {
+          title: it.title ?? '',
+          priceCents: Number.isFinite(price) ? Math.round(price * 100) : 0,
+          url: it.itemWebUrl ?? '',
+          condition: it.condition ?? 'Not specified',
+        }
+      })
       .filter((it) => it.title && it.priceCents > 0 && it.url)
-  } catch {
+  } catch (err) {
+    console.warn(`[ebay-browse] error for "${query}":`, (err as Error).message)
     return []
   }
 }

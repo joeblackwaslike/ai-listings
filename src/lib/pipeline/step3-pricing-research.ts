@@ -655,9 +655,11 @@ export async function runStep3PricingResearch(
   // Lowest live exact-item listing — surfaced as a fast-sale data point (never auto-prices).
   // Filter to the SAME exact item+color first: a raw keyword search surfaces unrelated
   // cheap items (a $9.99 Kenneth Cole is not a Movado comp), which would wreck the signal.
+  // Without the relevance gate we can't trust the cheapest active listing (it could be
+  // an unrelated $9.99 item), so surface nothing rather than a wrong signal.
   const activeRelevantIndices = apiKeys.anthropic && activeRows.length > 0
     ? await filterRelevantComps(activeRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
-    : new Set(activeRows.map((_, i) => i))
+    : new Set<number>()
   const relevantActive = activeRows.filter((_, i) => activeRelevantIndices.has(i))
   const lowestActive = relevantActive.length > 0
     ? relevantActive.reduce((min, r) => (r.sale_price_cents < min.sale_price_cents ? r : min))
