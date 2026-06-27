@@ -2,14 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
-
-interface EbayFindingItem {
-  title: string
-  soldPriceCents: number
-  condition: string
-  soldAt: string
-  listingUrl: string
-}
+import { searchEbayActive } from './comps/ebay-browse'
 
 interface SerpShoppingResult {
   title: string
@@ -22,73 +15,6 @@ interface SerpShoppingResult {
 interface SerpApiShoppingResponse {
   shopping_results?: SerpShoppingResult[]
   error?: string
-}
-
-interface SerpEbayResult {
-  title: string
-  link: string
-  price?: { extracted_value?: number }
-  condition?: string
-  extensions?: string[]
-}
-
-interface SerpEbayResponse {
-  organic_results?: SerpEbayResult[]
-  error?: string
-}
-
-async function fetchEbayFindingComps(
-  brand: string,
-  category: string,
-  model: string,
-  appId: string,
-  refNumber?: string
-): Promise<EbayFindingItem[]> {
-  if (!appId) return []
-  const keywords = refNumber ? `${brand} ${model} ${refNumber}` : `${brand} ${model} ${category}`
-  const params = new URLSearchParams({
-    'OPERATION-NAME': 'findCompletedItems',
-    'SERVICE-VERSION': '1.0.0',
-    'SECURITY-APPNAME': appId,
-    'RESPONSE-DATA-FORMAT': 'JSON',
-    'keywords': keywords,
-    'itemFilter(0).name': 'SoldItemsOnly',
-    'itemFilter(0).value': 'true',
-    'itemFilter(1).name': 'ListingType',
-    'itemFilter(1).value(0)': 'AuctionWithBIN',
-    'itemFilter(1).value(1)': 'FixedPrice',
-    'itemFilter(1).value(2)': 'Auction',
-    'sortOrder': 'EndTimeSoonest',
-    'paginationInput.entriesPerPage': '50',
-  })
-
-  const res = await fetch(`https://svcs.ebay.com/services/search/FindingService/v1?${params.toString()}`)
-  if (!res.ok) throw new Error(`step3: eBay Finding API returned HTTP ${res.status}`)
-
-  type FindingItem = {
-    title: [string]
-    sellingStatus: [{ currentPrice: [{ __value__: string }]; sellingState: [string] }]
-    listingInfo: [{ endTime: [string] }]
-    condition?: [{ conditionDisplayName: [string] }]
-    viewItemURL: [string]
-  }
-  type FindingResp = {
-    findCompletedItemsResponse?: [{ searchResult?: [{ item?: FindingItem[] }] }]
-  }
-
-  const data = await res.json() as FindingResp
-  const items = data?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item ?? []
-
-  return items
-    .filter((item) => item.sellingStatus[0].sellingState[0] === 'EndedWithSales')
-    .map((item) => ({
-      title: item.title[0],
-      soldPriceCents: Math.round(parseFloat(item.sellingStatus[0].currentPrice[0].__value__) * 100),
-      condition: item.condition?.[0]?.conditionDisplayName?.[0] ?? 'Not specified',
-      soldAt: item.listingInfo[0].endTime[0],
-      listingUrl: item.viewItemURL[0],
-    }))
-    .filter((item) => item.soldPriceCents > 0)
 }
 
 async function fetchSerpComps(
@@ -615,16 +541,10 @@ export async function runStep3PricingResearch(
 
   const isKeyboard = step2.category?.toLowerCase() === 'keyboards'
 
-  // For watches, extract ref number from notableFeatures for more specific eBay query
-  const isWatch = step2.category?.toLowerCase() === 'watches'
-  const refNumber = isWatch
-    ? step2.notableFeatures.map((f) => /ref\.?\s*([\w.-]+)/i.exec(f)?.[1]).find(Boolean)
-    : undefined
-
   const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
   const searchQuery = `${genderPrefix}${step2.brand} ${model}`
-  const [ebayItems, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, mercariSold, mercariActive] = await Promise.all([
-    fetchEbayFindingComps(step2.brand, step2.category, model, apiKeys.ebayAppId, refNumber),
+  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, mercariSold, mercariActive] = await Promise.all([
+    searchEbayActive(searchQuery),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, apiKeys.anthropic)
@@ -647,21 +567,6 @@ export async function runStep3PricingResearch(
     condition_delta: 'same' | 'better' | 'worse'
     adjusted_price_cents: number
   }> = []
-
-  for (const item of ebayItems) {
-    const delta = conditionDelta(step2.condition, item.condition)
-    compRows.push({
-      listing_id: listingId,
-      source: 'ebay',
-      title: item.title,
-      sale_price_cents: item.soldPriceCents,
-      condition: item.condition,
-      sold_at: item.soldAt,
-      listing_url: item.listingUrl,
-      condition_delta: delta,
-      adjusted_price_cents: adjustForCondition(item.soldPriceCents, delta),
-    })
-  }
 
   for (const result of serpResults) {
     if (!result.price?.extracted_value) continue
@@ -722,6 +627,13 @@ export async function runStep3PricingResearch(
 
   // Active market comps — context only, excluded from sold-price median
   const activeRows: typeof compRows = []
+  for (const item of ebayActive) {
+    activeRows.push({
+      listing_id: listingId, source: 'ebay_active', title: item.title,
+      sale_price_cents: item.priceCents, condition: item.condition, sold_at: null,
+      listing_url: item.url, condition_delta: 'same', adjusted_price_cents: item.priceCents,
+    })
+  }
   for (const item of poshmarkActive) {
     activeRows.push({
       listing_id: listingId, source: 'poshmark_active', title: item.title,
@@ -739,6 +651,19 @@ export async function runStep3PricingResearch(
   // Move any _active rows that ended up in compRows (from SerpAPI) into activeRows
   const soldRows = compRows.filter((r) => !r.source.endsWith('_active'))
   activeRows.push(...compRows.filter((r) => r.source.endsWith('_active')))
+
+  // Lowest live exact-item listing — surfaced as a fast-sale data point (never auto-prices).
+  // Filter to the SAME exact item+color first: a raw keyword search surfaces unrelated
+  // cheap items (a $9.99 Kenneth Cole is not a Movado comp), which would wreck the signal.
+  // Without the relevance gate we can't trust the cheapest active listing (it could be
+  // an unrelated $9.99 item), so surface nothing rather than a wrong signal.
+  const activeRelevantIndices = apiKeys.anthropic && activeRows.length > 0
+    ? await filterRelevantComps(activeRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
+    : new Set<number>()
+  const relevantActive = activeRows.filter((_, i) => activeRelevantIndices.has(i))
+  const lowestActive = relevantActive.length > 0
+    ? relevantActive.reduce((min, r) => (r.sale_price_cents < min.sale_price_cents ? r : min))
+    : null
 
   // Deduplicate same-price clusters before relevance filtering (catches bulk-lot duplicate listings)
   const dedupedRows = deduplicateComps(soldRows)
@@ -819,6 +744,9 @@ export async function runStep3PricingResearch(
     retail_price_cents: retailResult?.retailPriceCents ?? null,
     retail_price_source: retailResult?.source ?? null,
     retail_promo_note: retailResult?.promoNote ?? null,
+    lowest_active_price_cents: lowestActive?.sale_price_cents ?? null,
+    lowest_active_url: lowestActive?.listing_url ?? null,
+    lowest_active_source: lowestActive ? lowestActive.source.replace(/_active$/, '') : null,
     pricing_methodology: methodologyText,
   })
 
