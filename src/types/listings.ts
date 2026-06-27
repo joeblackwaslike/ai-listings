@@ -32,7 +32,7 @@ export type ConditionValue =
 export type PhotoType = 'intake' | 'processed' | 'auth_card' | 'studio';
 
 export type CompSource =
-  | 'ebay'
+  | 'ebay' | 'ebay_active'
   | 'poshmark' | 'poshmark_active'
   | 'therealreal' | 'therealreal_active'
   | 'google' | 'google_active'
@@ -177,6 +177,9 @@ export interface Listing {
   retail_price_cents: number | null;
   retail_price_source: string | null;
   retail_promo_note: string | null;
+  lowest_active_price_cents: number | null;
+  lowest_active_url: string | null;
+  lowest_active_source: string | null;
   pricing_methodology: string | null;
 
   auth_plan: AuthStep[];
@@ -222,6 +225,8 @@ export interface PricingComp {
   listing_url: string;
   condition_delta: 'same' | 'better' | 'worse';
   adjusted_price_cents: number;
+  color: string | null;
+  relevance_score: number | null;
   created_at: string;
 }
 
