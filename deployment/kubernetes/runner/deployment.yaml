@@ -23,11 +23,13 @@ spec:
               value: "repo"
             - name: REPO_URL
               value: "https://github.com/joeblackwaslike/ai-listings"
-            - name: RUNNER_TOKEN
+            # PAT (repo scope) — entrypoint mints a fresh registration token on every
+            # start, so the runner self-heals across restarts (RUNNER_TOKEN expired in ~1h).
+            - name: ACCESS_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: github-runner-secret
-                  key: RUNNER_TOKEN
+                  key: ACCESS_TOKEN
             - name: RUNNER_NAME
               value: "k3s-pi-cluster"
             - name: LABELS
