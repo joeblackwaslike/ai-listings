@@ -13,5 +13,5 @@ data:
   SUPABASE_PUBLIC_URL: "https://storage.joeblack.nyc"
   INNGEST_DEV: "1"
   # Background removal provider: "withoutbg" (hosted API) or "birefnet" (self-hosted tailnet service).
-  BG_REMOVAL_PROVIDER: "withoutbg"
+  BG_REMOVAL_PROVIDER: "birefnet"
   BIREFNET_BASE_URL: "http://joes-macbook-pro.napoleon-catfish.ts.net:8088"
