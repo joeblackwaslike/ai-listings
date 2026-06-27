@@ -33,6 +33,7 @@ export async function searchEbayActive(query: string, limit = 20): Promise<Activ
         Authorization: `Bearer ${token}`,
         'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
       },
+      signal: AbortSignal.timeout(15_000),
     })
     // Fail soft so pricing never crashes — but surface auth/quota problems instead
     // of silently degrading to "no listings found".

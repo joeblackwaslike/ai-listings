@@ -20,6 +20,7 @@ async function mintToken(scope: string, id: string, secret: string): Promise<str
         Authorization: `Basic ${basic}`,
       },
       body: `grant_type=client_credentials&scope=${encodeURIComponent(scope)}`,
+      signal: AbortSignal.timeout(10_000),
     })
     if (!res.ok) {
       console.warn(`[ebay-oauth] token mint failed: HTTP ${res.status} for scope ${scope}`)
