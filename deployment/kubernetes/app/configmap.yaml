@@ -11,7 +11,8 @@ data:
   INNGEST_BASE_URL: "http://inngest.ai-listings.svc.cluster.local:8288"
   SUPABASE_INTERNAL_URL: "http://ai-listings-supabase-kong.sup-ai-listings.svc.cluster.local:8000"
   SUPABASE_PUBLIC_URL: "https://storage.joeblack.nyc"
+  INNGEST_SERVE_HOST: "http://ai-listings.ai-listings.svc.cluster.local:3000"
   INNGEST_DEV: "1"
   # Background removal provider: "withoutbg" (hosted API) or "birefnet" (self-hosted tailnet service).
-  BG_REMOVAL_PROVIDER: "withoutbg"
+  BG_REMOVAL_PROVIDER: "birefnet"
   BIREFNET_BASE_URL: "http://joes-macbook-pro.napoleon-catfish.ts.net:8088"
