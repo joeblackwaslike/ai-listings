@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { AuthStep } from '@/types/listings'
@@ -19,8 +19,6 @@ export async function runStep5AuthPlan(
   suggestedPriceCents: number | null,
   apiKeys: ApiKeys
 ): Promise<void> {
-  const client = new Anthropic({ apiKey: apiKeys.anthropic })
-
   const priceNote =
     suggestedPriceCents && suggestedPriceCents >= 50000
       ? `Item is priced at ~$${(suggestedPriceCents / 100).toFixed(0)}, which is ≥$500. eBay Authenticity Guarantee and Poshmark Posh Authenticate handle authentication as part of the sale for items at this price point — the platform bears the cost.`
@@ -60,53 +58,50 @@ For items ≥ $500: note eBay Authenticity Guarantee / Poshmark Posh Authenticat
 
 Use the generate_auth_plan tool.`
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
-    tools: [
-      {
-        name: 'generate_auth_plan',
-        description: 'Generate authentication checklist for a luxury item',
-        input_schema: {
-          type: 'object' as const,
-          properties: {
-            steps: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  step: { type: 'string', description: 'Short step name' },
-                  guidance: {
-                    type: 'string',
-                    description: 'Specific guidance for this authentication step',
-                  },
-                  photo_required: {
-                    type: 'boolean',
-                    description: 'Whether a photo is needed to verify this step',
-                  },
+  let output: AuthPlanOutput
+  try {
+    output = await runStructured<AuthPlanOutput>({
+      model: 'claude-sonnet-4-6',
+      maxTokens: 1500,
+      prompt,
+      apiKey: apiKeys.anthropic,
+      toolName: 'generate_auth_plan',
+      toolDescription: 'Generate authentication checklist for a luxury item',
+      jsonSchema: {
+        type: 'object' as const,
+        properties: {
+          steps: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                step: { type: 'string', description: 'Short step name' },
+                guidance: {
+                  type: 'string',
+                  description: 'Specific guidance for this authentication step',
                 },
-                required: ['step', 'guidance', 'photo_required'],
+                photo_required: {
+                  type: 'boolean',
+                  description: 'Whether a photo is needed to verify this step',
+                },
               },
-            },
-            platform_auth_note: {
-              type: 'string',
-              description: 'Note about platform authentication eligibility',
+              required: ['step', 'guidance', 'photo_required'],
             },
           },
-          required: ['steps', 'platform_auth_note'],
+          platform_auth_note: {
+            type: 'string',
+            description: 'Note about platform authentication eligibility',
+          },
         },
+        required: ['steps', 'platform_auth_note'],
       },
-    ],
-    tool_choice: { type: 'tool', name: 'generate_auth_plan' },
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const toolUse = response.content.find((b) => b.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('step5: Claude did not return a tool_use block')
+    })
+  } catch (err) {
+    if (err instanceof ClaudeStructuredOutputError) {
+      throw new Error('step5: Claude did not return a tool_use block')
+    }
+    throw err
   }
-
-  const output = toolUse.input as AuthPlanOutput
 
   const authPlan: AuthStep[] = output.steps.map((s) => ({
     step: s.step,

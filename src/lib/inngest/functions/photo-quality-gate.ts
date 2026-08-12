@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { inngest } from '../client'
 import type { StudioUploadedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
@@ -14,45 +14,16 @@ interface QualityOutput {
 
 async function checkPhotoQuality(photoUrl: string): Promise<QualityOutput> {
   const publicUrl = await toPublicUrl(photoUrl)
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 512,
-    tools: [
-      {
-        name: 'quality_check',
-        description: 'Evaluate photo quality for a resale listing',
-        input_schema: {
-          type: 'object' as const,
-          properties: {
-            passed: {
-              type: 'boolean',
-              description: 'True if photo is suitable for listing',
-            },
-            issues: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'List of specific quality issues found',
-            },
-            verdict: {
-              type: 'string',
-              description: 'One-sentence summary of the quality assessment',
-            },
-          },
-          required: ['passed', 'issues', 'verdict'],
-        },
-      },
-    ],
-    tool_choice: { type: 'tool', name: 'quality_check' },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'url', url: publicUrl } },
-          {
-            type: 'text',
-            text: `Evaluate this product photo for resale listing quality.
+  try {
+    return await runStructured<QualityOutput>({
+      model: 'claude-sonnet-4-6',
+      maxTokens: 512,
+      image: { url: publicUrl },
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      toolName: 'quality_check',
+      toolDescription: 'Evaluate photo quality for a resale listing',
+      prompt: `Evaluate this product photo for resale listing quality.
 
 Check for:
 1. Blur or motion blur — is the subject sharp?
@@ -61,18 +32,32 @@ Check for:
 4. Multiple items in frame — are there multiple distinct items that should be separate listings?
 
 A photo passes if it is sharp, properly exposed, the subject is fully visible, and there is only one main item.`,
+      jsonSchema: {
+        type: 'object' as const,
+        properties: {
+          passed: {
+            type: 'boolean',
+            description: 'True if photo is suitable for listing',
           },
-        ],
+          issues: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'List of specific quality issues found',
+          },
+          verdict: {
+            type: 'string',
+            description: 'One-sentence summary of the quality assessment',
+          },
+        },
+        required: ['passed', 'issues', 'verdict'],
       },
-    ],
-  })
-
-  const toolUse = response.content.find((b) => b.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('photo-quality-gate: Claude did not return a tool_use block')
+    })
+  } catch (err) {
+    if (err instanceof ClaudeStructuredOutputError) {
+      throw new Error('photo-quality-gate: Claude did not return a tool_use block')
+    }
+    throw err
   }
-
-  return toolUse.input as QualityOutput
 }
 
 export const photoQualityGate = inngest.createFunction(

@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
@@ -25,7 +25,6 @@ export async function runStep4aDraftListing(
   suggestedPriceCents: number | null,
   apiKeys: ApiKeys
 ): Promise<void> {
-  const client = new Anthropic({ apiKey: apiKeys.anthropic })
   const supabase = getSupabaseAdmin()
 
   // Fetch listing's user_id for rules lookup
@@ -104,69 +103,66 @@ ${rulesSection}Rules:
 - Descriptions should be factual, buyer-oriented, no filler phrases like "don't miss out"
 - Do NOT end descriptions with a "Condition: X — ..." summary block — condition is displayed separately in the listing fields. Condition context may be woven naturally into the description body where relevant, but never as a labeled "Condition:" section at the end.`
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 3000,
-    tools: [
-      {
-        name: 'generate_listing',
-        description: 'Generate all listing fields for a resale item',
-        input_schema: {
-          type: 'object' as const,
-          properties: {
-            canonical_title: { type: 'string' },
-            canonical_description: { type: 'string' },
-            ebay_title: {
-              type: 'string',
-              description: 'Max 80 characters, keyword-optimized',
-            },
-            ebay_description: { type: 'string' },
-            ebay_category_id: { type: 'string' },
-            ebay_item_specifics: {
-              type: 'object',
-              additionalProperties: { type: 'string' },
-            },
-            poshmark_title: { type: 'string', description: 'Max 60 characters' },
-            poshmark_description: { type: 'string' },
-            poshmark_category: { type: 'string' },
-            poshmark_size: { type: 'string' },
-            suggested_price_cents: {
-              type: 'integer',
-              description: 'Suggested listing price in cents',
-            },
-            seo_keywords: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Top 10 search keywords buyers use for this item',
-            },
+  let draft: DraftOutput
+  try {
+    draft = await runStructured<DraftOutput>({
+      model: 'claude-sonnet-4-6',
+      maxTokens: 3000,
+      prompt,
+      apiKey: apiKeys.anthropic,
+      toolName: 'generate_listing',
+      toolDescription: 'Generate all listing fields for a resale item',
+      jsonSchema: {
+        type: 'object' as const,
+        properties: {
+          canonical_title: { type: 'string' },
+          canonical_description: { type: 'string' },
+          ebay_title: {
+            type: 'string',
+            description: 'Max 80 characters, keyword-optimized',
           },
-          required: [
-            'canonical_title',
-            'canonical_description',
-            'ebay_title',
-            'ebay_description',
-            'ebay_category_id',
-            'ebay_item_specifics',
-            'poshmark_title',
-            'poshmark_description',
-            'poshmark_category',
-            'poshmark_size',
-            'suggested_price_cents',
-            'seo_keywords',
-          ],
+          ebay_description: { type: 'string' },
+          ebay_category_id: { type: 'string' },
+          ebay_item_specifics: {
+            type: 'object',
+            additionalProperties: { type: 'string' },
+          },
+          poshmark_title: { type: 'string', description: 'Max 60 characters' },
+          poshmark_description: { type: 'string' },
+          poshmark_category: { type: 'string' },
+          poshmark_size: { type: 'string' },
+          suggested_price_cents: {
+            type: 'integer',
+            description: 'Suggested listing price in cents',
+          },
+          seo_keywords: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Top 10 search keywords buyers use for this item',
+          },
         },
+        required: [
+          'canonical_title',
+          'canonical_description',
+          'ebay_title',
+          'ebay_description',
+          'ebay_category_id',
+          'ebay_item_specifics',
+          'poshmark_title',
+          'poshmark_description',
+          'poshmark_category',
+          'poshmark_size',
+          'suggested_price_cents',
+          'seo_keywords',
+        ],
       },
-    ],
-    tool_choice: { type: 'tool', name: 'generate_listing' },
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const toolUse = response.content.find((b) => b.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('step4a: Claude did not return a tool_use block')
+    })
+  } catch (err) {
+    if (err instanceof ClaudeStructuredOutputError) {
+      throw new Error('step4a: Claude did not return a tool_use block')
+    }
+    throw err
   }
-
-  const draft = toolUse.input as DraftOutput
 
   await pushPipelineStep(listingId, {
     pipeline_step: 4,

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { runText } from '@/lib/claude';
 import { uploadFile } from '@/lib/storage';
 import type {
   PlatformSDK,
@@ -269,31 +270,12 @@ export class MechmarketAdapter implements PlatformSDK {
         .map((p, i) => `Post ${i + 1}:\nTitle: ${p.title}\nBody: ${(p.selftext ?? '').slice(0, 500)}`)
         .join('\n\n');
 
-      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1024,
-          messages: [
-            {
-              role: 'user',
-              content: `Extract selling prices for "${query}" from these mechmarket posts. For each post that appears to be an actual sale listing with a price, return JSON array of {title, price_cents, sold_at_approx (ISO date string or null)}. Posts:\n\n${postsText}`,
-            },
-          ],
-        }),
+      const text = await runText({
+        model: 'claude-haiku-4-5-20251001',
+        maxTokens: 1024,
+        prompt: `Extract selling prices for "${query}" from these mechmarket posts. For each post that appears to be an actual sale listing with a price, return JSON array of {title, price_cents, sold_at_approx (ISO date string or null)}. Posts:\n\n${postsText}`,
       });
 
-      if (!anthropicRes.ok) return [];
-
-      const anthropicData = (await anthropicRes.json()) as {
-        content: { type: string; text: string }[];
-      };
-      const text = anthropicData.content?.find((c) => c.type === 'text')?.text ?? '';
       const match = text.match(/\[[\s\S]*\]/);
       if (!match) return [];
 

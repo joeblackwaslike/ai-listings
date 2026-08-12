@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import type {
   PricingResearchResult,
@@ -124,7 +125,6 @@ async function buildDescription(
   tone: string = 'casual'
 ): Promise<ListingDescriptionResult> {
   const supabase = getSupabaseAdmin()
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
   const { data: listing, error: listingErr } = await supabase
     .from('listings')
@@ -174,13 +174,25 @@ Use the generate_listing tool. Rules:
 - Poshmark title: ≤ 60 chars, natural language
 - seoKeywords: top 8 search terms buyers use for this specific item`
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
-    tools: [{
-      name: 'generate_listing',
-      description: 'Generate resale listing text',
-      input_schema: {
+  let out: {
+    canonical: string; ebay_title: string; ebay_description: string
+    poshmark_title: string; poshmark_description: string; seo_keywords: string[]
+  }
+  try {
+    out = await runStructured<typeof out>({
+      model: 'claude-sonnet-4-6',
+      maxTokens: 2000,
+      prompt,
+      // Not threaded through the call chain today (executeTool → buildDescription has no
+      // apiKeys parameter, and threading one through would mean touching agent/chat.ts,
+      // which is explicitly out of scope — see ai-listings-agh). Passing undefined here
+      // preserves the pre-facade behavior exactly: the api-key backend falls back to
+      // process.env.ANTHROPIC_API_KEY, same as the previous `process.env.ANTHROPIC_API_KEY!`
+      // hardcode (crashes the same way today if unset).
+      apiKey: undefined,
+      toolName: 'generate_listing',
+      toolDescription: 'Generate resale listing text',
+      jsonSchema: {
         type: 'object' as const,
         properties: {
           canonical: { type: 'string', description: 'Canonical description, 2–4 sentences' },
@@ -192,19 +204,12 @@ Use the generate_listing tool. Rules:
         },
         required: ['canonical', 'ebay_title', 'ebay_description', 'poshmark_title', 'poshmark_description', 'seo_keywords'],
       },
-    }],
-    tool_choice: { type: 'tool', name: 'generate_listing' },
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const toolUse = response.content.find((b) => b.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    return { ok: false, reason: 'Claude did not return a tool_use block' }
-  }
-
-  const out = toolUse.input as {
-    canonical: string; ebay_title: string; ebay_description: string
-    poshmark_title: string; poshmark_description: string; seo_keywords: string[]
+    })
+  } catch (err) {
+    if (err instanceof ClaudeStructuredOutputError) {
+      return { ok: false, reason: 'Claude did not return a tool_use block' }
+    }
+    throw err
   }
 
   return {
