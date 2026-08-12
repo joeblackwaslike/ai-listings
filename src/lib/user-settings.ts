@@ -20,6 +20,12 @@ export const PLATFORM_SETTING_KEYS = new Set([
   'ebay_client_secret',
   'ebay_ru_name',
   'ebay_refresh_token',
+  // eBay Business Policies + listing config (manual one-time setup in Seller Hub)
+  'ebay_fulfillment_policy_id',
+  'ebay_payment_policy_id',
+  'ebay_return_policy_id',
+  'ebay_merchant_location_key',
+  'ebay_sandbox_mode',
 ])
 
 function getSupabaseAdmin() {

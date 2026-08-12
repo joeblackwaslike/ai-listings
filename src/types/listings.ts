@@ -81,6 +81,9 @@ export interface PlatformFields {
     item_specifics: Record<string, string>;
     condition_id: string;
     description: string;
+    // Populated by /api/listings/[id]/post-to-ebay after a successful createListing call.
+    ebay_listing_id?: string;
+    ebay_offer_id?: string;
   };
   poshmark?: {
     title: string;

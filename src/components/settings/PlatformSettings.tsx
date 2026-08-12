@@ -18,7 +18,14 @@ interface OAuthButtonDef {
   label: string
 }
 
-type FieldDef = TextFieldDef | OAuthButtonDef
+interface CheckboxFieldDef {
+  kind: 'checkbox'
+  key: string
+  label: string
+  hint?: string
+}
+
+type FieldDef = TextFieldDef | OAuthButtonDef | CheckboxFieldDef
 
 interface PlatformDef {
   id: string
@@ -94,6 +101,36 @@ const PLATFORMS: PlatformDef[] = [
       { kind: 'password', key: 'ebay_client_secret', label: 'Cert ID (client secret)' },
       { kind: 'text', key: 'ebay_ru_name', label: 'RuName (from eBay OAuth Settings)', placeholder: 'YourName-YourApp-PRD-XXXXXXXX' },
       { kind: 'oauth', platform: 'ebay', key: 'ebay_refresh_token', label: 'eBay' },
+      {
+        kind: 'text',
+        key: 'ebay_fulfillment_policy_id',
+        label: 'Fulfillment policy ID',
+        placeholder: 'from Seller Hub → Business Policies',
+      },
+      {
+        kind: 'text',
+        key: 'ebay_payment_policy_id',
+        label: 'Payment policy ID',
+        placeholder: 'from Seller Hub → Business Policies',
+      },
+      {
+        kind: 'text',
+        key: 'ebay_return_policy_id',
+        label: 'Return policy ID',
+        placeholder: 'from Seller Hub → Business Policies',
+      },
+      {
+        kind: 'text',
+        key: 'ebay_merchant_location_key',
+        label: 'Merchant location key',
+        placeholder: 'from Seller Hub → Shipping locations',
+      },
+      {
+        kind: 'checkbox',
+        key: 'ebay_sandbox_mode',
+        label: 'Use eBay sandbox',
+        hint: 'Post to api.sandbox.ebay.com instead of production eBay',
+      },
     ],
     supportsRules: true,
     devPortalUrl: 'https://developer.ebay.com/my/keys',
@@ -201,6 +238,62 @@ function TextSettingRow({
       {status === 'error' && (
         <p className="text-[10px] text-red-400">Failed to save</p>
       )}
+    </div>
+  )
+}
+
+function CheckboxSettingRow({
+  fieldDef,
+  initialValue,
+}: Readonly<{
+  fieldDef: CheckboxFieldDef
+  initialValue: boolean
+}>) {
+  const [checked, setChecked] = useState(initialValue)
+  const [pending, setPending] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+
+  async function save(next: boolean) {
+    setChecked(next)
+    setPending(true)
+    setStatus('idle')
+    try {
+      const res = await fetch('/api/settings/platform', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: fieldDef.key, value: next ? 'true' : 'false' }),
+      })
+      if (!res.ok) {
+        setChecked(!next)
+        setStatus('error')
+        setTimeout(() => setStatus('idle'), 2000)
+        return
+      }
+      setStatus('saved')
+      setTimeout(() => setStatus('idle'), 2000)
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const fieldId = `field-${fieldDef.key}`
+
+  return (
+    <div className="space-y-1">
+      <label htmlFor={fieldId} className="flex items-center gap-2 text-[10px] text-gray-500">
+        <input
+          id={fieldId}
+          type="checkbox"
+          checked={checked}
+          disabled={pending}
+          onChange={(e) => void save(e.target.checked)}
+          className="rounded border-gray-700 bg-gray-900"
+        />
+        {fieldDef.label}
+      </label>
+      {fieldDef.hint && <p className="text-[10px] text-gray-600 pl-5">{fieldDef.hint}</p>}
+      {status === 'saved' && <p className="text-[10px] text-emerald-500 pl-5">Saved</p>}
+      {status === 'error' && <p className="text-[10px] text-red-400 pl-5">Failed to save</p>}
     </div>
   )
 }
@@ -336,22 +429,34 @@ function PlatformSection({
         </div>
       )}
       <div className="space-y-3">
-        {platform.fields.map((field) =>
-          field.kind === 'oauth' ? (
-            <OAuthButton
-              key={field.key}
-              platform={field.platform}
-              label={field.label}
-              connected={Boolean(existingSettings[field.key])}
-            />
-          ) : (
+        {platform.fields.map((field) => {
+          if (field.kind === 'oauth') {
+            return (
+              <OAuthButton
+                key={field.key}
+                platform={field.platform}
+                label={field.label}
+                connected={Boolean(existingSettings[field.key])}
+              />
+            )
+          }
+          if (field.kind === 'checkbox') {
+            return (
+              <CheckboxSettingRow
+                key={field.key}
+                fieldDef={field}
+                initialValue={existingSettings[field.key] === 'true'}
+              />
+            )
+          }
+          return (
             <TextSettingRow
               key={field.key}
               fieldDef={field}
               initialValue={existingSettings[field.key] ?? ''}
             />
           )
-        )}
+        })}
         {platform.supportsRules && (
           <RulesUrlRow
             platform={platform.id}

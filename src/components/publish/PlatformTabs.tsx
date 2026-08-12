@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Copy, Check, ExternalLink } from 'lucide-react'
+import { toast } from 'sonner'
 import { CopyField } from './CopyField'
 import type { Listing, ListingStatus } from '@/types/listings'
 
@@ -59,9 +60,31 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
   const [saving, setSaving] = useState<Platform | null>(null)
   const [markingPublished, setMarkingPublished] = useState(false)
   const [copyAllDoneTab, setCopyAllDoneTab] = useState<Platform | null>(null)
+  const [postingToEbay, setPostingToEbay] = useState(false)
   const copyAllDone = copyAllDoneTab === activeTab
 
   const hasAnyUrl = savedUrls.ebay || savedUrls.poshmark
+
+  async function postToEbay() {
+    setPostingToEbay(true)
+    try {
+      const res = await fetch(`/api/listings/${listing.id}/post-to-ebay`, { method: 'POST' })
+      const data = await res.json() as { ok?: boolean; url?: string; error?: string }
+      if (!res.ok || !data.ok) {
+        toast.error(data.error ?? 'Failed to post listing to eBay')
+        return
+      }
+      if (data.url) {
+        setSavedUrls((prev) => ({ ...prev, ebay: data.url }))
+      }
+      setListingStatus('published')
+      toast.success('Posted to eBay')
+    } catch {
+      toast.error('Failed to post listing to eBay')
+    } finally {
+      setPostingToEbay(false)
+    }
+  }
 
   async function saveUrl(platform: Platform) {
     const url = urlInputs[platform].trim()
@@ -175,23 +198,32 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
                     <CopyField key={key} label={key} value={val} />
                   ))}
                 </div>
-                <button
-                  onClick={() => void copyAll()}
-                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                >
-                  {copyAllDone ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-500" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                  {copyAllDone ? 'Copied!' : 'Copy all eBay fields'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => void postToEbay()}
+                    disabled={postingToEbay}
+                    className="px-3 py-2 text-xs font-medium rounded-lg bg-emerald-700 text-emerald-50 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {postingToEbay ? 'Posting to eBay…' : 'Post to eBay'}
+                  </button>
+                  <button
+                    onClick={() => void copyAll()}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    {copyAllDone ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    {copyAllDone ? 'Copied!' : 'Copy all eBay fields'}
+                  </button>
+                </div>
               </>
             )}
 
-            {/* URL input */}
+            {/* URL input (fallback) */}
             <div className="space-y-2 pt-2">
-              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">eBay Listing URL</p>
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Already posted it manually? Paste the URL</p>
               {savedUrls.ebay && (
                 <a
                   href={savedUrls.ebay}

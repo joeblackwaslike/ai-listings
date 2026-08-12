@@ -85,6 +85,21 @@ function mapConditionIdToEbay(condition: string): number {
   return map[condition] ?? 2500;
 }
 
+// eBay's Sell Inventory API requires `aspects` as Record<string, string[]> (each aspect can
+// have multiple values), but the pipeline/UI store item specifics as flat Record<string, string>.
+// This mapping lives here (not in the unified-listing mapper) because it's an eBay Sell API
+// wire-format quirk, not a general unified-listing concept.
+export function mapItemSpecificsToAspects(
+  itemSpecifics: Record<string, string> | undefined,
+): Record<string, string[]> {
+  if (!itemSpecifics) return {};
+  return Object.fromEntries(
+    Object.entries(itemSpecifics)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => [key, [value]]),
+  );
+}
+
 function mapEbayStatusToInternal(
   status: string | undefined,
 ): PlatformOrder['status'] {
@@ -135,13 +150,33 @@ function mapEbayOrder(o: EbayOrder): PlatformOrder {
 
 export class EbayAdapter implements PlatformSDK {
   platform = 'ebay' as const;
-  private creds: { clientId: string; clientSecret: string; refreshToken: string };
+  private creds: {
+    clientId: string;
+    clientSecret: string;
+    refreshToken: string;
+    fulfillmentPolicyId: string;
+    paymentPolicyId: string;
+    returnPolicyId: string;
+    merchantLocationKey: string;
+    sandbox: boolean;
+  };
+  private readonly baseUrl: string;
   private _client: InstanceType<typeof eBayApi> | null = null;
   private _accessToken: string | null = null;
   private _tokenExpiresAt = 0;
 
-  constructor(creds: { clientId: string; clientSecret: string; refreshToken: string }) {
+  constructor(creds: {
+    clientId: string;
+    clientSecret: string;
+    refreshToken: string;
+    fulfillmentPolicyId: string;
+    paymentPolicyId: string;
+    returnPolicyId: string;
+    merchantLocationKey: string;
+    sandbox: boolean;
+  }) {
     this.creds = creds;
+    this.baseUrl = creds.sandbox ? 'https://api.sandbox.ebay.com' : 'https://api.ebay.com';
   }
 
   // Lazy-init the eBay client and return a valid access token.
@@ -155,7 +190,7 @@ export class EbayAdapter implements PlatformSDK {
       this._client = new eBayApi({
         appId: this.creds.clientId,
         certId: this.creds.clientSecret,
-        sandbox: false,
+        sandbox: this.creds.sandbox,
         autoRefreshToken: false,
       });
       // Seed the OAuth2 layer with the stored refresh token so it can exchange
@@ -227,14 +262,19 @@ export class EbayAdapter implements PlatformSDK {
 
   async createListing(
     listing: UnifiedListing,
-  ): Promise<{ platformId: string; url: string }> {
+    options?: { publish?: boolean },
+  ): Promise<{ platformId: string; offerId: string; url: string }> {
+    const publish = options?.publish ?? true;
     const token = await this.getAccessToken();
     const sku = listing.internalId;
-    const ebayFields = listing.platformFields as Record<string, unknown>;
+    const ebayFields = listing.platformFields as {
+      item_specifics?: Record<string, string>;
+      category_id?: string | number;
+    };
 
     // Step 1: Create/update inventory item
     await this.ebayFetch(
-      `https://api.ebay.com/sell/inventory/v1/inventory_item/${sku}`,
+      `${this.baseUrl}/sell/inventory/v1/inventory_item/${sku}`,
       {
         method: 'PUT',
         body: JSON.stringify({
@@ -242,7 +282,7 @@ export class EbayAdapter implements PlatformSDK {
             title: listing.title,
             description: listing.description,
             imageUrls: listing.imageUrls,
-            aspects: (ebayFields.aspects as Record<string, string[]>) ?? {},
+            aspects: mapItemSpecificsToAspects(ebayFields.item_specifics),
           },
           condition: mapConditionToEbay(listing.condition),
           conditionId: mapConditionIdToEbay(listing.condition),
@@ -254,7 +294,7 @@ export class EbayAdapter implements PlatformSDK {
 
     // Step 2: Create offer
     const offer = await this.ebayFetch<{ offerId: string }>(
-      'https://api.ebay.com/sell/inventory/v1/offer',
+      `${this.baseUrl}/sell/inventory/v1/offer`,
       {
         method: 'POST',
         body: JSON.stringify({
@@ -265,22 +305,36 @@ export class EbayAdapter implements PlatformSDK {
           pricingSummary: {
             price: { value: (listing.price / 100).toFixed(2), currency: 'USD' },
           },
-          categoryId: String((ebayFields.category_id as number) ?? 9355),
-          merchantLocationKey: 'default',
+          categoryId: String(ebayFields.category_id ?? 9355),
+          merchantLocationKey: this.creds.merchantLocationKey,
+          listingPolicies: {
+            fulfillmentPolicyId: this.creds.fulfillmentPolicyId,
+            paymentPolicyId: this.creds.paymentPolicyId,
+            returnPolicyId: this.creds.returnPolicyId,
+          },
         }),
       },
       token,
     );
 
+    if (!publish) {
+      // Draft-only mode (options.publish === false): inventory item + offer are created but
+      // never published — the draft is visible in Seller Hub for manual inspection. There is
+      // no listingId yet, so platformId/url are empty-string sentinels rather than undefined
+      // to keep the return shape stable for callers.
+      return { platformId: '', offerId: offer.offerId, url: '' };
+    }
+
     // Step 3: Publish offer
     const published = await this.ebayFetch<{ listingId: string }>(
-      `https://api.ebay.com/sell/inventory/v1/offer/${offer.offerId}/publish`,
+      `${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}/publish`,
       { method: 'POST' },
       token,
     );
 
     return {
       platformId: published.listingId,
+      offerId: offer.offerId,
       url: `https://www.ebay.com/itm/${published.listingId}`,
     };
   }
@@ -293,7 +347,7 @@ export class EbayAdapter implements PlatformSDK {
 
     // Retrieve current offers for this listing to find the offerId
     const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      `https://api.ebay.com/sell/inventory/v1/offer?listing_id=${platformId}`,
+      `${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
       { method: 'GET' },
       token,
     );
@@ -311,7 +365,7 @@ export class EbayAdapter implements PlatformSDK {
     }
 
     await this.ebayFetch(
-      `https://api.ebay.com/sell/inventory/v1/offer/${offer.offerId}`,
+      `${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}`,
       { method: 'PUT', body: JSON.stringify(body) },
       token,
     );
@@ -332,7 +386,7 @@ export class EbayAdapter implements PlatformSDK {
       }
       // Use the SKU from the offer to update the inventory item
       await this.ebayFetch(
-        `https://api.ebay.com/sell/inventory/v1/inventory_item/${offer.sku}`,
+        `${this.baseUrl}/sell/inventory/v1/inventory_item/${offer.sku}`,
         { method: 'PUT', body: JSON.stringify(itemBody) },
         token,
       );
@@ -344,7 +398,7 @@ export class EbayAdapter implements PlatformSDK {
 
     // Find offer by listing id, then withdraw it
     const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      `https://api.ebay.com/sell/inventory/v1/offer?listing_id=${platformId}`,
+      `${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
       { method: 'GET' },
       token,
     );
@@ -352,7 +406,7 @@ export class EbayAdapter implements PlatformSDK {
     if (!offer) throw new PlatformError(this.platform, `No offer found for listing ${platformId}`);
 
     await this.ebayFetch(
-      `https://api.ebay.com/sell/inventory/v1/offer/${offer.offerId}/withdraw`,
+      `${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}/withdraw`,
       { method: 'POST' },
       token,
     );
@@ -362,7 +416,7 @@ export class EbayAdapter implements PlatformSDK {
     const token = await this.getAccessToken();
 
     const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      `https://api.ebay.com/sell/inventory/v1/offer?listing_id=${platformId}`,
+      `${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
       { method: 'GET' },
       token,
     );
@@ -371,7 +425,7 @@ export class EbayAdapter implements PlatformSDK {
 
     // Fetch inventory item for title/images
     const item = await this.ebayFetch<EbayInventoryItem>(
-      `https://api.ebay.com/sell/inventory/v1/inventory_item/${offer.sku}`,
+      `${this.baseUrl}/sell/inventory/v1/inventory_item/${offer.sku}`,
       { method: 'GET' },
       token,
     );
@@ -401,7 +455,7 @@ export class EbayAdapter implements PlatformSDK {
     const statusParam = filters?.status ? `&status=${filters.status.toUpperCase()}` : '';
     const res = await this.ebayFetch<{ offers?: EbayOffer[] }>(
       // TODO: implement cursor pagination for more than 200 results (use `next` href from response)
-      `https://api.ebay.com/sell/inventory/v1/offer?marketplace_id=EBAY_US&limit=100${statusParam}`,
+      `${this.baseUrl}/sell/inventory/v1/offer?marketplace_id=EBAY_US&limit=100${statusParam}`,
       { method: 'GET' },
       token,
     );
@@ -440,7 +494,7 @@ export class EbayAdapter implements PlatformSDK {
     if (filter) params.set('filter', filter);
 
     const res = await this.ebayFetch<{ orders?: EbayOrder[] }>(
-      `https://api.ebay.com/sell/fulfillment/v1/order?${params.toString()}`,
+      `${this.baseUrl}/sell/fulfillment/v1/order?${params.toString()}`,
       { method: 'GET' },
       token,
     );
@@ -450,7 +504,7 @@ export class EbayAdapter implements PlatformSDK {
   async getOrder(orderId: string): Promise<PlatformOrder> {
     const token = await this.getAccessToken();
     const order = await this.ebayFetch<EbayOrder>(
-      `https://api.ebay.com/sell/fulfillment/v1/order/${orderId}`,
+      `${this.baseUrl}/sell/fulfillment/v1/order/${orderId}`,
       { method: 'GET' },
       token,
     );
@@ -462,13 +516,13 @@ export class EbayAdapter implements PlatformSDK {
 
     // Fetch order to get lineItemIds
     const order = await this.ebayFetch<EbayOrder>(
-      `https://api.ebay.com/sell/fulfillment/v1/order/${orderId}`,
+      `${this.baseUrl}/sell/fulfillment/v1/order/${orderId}`,
       { method: 'GET' },
       token,
     );
 
     await this.ebayFetch(
-      `https://api.ebay.com/sell/fulfillment/v1/order/${orderId}/shipping_fulfillment`,
+      `${this.baseUrl}/sell/fulfillment/v1/order/${orderId}/shipping_fulfillment`,
       {
         method: 'POST',
         body: JSON.stringify({
