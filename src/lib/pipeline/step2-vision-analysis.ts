@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import type { ListingCategory, ConditionValue, PhotoShot, Inclusion } from '@/types/listings'
 import type { ProductIdData } from './step1-product-id'
 import { pushPipelineStep } from './supabase-push'
@@ -70,7 +70,6 @@ export async function runStep2VisionAnalysis(
   corrections: string | null = null,
 ): Promise<VisionAnalysis> {
   console.log(`[step2] starting vision analysis for listing ${listingId}`)
-  const client = new Anthropic({ apiKey: apiKeys.anthropic })
   const publicPhotoUrl = await toPublicUrl(photoUrl)
   console.log(`[step2] public photo URL: ${publicPhotoUrl}, calling Claude...`)
 
@@ -110,123 +109,111 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
 - watches: front dial (full face), crown close-up, case back (serial number + movement if visible), band/bracelet + clasp, bezel detail, any scratches/chips on crystal, box and papers if present
 - keyboards: top-down full board, left side profile, right side profile, bottom (case + badge), PCB close-up if unbuilt/exposed, switch stem detail, keycap legends (angle shot), stabilizers, any scratches/damage, box and accessories included`
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
-    tools: [
-      {
-        name: 'extract_product_info',
-        description: 'Extract structured product identification and analysis from the photo',
-        input_schema: {
-          type: 'object' as const,
-          properties: {
-            brand: { type: 'string', description: 'Confirmed brand name' },
-            category: {
-              type: 'string',
-              enum: [
-                'handbag',
-                'small_leather_goods',
-                'clothing',
-                'sneakers',
-                'electronics',
-                'jewelry',
-                'collectibles',
-                'watches',
-                'keyboards',
-                'other',
-              ],
-            },
-            condition: {
-              type: 'string',
-              enum: [
-                'new_with_tags',
-                'new_without_tags',
-                'like_new',
-                'very_good',
-                'good',
-                'fair',
-                'poor',
-                'for_parts',
-              ],
-              description: "Use 'new_with_tags' ONLY if original tags, hang tags, or price tags are physically visible in the photo or the item is still in sealed/original packaging with tags attached. If the item appears unused but no tags are visible, use 'new_without_tags'.",
-            },
-            condition_notes: {
-              type: 'string',
-              description: 'Specific condition details visible in this photo. Be accurate and precise — describe exactly where wear appears and what areas are in good condition. Write from a marketplace seller perspective: be specific about location and severity (e.g. "minor scuffs on white rubber outsole near heel" not "heavy wear throughout"). Note what is clean and intact alongside what shows wear. Never use vague language like "general soiling", "wear throughout", or "heavily" unless the damage is clearly severe and widespread across multiple areas. Only describe what you can definitively see.',
-            },
-            notable_features: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Key attributes listed as short strings. The FIRST entry MUST be "Model: <exact model name>" — use the most specific name you can identify from the photo and Lens data (e.g., "Model: Monogram Giant Escal Cosmetic Pouch" not "Model: handbag"). If the collection or year is identifiable, include it: "Collection: Spring/Summer 2020". Then add color, hardware, material, colorway, size, etc. For sneakers you MUST also include: (1) "Size: US X" — read from box label, insole, or visible markings, use "Size: unknown" if not visible; (2) "Gender: men\'s" or "Gender: women\'s" — infer from silhouette, use "Gender: unknown" if unclear.',
-            },
-            inclusions: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  item: { type: 'string' },
-                  included: { type: 'boolean' },
-                  notes: { type: 'string', nullable: true },
-                },
-                required: ['item', 'included', 'notes'],
-              },
-              description: 'Items visible alongside the product (box, dust bag, auth card, etc.)',
-            },
-            photo_plan: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  shot: { type: 'string' },
-                  description: { type: 'string' },
-                  required: { type: 'boolean' },
-                  photo_type: { type: 'string', enum: ['studio', 'auth_card'] },
-                },
-                required: ['shot', 'description', 'required', 'photo_type'],
-              },
-              description: 'Studio shot checklist specific to this item',
-            },
-            confidence_note: {
-              type: 'string',
-              description:
-                'Brief note on identification confidence (e.g. "High — clear brand stamp visible")',
-            },
+  let output: VisionOutput
+  try {
+    output = await runStructured<VisionOutput>({
+      model: 'claude-sonnet-4-6',
+      maxTokens: 2048,
+      prompt,
+      image: { url: publicPhotoUrl },
+      apiKey: apiKeys.anthropic,
+      toolName: 'extract_product_info',
+      toolDescription: 'Extract structured product identification and analysis from the photo',
+      jsonSchema: {
+        type: 'object' as const,
+        properties: {
+          brand: { type: 'string', description: 'Confirmed brand name' },
+          category: {
+            type: 'string',
+            enum: [
+              'handbag',
+              'small_leather_goods',
+              'clothing',
+              'sneakers',
+              'electronics',
+              'jewelry',
+              'collectibles',
+              'watches',
+              'keyboards',
+              'other',
+            ],
           },
-          required: [
-            'brand',
-            'category',
-            'condition',
-            'condition_notes',
-            'notable_features',
-            'inclusions',
-            'photo_plan',
-            'confidence_note',
-          ],
+          condition: {
+            type: 'string',
+            enum: [
+              'new_with_tags',
+              'new_without_tags',
+              'like_new',
+              'very_good',
+              'good',
+              'fair',
+              'poor',
+              'for_parts',
+            ],
+            description: "Use 'new_with_tags' ONLY if original tags, hang tags, or price tags are physically visible in the photo or the item is still in sealed/original packaging with tags attached. If the item appears unused but no tags are visible, use 'new_without_tags'.",
+          },
+          condition_notes: {
+            type: 'string',
+            description: 'Specific condition details visible in this photo. Be accurate and precise — describe exactly where wear appears and what areas are in good condition. Write from a marketplace seller perspective: be specific about location and severity (e.g. "minor scuffs on white rubber outsole near heel" not "heavy wear throughout"). Note what is clean and intact alongside what shows wear. Never use vague language like "general soiling", "wear throughout", or "heavily" unless the damage is clearly severe and widespread across multiple areas. Only describe what you can definitively see.',
+          },
+          notable_features: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Key attributes listed as short strings. The FIRST entry MUST be "Model: <exact model name>" — use the most specific name you can identify from the photo and Lens data (e.g., "Model: Monogram Giant Escal Cosmetic Pouch" not "Model: handbag"). If the collection or year is identifiable, include it: "Collection: Spring/Summer 2020". Then add color, hardware, material, colorway, size, etc. For sneakers you MUST also include: (1) "Size: US X" — read from box label, insole, or visible markings, use "Size: unknown" if not visible; (2) "Gender: men\'s" or "Gender: women\'s" — infer from silhouette, use "Gender: unknown" if unclear.',
+          },
+          inclusions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                item: { type: 'string' },
+                included: { type: 'boolean' },
+                notes: { type: 'string', nullable: true },
+              },
+              required: ['item', 'included', 'notes'],
+            },
+            description: 'Items visible alongside the product (box, dust bag, auth card, etc.)',
+          },
+          photo_plan: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                shot: { type: 'string' },
+                description: { type: 'string' },
+                required: { type: 'boolean' },
+                photo_type: { type: 'string', enum: ['studio', 'auth_card'] },
+              },
+              required: ['shot', 'description', 'required', 'photo_type'],
+            },
+            description: 'Studio shot checklist specific to this item',
+          },
+          confidence_note: {
+            type: 'string',
+            description:
+              'Brief note on identification confidence (e.g. "High — clear brand stamp visible")',
+          },
         },
-      },
-    ],
-    tool_choice: { type: 'tool', name: 'extract_product_info' },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'url', url: publicPhotoUrl },
-          },
-          { type: 'text', text: prompt },
+        required: [
+          'brand',
+          'category',
+          'condition',
+          'condition_notes',
+          'notable_features',
+          'inclusions',
+          'photo_plan',
+          'confidence_note',
         ],
       },
-    ],
-  })
-
-  console.log(`[step2] Claude responded, stop_reason=${response.stop_reason}`)
-  const toolUse = response.content.find((b) => b.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('step2: Claude did not return a tool_use block')
+    })
+  } catch (err) {
+    if (err instanceof ClaudeStructuredOutputError) {
+      throw new Error('step2: Claude did not return a tool_use block')
+    }
+    throw err
   }
 
-  const output = toolUse.input as VisionOutput
+  console.log('[step2] Claude responded')
   const isLuxury = LUXURY_BRANDS.has(output.brand)
 
   await pushPipelineStep(listingId, {
