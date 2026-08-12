@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { inngest } from '../client'
 import type { TextSubmittedEvent } from '../client'
 import { runStep3PricingResearch } from '@/lib/pipeline/step3-pricing-research'
@@ -52,8 +52,6 @@ async function runTextAnalysis(
   brand: string | undefined,
   apiKeys: { anthropic: string },
 ): Promise<VisionAnalysis> {
-  const client = new Anthropic({ apiKey: apiKeys.anthropic })
-
   const brandContext = brand ? ` The brand is "${brand}".` : ''
   const prompt = `You are analyzing a product description for a resale listing platform.${brandContext}
 
@@ -63,81 +61,78 @@ Use the extract_product_info tool to extract structured product information from
 If condition is not determinable from the text, default to "good".
 For notable_features, the FIRST entry MUST be "Model: <model name>" — use the most specific name identifiable from the description.`
 
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 1024,
-    tools: [
-      {
-        name: 'extract_product_info',
-        description: 'Extract structured product information from a text description',
-        input_schema: {
-          type: 'object' as const,
-          properties: {
-            brand: { type: 'string', description: 'Brand name (empty string if unknown)' },
-            category: {
-              type: 'string',
-              enum: [
-                'handbag',
-                'small_leather_goods',
-                'clothing',
-                'sneakers',
-                'electronics',
-                'jewelry',
-                'collectibles',
-                'watches',
-                'keyboards',
-                'other',
-              ],
-            },
-            condition: {
-              type: 'string',
-              enum: [
-                'new_with_tags',
-                'new_without_tags',
-                'like_new',
-                'very_good',
-                'good',
-                'fair',
-                'poor',
-                'for_parts',
-              ],
-            },
-            condition_notes: {
-              type: 'string',
-              description: 'Specific condition details from the description',
-            },
-            notable_features: {
-              type: 'array',
-              items: { type: 'string' },
-              description:
-                'Key attributes. First entry MUST be "Model: <model name>". Then add color, size, etc.',
-            },
-            is_luxury: {
-              type: 'boolean',
-              description: 'Whether this is a luxury brand item',
-            },
+  let output: TextAnalysisOutput
+  try {
+    output = await runStructured<TextAnalysisOutput>({
+      model: 'claude-haiku-4-5',
+      maxTokens: 1024,
+      prompt,
+      apiKey: apiKeys.anthropic,
+      toolName: 'extract_product_info',
+      toolDescription: 'Extract structured product information from a text description',
+      jsonSchema: {
+        type: 'object' as const,
+        properties: {
+          brand: { type: 'string', description: 'Brand name (empty string if unknown)' },
+          category: {
+            type: 'string',
+            enum: [
+              'handbag',
+              'small_leather_goods',
+              'clothing',
+              'sneakers',
+              'electronics',
+              'jewelry',
+              'collectibles',
+              'watches',
+              'keyboards',
+              'other',
+            ],
           },
-          required: [
-            'brand',
-            'category',
-            'condition',
-            'condition_notes',
-            'notable_features',
-            'is_luxury',
-          ],
+          condition: {
+            type: 'string',
+            enum: [
+              'new_with_tags',
+              'new_without_tags',
+              'like_new',
+              'very_good',
+              'good',
+              'fair',
+              'poor',
+              'for_parts',
+            ],
+          },
+          condition_notes: {
+            type: 'string',
+            description: 'Specific condition details from the description',
+          },
+          notable_features: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Key attributes. First entry MUST be "Model: <model name>". Then add color, size, etc.',
+          },
+          is_luxury: {
+            type: 'boolean',
+            description: 'Whether this is a luxury brand item',
+          },
         },
+        required: [
+          'brand',
+          'category',
+          'condition',
+          'condition_notes',
+          'notable_features',
+          'is_luxury',
+        ],
       },
-    ],
-    tool_choice: { type: 'tool', name: 'extract_product_info' },
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const toolUse = response.content.find((b) => b.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('text-analysis: Claude did not return a tool_use block')
+    })
+  } catch (err) {
+    if (err instanceof ClaudeStructuredOutputError) {
+      throw new Error('text-analysis: Claude did not return a tool_use block')
+    }
+    throw err
   }
-
-  const output = toolUse.input as TextAnalysisOutput
   const resolvedBrand = brand ?? output.brand
   const isLuxury = LUXURY_BRANDS.has(resolvedBrand) || output.is_luxury
 

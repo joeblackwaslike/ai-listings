@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { runText } from '@/lib/claude'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
@@ -123,15 +123,14 @@ async function generatePricingMethodology(
 
   const prompt = `In 80–100 words, explain how this resale price was determined. Comp count: ${compCount}. Sources: ${sourcesStr}. Median adjusted price: ${suggestedStr}. Confidence: ${confidenceScore}%. Speed-to-sell price: ${priceToMoveStr} (${Math.round(discountPct * 100)}% below market median, typically sells in days vs weeks at list price).${retailStr}${historyStr} Return only the paragraph, no headings.`
 
-  const client = new Anthropic({ apiKey: apiKeys.anthropic })
-  const message = await client.messages.create({
+  const text = await runText({
     model: 'claude-haiku-4-5',
-    max_tokens: 200,
-    messages: [{ role: 'user', content: prompt }],
+    maxTokens: 200,
+    prompt,
+    apiKey: apiKeys.anthropic,
   })
 
-  const textBlock = message.content.find((b) => b.type === 'text')
-  return textBlock && textBlock.type === 'text' ? textBlock.text.trim() : ''
+  return text.trim()
 }
 
 interface RedditPost {
@@ -185,26 +184,18 @@ async function fetchRedditMechmarketComps(
       )
       .join('\n\n')
 
-    const client = new Anthropic({ apiKey: anthropicApiKey })
-    const response = await client.messages.create({
+    const text = await runText({
       model: 'claude-haiku-4-5',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: `Extract selling prices for ${brand} ${model} from these mechmarket posts. Return a JSON array only (no prose, no markdown fences): [{ "title": string, "price_cents": number }]. Only include posts that appear to be actual sale listings with a clear price. If no qualifying posts exist, return [].
+      maxTokens: 1024,
+      apiKey: anthropicApiKey,
+      prompt: `Extract selling prices for ${brand} ${model} from these mechmarket posts. Return a JSON array only (no prose, no markdown fences): [{ "title": string, "price_cents": number }]. Only include posts that appear to be actual sale listings with a clear price. If no qualifying posts exist, return [].
 
 ${postsText}`,
-        },
-      ],
     })
-
-    const raw = response.content[0]
-    if (raw.type !== 'text') return []
 
     let extracted: RedditExtracted[] = []
     try {
-      const json = raw.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+      const json = text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
       extracted = JSON.parse(json)
       if (!Array.isArray(extracted)) return []
     } catch {
@@ -479,17 +470,14 @@ async function filterRelevantComps(
     ? `"${brand} ${model}" (${category}) — key attributes: ${featureHints}`
     : `"${brand} ${model}" (${category})`
   try {
-    const client = new Anthropic({ apiKey: anthropicApiKey })
     for (let start = 0; start < comps.length; start += COMP_FILTER_BATCH) {
       const batch = comps.slice(start, start + COMP_FILTER_BATCH)
       const titlesBlock = batch.map((c, i) => `${start + i}. ${c.title}`).join('\n')
-      const response = await client.messages.create({
+      const text = await runText({
         model: 'claude-haiku-4-5',
-        max_tokens: 512,
-        messages: [
-          {
-            role: 'user',
-            content: `Score each title by how well it matches this specific item: ${targetDesc}.
+        maxTokens: 512,
+        apiKey: anthropicApiKey,
+        prompt: `Score each title by how well it matches this specific item: ${targetDesc}.
 
 Scale 0–10:
 10 = exact match (brand, model, AND key attributes like color/material/sub-type all match)
@@ -507,12 +495,8 @@ Return ONLY a JSON object mapping index → score. Example: {"0":8,"1":2,"3":9}
 
 Titles:
 ${titlesBlock}`,
-          },
-        ],
       })
-      const textBlock = response.content.find((b) => b.type === 'text')
-      if (textBlock?.type !== 'text') continue
-      const match = /\{[^}]+\}/.exec(textBlock.text)
+      const match = /\{[^}]+\}/.exec(text)
       if (!match) continue
       let scores: Record<string, number>
       try {
