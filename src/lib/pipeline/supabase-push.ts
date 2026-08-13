@@ -19,10 +19,14 @@ export async function pushPipelineStep(
   updates: PipelineUpdate
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
+  // A background pipeline step can still be in flight (queued, retrying) after the user
+  // archives the listing from the UI — without this guard, the step's own progress write
+  // silently un-archives it out from under them once it finally completes or fails.
   const { error } = await supabase
     .from('listings')
     .update(updates)
     .eq('id', listingId)
+    .neq('status', 'archived')
 
   if (error) {
     throw new Error(`supabase-push: ${error.message}`)
