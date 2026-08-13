@@ -34,7 +34,15 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/api/inngest')
+    pathname.startsWith('/api/inngest') ||
+    // Platform-connect OAuth routes — the callback leg always arrives on the narrow public
+    // domain (joeblack.nyc), which never carries a session cookie by design (cross-domain from
+    // where the user is authenticated). Both routes do their own authorization internally:
+    // connect/[platform] checks its own session (it runs on the authenticated domain in the
+    // normal flow), and callback/[platform] identifies the user via the oauth_states table
+    // instead of a session. See src/lib/oauth-states.ts.
+    pathname.startsWith('/api/auth/connect') ||
+    pathname.startsWith('/api/auth/callback')
 
   if (!user && !isPublicPath && !hasAgentToken) {
     return NextResponse.redirect(new URL('/login', request.url))
