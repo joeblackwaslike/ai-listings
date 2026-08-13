@@ -5,7 +5,13 @@ metadata:
   namespace: ai-listings
 data:
   NEXT_PUBLIC_SUPABASE_URL: "https://sup-ai-listings.napoleon-catfish.ts.net"
+  # Narrow public-only domain — ONLY valid for constructing platform OAuth redirect_uri/
+  # callbackUri values that must match what's registered with each platform's app. Its public
+  # ingress routes /api/auth/callback/* only; never use it as a user-facing redirect target.
   NEXT_PUBLIC_SITE_URL: "https://ai-listings.joeblack.nyc"
+  # Where the user's browser actually lives (Tailscale-only) — use for every redirect meant to
+  # land the user back in the app itself, e.g. after a platform-connect OAuth flow completes.
+  APP_URL: "https://ai-listings.napoleon-catfish.ts.net"
   REGISTRATION_MODE: "whitelist"
   NODE_ENV: "production"
   INNGEST_BASE_URL: "http://inngest.ai-listings.svc.cluster.local:8288"
