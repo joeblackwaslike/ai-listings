@@ -4,6 +4,7 @@ import { FieldsPanel } from '@/components/workspace/FieldsPanel'
 import { AgentChat } from '@/components/workspace/AgentChat'
 import { ArchiveButton } from '@/components/workspace/ArchiveButton'
 import { PhotoSection } from '@/components/workspace/PhotoSection'
+import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
 import { detectClothingSubType, getMeasurementFields, studioPhotosReady } from '@/lib/utils'
@@ -233,6 +234,7 @@ export default async function WorkspacePage({
 
   return (
     <div className="h-screen flex flex-col">
+      <AutoRefresh active={listing.status !== 'published' && listing.status !== 'archived'} />
       <header className="flex-none flex items-center gap-3 px-6 py-3 border-b border-gray-800 bg-gray-950">
         <a href="/dashboard" className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
           ← Dashboard

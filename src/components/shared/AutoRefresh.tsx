@@ -3,15 +3,18 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-// The dashboard is server-rendered with no push/realtime channel, so background pipeline
-// changes (a listing becoming blocked, a step completing) don't show up until something
-// re-fetches. Poll periodically and on refocus instead of requiring a manual reload.
+// Server-rendered pages showing background pipeline state (a listing processing, a job
+// blocking) have no push/realtime channel — nothing re-fetches until something triggers it.
+// Poll periodically and on refocus instead of requiring a manual reload. Pass `active={false}`
+// once there's nothing left to change (e.g. a finished or archived listing) to stop polling.
 const REFRESH_INTERVAL_MS = 30_000
 
-export function DashboardAutoRefresh() {
+export function AutoRefresh({ active = true }: { active?: boolean }) {
   const router = useRouter()
 
   useEffect(() => {
+    if (!active) return
+
     const interval = setInterval(() => router.refresh(), REFRESH_INTERVAL_MS)
 
     function handleVisibility() {
@@ -23,7 +26,7 @@ export function DashboardAutoRefresh() {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [router])
+  }, [router, active])
 
   return null
 }
