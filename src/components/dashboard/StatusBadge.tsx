@@ -9,6 +9,9 @@ function getBadge(listing: BadgeInput): { label: string; className: string } {
   if (listing.status === 'intake' || listing.status === 'id_gate') {
     return { label: 'Processing', className: 'bg-gray-700/60 text-gray-400' }
   }
+  if (listing.status === 'gender_gate') {
+    return { label: 'Needs details', className: 'bg-amber-900/60 text-amber-300' }
+  }
   if (listing.agent_blocked) {
     return { label: 'Needs you', className: 'bg-orange-900/60 text-orange-300' }
   }
@@ -21,7 +24,14 @@ function getBadge(listing: BadgeInput): { label: string; className: string } {
   if (listing.status === 'published') {
     return { label: 'Published', className: 'bg-purple-900/60 text-purple-300' }
   }
-  return { label: 'Archived', className: 'bg-gray-800 text-gray-600' }
+  if (listing.status === 'archived') {
+    return { label: 'Archived', className: 'bg-gray-800 text-gray-600' }
+  }
+  // Exhaustiveness guard — a future ListingStatus value not handled above will fail to compile
+  // here instead of silently falling through to a misleading label (this exact bug, for
+  // gender_gate, is what prompted adding this).
+  const exhaustive: never = listing.status
+  throw new Error(`StatusBadge: unhandled listing status ${exhaustive as string}`)
 }
 
 export function StatusBadge({ listing }: { listing: BadgeInput }) {
