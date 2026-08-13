@@ -11,17 +11,16 @@ env:
 jobs:
   build:
     name: Build ARM64 image
-    runs-on: ubuntu-latest
+    # Native ARM64 GitHub-hosted runner (free, GA for public repos) — building
+    # linux/arm64 here runs natively instead of under QEMU cross-compilation,
+    # which was the dominant cost on ubuntu-latest (x86) for any commit that
+    # touches source, since that always invalidates the `npm run build` layer.
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU (ARM64 cross-compile)
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
