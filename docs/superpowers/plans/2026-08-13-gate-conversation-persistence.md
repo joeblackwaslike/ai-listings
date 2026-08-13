@@ -498,7 +498,7 @@ git commit -m "refactor(listings): wire idGateContext/genderGateContext to gate-
 **Files:**
 - Modify: `src/app/listings/[id]/page.tsx`
 
-- [ ] **Step 1: Add the write**
+- [x] **Step 1: Add the write**
 
 In `WorkspacePage`, immediately after the block that computes `firstMessage`/`suggestions`/`detailGateContext`, insert a guarded write. Replace:
 
@@ -536,7 +536,7 @@ with:
 
 This reuses the `supabase` client already created earlier in `WorkspacePage` (`const supabase = await createClient()`) — no new client needed. `shouldPersistInLoopGreeting` (added to `gate-messages.ts` alongside this task, with its own unit tests) checks `status === 'in_loop'` specifically, not just "not a gate status" — a listing can also have `!hasHistory` while still `intake` (right after upload, before the pipeline reaches `in_loop`), and writing the generic "I'm working on this listing..." placeholder for that status would permanently prevent the real in-loop greeting from ever being shown or persisted (once written, `hasHistory` flips true and `buildWorkspaceContext` never runs again for that listing's `in_loop` phase). It also excludes `agent_blocked` listings: `buildWorkspaceContext` checks `agent_blocked`/`agent_blocked_reason` *before* the status branches, so a listing can be `status: 'in_loop'` with `agent_blocked: true` (set by any pipeline step's `onFailure` handler) and have `firstMessage` be the transient error text rather than the real in-loop greeting — persisting that would be the same permanent-placeholder bug again, just reached through `agent_blocked` instead of a different status. This condition took three code-review rounds to get right (see commits `1d707ef`, `7d07038`, `7a5222b` on this branch), which is why it's a named, independently unit-tested function rather than an inline boolean expression. It only ever fires once per listing: the moment it succeeds, `hasHistory` becomes true on the next load, and the outer ternary above stops calling `buildWorkspaceContext` for `in_loop` states entirely (see spec's "In-loop first-message persistence" section for why this is self-limiting).
 
-- [ ] **Step 2: Typecheck and lint**
+- [x] **Step 2: Typecheck and lint**
 
 Run: `npx tsc --noEmit`
 Expected: no errors.
@@ -544,7 +544,7 @@ Expected: no errors.
 Run: `npx eslint src/app/listings/\[id\]/page.tsx`
 Expected: no errors.
 
-- [ ] **Step 3: Manually verify**
+- [x] **Step 3: Manually verify**
 
 Run: `npm run dev`, open a listing with zero conversation history sitting in an `in_loop` sub-state (e.g. one still waiting on studio photos). Reload the page once — confirm no visible UI change (the greeting still renders the same way via `firstMessage`, since `messages.length === 0` still holds on this same load). Then check the database directly:
 
@@ -555,7 +555,7 @@ kubectl exec -n sup-ai-listings ai-listings-supabase-db-0 -- psql -U postgres -c
 
 Expected: one `assistant` row containing the exact greeting text shown in the UI. Reload the page again — `hasHistory` is now true, so `AgentChat` renders from `initialMessages` instead of a freshly computed `firstMessage`, and no duplicate row gets written.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/app/listings/\[id\]/page.tsx
