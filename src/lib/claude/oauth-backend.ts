@@ -12,6 +12,18 @@ import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { ClaudeImageInput, StructuredCallParams, TextCallParams } from './types'
 import { ClaudeStructuredOutputError } from './types'
 
+// The Agent SDK's `env` option REPLACES the subprocess environment entirely when set — when
+// omitted, the subprocess inherits process.env as-is. Claude Code's own auth precedence ranks
+// ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN ABOVE the subscription OAuth token, so if this app's
+// existing api-key-backend credentials are present in the deployment env (they are — the
+// api-key backend needs them for its own fallback path), the spawned `claude` subprocess
+// silently prefers the pay-per-token key over CLAUDE_CODE_OAUTH_TOKEN, defeating the whole
+// point of this backend. Strip both so the subprocess falls through to the OAuth token.
+function subprocessEnv(): Record<string, string | undefined> {
+  const { ANTHROPIC_API_KEY: _apiKey, ANTHROPIC_AUTH_TOKEN: _authToken, ...rest } = process.env
+  return rest
+}
+
 async function fetchImageAsBase64(image: ClaudeImageInput): Promise<{ base64: string; mediaType: string }> {
   if ('base64' in image) return { base64: image.base64, mediaType: image.mediaType }
 
@@ -69,6 +81,7 @@ export async function runStructuredOauth<T>(params: StructuredCallParams): Promi
       maxTurns: 1,
       model: params.model,
       outputFormat: { type: 'json_schema', schema: params.jsonSchema },
+      env: subprocessEnv(),
     },
   })) {
     if (message.type === 'result') {
@@ -97,6 +110,7 @@ export async function runTextOauth(params: TextCallParams): Promise<string> {
       tools: [],
       maxTurns: 1,
       model: params.model,
+      env: subprocessEnv(),
     },
   })) {
     if (message.type === 'assistant') {
