@@ -9,12 +9,16 @@ export async function POST() {
 
   const admin = getSupabaseAdmin()
 
-  // Find all blocked listings for this user that have an intake photo
+  // Find all blocked listings for this user that have an intake photo. Excludes archived
+  // listings explicitly — agent_blocked can linger true on a listing that was archived by
+  // some other path without clearing it, and this query has no other way to tell an actually
+  // stuck listing apart from an old archived one someone doesn't want resurrected.
   const { data: blocked, error } = await admin
     .from('listings')
     .select('id, status')
     .eq('user_id', user.id)
     .eq('agent_blocked', true)
+    .neq('status', 'archived')
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
   if (!blocked || blocked.length === 0) return Response.json({ restarted: 0 })
