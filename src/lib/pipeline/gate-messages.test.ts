@@ -6,11 +6,12 @@ import {
   buildIdGateAck,
   buildIdGatePrompt,
   buildIdGateSnapshot,
+  shouldPersistInLoopGreeting,
   synthesizeGenderGateAnswer,
   synthesizeIdGateAnswer,
 } from './gate-messages'
 import type { GenderGateListing, IdGateListing } from './gate-messages'
-import type { DetailGateContext } from '@/types/listings'
+import type { DetailGateContext, Listing, ListingStatus } from '@/types/listings'
 
 function idListing(overrides: Partial<IdGateListing> = {}): IdGateListing {
   return {
@@ -161,4 +162,39 @@ test('buildGenderGateAck returns the fixed acknowledgment', () => {
     buildGenderGateAck(),
     'Got it — running pricing research now. The listing will update in a moment.'
   )
+})
+
+function greetingListing(overrides: Partial<Pick<Listing, 'status' | 'agent_blocked'>> = {}): Pick<Listing, 'status' | 'agent_blocked'> {
+  return {
+    status: 'in_loop',
+    agent_blocked: false,
+    ...overrides,
+  }
+}
+
+test('shouldPersistInLoopGreeting is true for a fresh in_loop listing with no history', () => {
+  assert.equal(shouldPersistInLoopGreeting(greetingListing(), false, 'Upload your studio photos...'), true)
+})
+
+test('shouldPersistInLoopGreeting is false when hasHistory is already true', () => {
+  assert.equal(shouldPersistInLoopGreeting(greetingListing(), true, 'Upload your studio photos...'), false)
+})
+
+test('shouldPersistInLoopGreeting is false when firstMessage is null', () => {
+  assert.equal(shouldPersistInLoopGreeting(greetingListing(), false, null), false)
+})
+
+test('shouldPersistInLoopGreeting is false for agent_blocked listings even when status is in_loop', () => {
+  assert.equal(shouldPersistInLoopGreeting(greetingListing({ agent_blocked: true }), false, 'step3: pricing failed'), false)
+})
+
+test('shouldPersistInLoopGreeting is false for every non-in_loop status', () => {
+  const nonInLoopStatuses: ListingStatus[] = ['intake', 'id_gate', 'gender_gate', 'finalizing', 'published', 'archived']
+  for (const status of nonInLoopStatuses) {
+    assert.equal(
+      shouldPersistInLoopGreeting(greetingListing({ status }), false, 'some greeting'),
+      false,
+      `expected false for status ${status}`
+    )
+  }
 })

@@ -123,3 +123,11 @@ export function buildIdGateAck(args: { confirmed: boolean }): string {
 export function buildGenderGateAck(): string {
   return 'Got it — running pricing research now. The listing will update in a moment.'
 }
+
+export function shouldPersistInLoopGreeting(
+  listing: Pick<Listing, 'status' | 'agent_blocked'>,
+  hasHistory: boolean,
+  firstMessage: string | null
+): firstMessage is string {
+  return !hasHistory && !!firstMessage && !listing.agent_blocked && listing.status === 'in_loop'
+}

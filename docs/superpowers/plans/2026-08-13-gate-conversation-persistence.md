@@ -19,7 +19,7 @@
 - Create: `src/lib/pipeline/gate-messages.ts`
 - Test: `src/lib/pipeline/gate-messages.test.ts`
 
-- [ ] **Step 1: Write the failing test file**
+- [x] **Step 1: Write the failing test file**
 
 Create `src/lib/pipeline/gate-messages.test.ts`:
 
@@ -190,12 +190,12 @@ test('buildGenderGateAck returns the fixed acknowledgment', () => {
 })
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `node --import tsx --test src/lib/pipeline/gate-messages.test.ts`
 Expected: FAIL — `Cannot find module './gate-messages'` (the file doesn't exist yet).
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `src/lib/pipeline/gate-messages.ts`:
 
@@ -327,12 +327,12 @@ export function buildGenderGateAck(): string {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `node --import tsx --test src/lib/pipeline/gate-messages.test.ts`
 Expected: PASS — all 15 tests green.
 
-- [ ] **Step 5: Typecheck and lint**
+- [x] **Step 5: Typecheck and lint**
 
 Run: `npx tsc --noEmit`
 Expected: no errors.
@@ -340,7 +340,7 @@ Expected: no errors.
 Run: `npx eslint src/lib/pipeline/gate-messages.ts src/lib/pipeline/gate-messages.test.ts`
 Expected: no errors. Fix any that surface (e.g. import ordering) before continuing.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/pipeline/gate-messages.ts src/lib/pipeline/gate-messages.test.ts
@@ -354,7 +354,7 @@ git commit -m "feat(pipeline): add gate-messages pure functions for prompt/answe
 **Files:**
 - Modify: `src/app/listings/[id]/page.tsx`
 
-- [ ] **Step 1: Replace the imports**
+- [x] **Step 1: Replace the imports**
 
 In `src/app/listings/[id]/page.tsx`, replace:
 
@@ -373,7 +373,7 @@ import { buildGenderGatePrompt, buildIdGatePrompt, synthesizeIdGateAnswer } from
 
 (`detectClothingSubType`/`getMeasurementFields`/`GENDER_CATEGORIES` are no longer used directly in this file — that logic now lives in `gate-messages.ts`.)
 
-- [ ] **Step 2: Replace `idGateContext` and `genderGateContext`**
+- [x] **Step 2: Replace `idGateContext` and `genderGateContext`**
 
 Replace the full bodies of both functions:
 
@@ -472,7 +472,7 @@ function genderGateContext(listing: Listing): WorkspaceContext {
 }
 ```
 
-- [ ] **Step 3: Typecheck and lint**
+- [x] **Step 3: Typecheck and lint**
 
 Run: `npx tsc --noEmit`
 Expected: no errors (confirms `idGateContext`/`genderGateContext` still satisfy `WorkspaceContext`, and no unused imports remain).
@@ -480,11 +480,11 @@ Expected: no errors (confirms `idGateContext`/`genderGateContext` still satisfy 
 Run: `npx eslint src/app/listings/\[id\]/page.tsx`
 Expected: no errors.
 
-- [ ] **Step 4: Manually verify no visible behavior change**
+- [x] **Step 4: Manually verify no visible behavior change**
 
 Run: `npm run dev`, open a listing currently in `id_gate` or `gender_gate` status (or wait for one to reach that state), confirm the chat prompt text renders identically to before this change. This is a pure refactor — text output must be byte-for-byte the same as pre-change.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/app/listings/\[id\]/page.tsx
@@ -519,7 +519,7 @@ with:
     ? buildWorkspaceContext(listing, photos, hasHistory)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
-  if (!hasHistory && firstMessage && listing.status !== 'id_gate' && listing.status !== 'gender_gate') {
+  if (shouldPersistInLoopGreeting(listing, hasHistory, firstMessage)) {
     const { error: firstMessageError } = await supabase.from('conversations').insert({
       listing_id: id,
       role: 'assistant',
@@ -527,14 +527,14 @@ with:
       context_snapshot: null,
     })
     if (firstMessageError) {
-      console.error('Failed to persist in_loop first message:', firstMessageError.message)
+      console.error(`Failed to persist in_loop first message for listing ${id}:`, firstMessageError.message)
     }
   }
 
   return (
 ```
 
-This reuses the `supabase` client already created earlier in `WorkspacePage` (`const supabase = await createClient()`) — no new client needed. It only ever fires once per listing: the moment it succeeds, `hasHistory` becomes true on the next load, and the outer ternary above stops calling `buildWorkspaceContext` for `in_loop` states entirely (see spec's "In-loop first-message persistence" section for why this is self-limiting).
+This reuses the `supabase` client already created earlier in `WorkspacePage` (`const supabase = await createClient()`) — no new client needed. `shouldPersistInLoopGreeting` (added to `gate-messages.ts` alongside this task, with its own unit tests) checks `status === 'in_loop'` specifically, not just "not a gate status" — a listing can also have `!hasHistory` while still `intake` (right after upload, before the pipeline reaches `in_loop`), and writing the generic "I'm working on this listing..." placeholder for that status would permanently prevent the real in-loop greeting from ever being shown or persisted (once written, `hasHistory` flips true and `buildWorkspaceContext` never runs again for that listing's `in_loop` phase). It also excludes `agent_blocked` listings: `buildWorkspaceContext` checks `agent_blocked`/`agent_blocked_reason` *before* the status branches, so a listing can be `status: 'in_loop'` with `agent_blocked: true` (set by any pipeline step's `onFailure` handler) and have `firstMessage` be the transient error text rather than the real in-loop greeting — persisting that would be the same permanent-placeholder bug again, just reached through `agent_blocked` instead of a different status. This condition took three code-review rounds to get right (see commits `1d707ef`, `7d07038`, `7a5222b` on this branch), which is why it's a named, independently unit-tested function rather than an inline boolean expression. It only ever fires once per listing: the moment it succeeds, `hasHistory` becomes true on the next load, and the outer ternary above stops calling `buildWorkspaceContext` for `in_loop` states entirely (see spec's "In-loop first-message persistence" section for why this is self-limiting).
 
 - [ ] **Step 2: Typecheck and lint**
 

@@ -8,7 +8,7 @@ import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
 import { studioPhotosReady } from '@/lib/utils'
-import { buildGenderGatePrompt, buildIdGatePrompt, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
+import { buildGenderGatePrompt, buildIdGatePrompt, shouldPersistInLoopGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
 
 type WorkspaceContext = {
   firstMessage: string | null
@@ -192,7 +192,7 @@ export default async function WorkspacePage({
     ? buildWorkspaceContext(listing, photos, hasHistory)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
-  if (!hasHistory && firstMessage && !listing.agent_blocked && listing.status === 'in_loop') {
+  if (shouldPersistInLoopGreeting(listing, hasHistory, firstMessage)) {
     const { error: firstMessageError } = await supabase.from('conversations').insert({
       listing_id: id,
       role: 'assistant',
