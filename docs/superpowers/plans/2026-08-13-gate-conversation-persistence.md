@@ -815,6 +815,38 @@ git commit -m "feat(pipeline): persist gender_gate prompt/answer/ack to conversa
 
 ---
 
+### Post-implementation fix: sequential inserts, not batched
+
+The final holistic branch review (before Task 6) caught a Critical issue in both Task 4 and Task 5's code above: the three-row `conversations.insert([...])` calls in `confirm-id` and `confirm-gender` batch all three rows into one array insert. Postgres fixes `now()` at transaction start, so a single multi-row insert gives every row an identical `created_at` — and the read path (`page.tsx`) sorts by `created_at` with no secondary tiebreaker, so the prompt→answer→ack display order wasn't actually guaranteed, directly undermining the feature's own "Done when" criterion.
+
+Fix (commit `e0ad3b3`): extracted `insertConversationRowsSequentially` in a new file, `src/lib/pipeline/insert-conversation-rows.ts`:
+
+```ts
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+export interface ConversationRow {
+  listing_id: string
+  role: 'assistant' | 'user'
+  content: string
+  context_snapshot: unknown
+}
+
+export async function insertConversationRowsSequentially(
+  supabase: SupabaseClient,
+  rows: ConversationRow[],
+  onError: (error: { message: string }) => void
+): Promise<void> {
+  for (const row of rows) {
+    const { error } = await supabase.from('conversations').insert(row)
+    if (error) onError(error)
+  }
+}
+```
+
+Both `confirm-id/route.ts` and `confirm-gender/route.ts` were updated to call this helper instead of their original batched `.insert([...])`, passing the same three row objects as before (unchanged content/snapshot shape) plus an `onError` callback matching each route's existing log-message convention. This mirrors the pattern already used in `src/lib/agent/chat.ts` (separate single-row inserts, not batched) — the new helper isn't a novel approach, just a shared, tested version of what the rest of the codebase already does for conversation history.
+
+---
+
 ### Task 6: Full-suite verification
 
 **Files:** none (verification only)

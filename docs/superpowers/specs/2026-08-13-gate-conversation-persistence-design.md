@@ -30,6 +30,7 @@ Extract the gate-prompt text logic currently inlined in `page.tsx`'s `idGateCont
 |------|-----------------|-----------------|
 | `src/lib/pipeline/gate-messages.ts` | Create | Pure functions: prompt text, snapshot data, answer synthesis (see below) |
 | `src/lib/pipeline/gate-messages.test.ts` | Create | Unit tests for the above, `node --test` convention |
+| `src/lib/pipeline/insert-conversation-rows.ts` | Create | `insertConversationRowsSequentially` — shared helper both confirm routes use to write their three rows as separate inserts, not one batched array (see Data Flow) |
 | `src/app/listings/[id]/page.tsx` | Modify | `idGateContext()`/`genderGateContext()` call the shared builders instead of inlining the text; also inserts the one-off `in_loop` first-message row when `!hasHistory` |
 | `src/app/api/pipeline/confirm-id/route.ts` | Modify | Fetch listing, build + insert the prompt/answer/ack conversation rows before sending the existing Inngest event |
 | `src/app/api/pipeline/confirm-gender/route.ts` | Modify | Guard on `status === 'gender_gate'`, build + insert the prompt/answer/ack conversation rows before sending the existing Inngest event |
@@ -85,11 +86,12 @@ The `user` row's `context_snapshot` is the raw confirm payload the route receive
 **`POST /api/pipeline/confirm-id`**
 
 1. Update `listings.status` `id_gate → intake`, adding `.select('id, brand, category, condition, condition_notes, intake_meta')` to the existing `.eq('id', ...).eq('status', 'id_gate')` update — one round trip gives both the success signal (row returned or not) and the data needed for the prompt text (unaffected by this update, so pre/post values are identical).
-2. If a row came back (the flip actually happened), insert three `conversations` rows in order:
+2. If a row came back (the flip actually happened), insert three `conversations` rows in order, via `insertConversationRowsSequentially` (`src/lib/pipeline/insert-conversation-rows.ts`) — three separate single-row inserts, not one batched array:
    - `assistant`: `buildIdGatePrompt` + `buildIdGateSnapshot`
    - `user`: `synthesizeIdGateAnswer({confirmed, corrections, listing})`, snapshot = `{confirmed, corrections}`
    - `assistant`: `buildIdGateAck({confirmed})`, snapshot = `null`
-   - Insert failures are logged and swallowed — they must not block the pipeline event below
+   - Insert failures are logged (per row) and swallowed — they must not block the pipeline event below
+   - Sequential, not batched: Postgres fixes `now()` at transaction start, so a single multi-row `insert([...])` gives every row an identical `created_at` — and since the read path (`page.tsx`) sorts by `created_at` with no secondary tiebreaker, a batched insert wouldn't actually guarantee the prompt→answer→ack display order. Three separate inserts (each its own request/transaction) each get a fresh `now()`, mirroring the existing pattern in `src/lib/agent/chat.ts`.
 3. Send the existing `pipeline/id-confirmed` Inngest event — unchanged.
 4. If no row came back (gate already resolved — duplicate call), skip step 2 entirely; step 3 is unchanged from current behavior. This is indistinguishable, by data alone, from a genuine update failure (`.maybeSingle()` returns `data: null` for both) — the query's `error` is also logged (separately from the insert's own error logging) so a real failure is visible in production logs rather than silently collapsing into the same no-op path as the legitimate duplicate-call case.
 5. This route already uses a service-role Supabase client (bypasses RLS) for the status update — the same client is reused for the three inserts, consistent with existing behavior in this route.
@@ -98,11 +100,11 @@ The `user` row's `context_snapshot` is the raw confirm payload the route receive
 
 1. Fetch the listing row by id (`status, brand, category, condition, condition_notes, intake_meta`). This route currently has no gate-status guard at all.
 2. If `status !== 'gender_gate'`, skip the conversation writes (new duplicate-call guard — small added safety net, not a behavior change to pipeline dispatch).
-3. If it matches, insert three `conversations` rows in order:
+3. If it matches, insert three `conversations` rows in order via the same `insertConversationRowsSequentially` helper as `confirm-id`:
    - `assistant`: `buildGenderGatePrompt(listing)` → `{ message, detailGateContext }`, snapshot = the `detailGateContext` fields
    - `user`: `synthesizeGenderGateAnswer({gender, measurements, detailGateContext})` from the request body, snapshot = `{gender, measurements}`
    - `assistant`: `buildGenderGateAck()`, snapshot = `null`
-   - Insert failures logged and swallowed, same as above
+   - Insert failures logged (per row) and swallowed, same as above
 4. Send the existing `pipeline/gender-confirmed` Inngest event — unchanged.
 5. This route uses the authenticated user-session Supabase client (already required — it 401s without a signed-in user). `conversations` RLS (migration `0002`) scopes inserts to `listing_id IN (SELECT id FROM listings WHERE user_id = auth.uid())`, so this only succeeds for listings the caller owns — no extra ownership check needed in the route itself, the database enforces it.
 
