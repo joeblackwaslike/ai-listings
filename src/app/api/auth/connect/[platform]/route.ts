@@ -20,7 +20,10 @@ export async function GET(req: Request) {
   const appUrl = process.env.APP_URL!
   const settingsUrl = `${appUrl}/settings/platforms`
 
-  if (!user) return Response.redirect(`${appUrl}/login`)
+  if (!user) {
+    console.warn('[oauth/connect] no session on APP_URL — redirecting to login')
+    return Response.redirect(`${appUrl}/login`)
+  }
 
   const platform = new URL(req.url).pathname.split('/').at(-1)!
   if (!SUPPORTED.has(platform)) {
@@ -29,11 +32,13 @@ export async function GET(req: Request) {
 
   const clientId = await getSetting(user.id, `${platform}_client_id`)
   if (!clientId) {
+    console.warn(`[oauth/connect/${platform}] missing_client_id for userId=${user.id}`)
     return Response.redirect(`${settingsUrl}?error=missing_client_id`)
   }
 
   const codeVerifier = platform === 'etsy' ? randomBytes(32).toString('base64url') : undefined
   const state = await createOauthState(user.id, platform, codeVerifier)
+  console.log(`[oauth/connect/${platform}] state created for userId=${user.id}, handing off to prepare hop`)
 
   // Hand off to the public "prepare" hop (joeblack.nyc, same route as the eventual callback —
   // see src/app/api/auth/callback/[platform]/route.ts) instead of redirecting straight to the

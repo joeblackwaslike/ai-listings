@@ -33,11 +33,18 @@ export async function GET(req: Request) {
   // browsers never send a cookie across registrable domains.
   const prepareState = url.searchParams.get('prepare')
   if (prepareState) {
+    console.log(`[oauth/${platform}] prepare hop, state=${prepareState.slice(0, 8)}…`)
     const peeked = await peekOauthState(prepareState, platform)
-    if (!peeked) return Response.redirect(`${settingsUrl}?error=invalid_state`)
+    if (!peeked) {
+      console.warn(`[oauth/${platform}] prepare: peekOauthState found no row (missing/expired/wrong platform)`)
+      return Response.redirect(`${settingsUrl}?error=invalid_state`)
+    }
 
     const result = await buildProviderAuthUrl(platform, peeked.userId, prepareState, peeked.codeVerifier)
-    if ('error' in result) return Response.redirect(`${settingsUrl}?error=${result.error}`)
+    if ('error' in result) {
+      console.warn(`[oauth/${platform}] prepare: buildProviderAuthUrl error=${result.error}`)
+      return Response.redirect(`${settingsUrl}?error=${result.error}`)
+    }
 
     cookieStore.set(anchorCookieName(platform), prepareState, {
       httpOnly: true,
@@ -45,6 +52,7 @@ export async function GET(req: Request) {
       path: '/',
       maxAge: 600,
     })
+    console.log(`[oauth/${platform}] prepare: anchor cookie set, redirecting to provider`)
     return Response.redirect(result.url)
   }
 
@@ -53,12 +61,14 @@ export async function GET(req: Request) {
   const state = url.searchParams.get('state')
 
   if (!code || !state) {
+    console.warn(`[oauth/${platform}] completion: missing_params (code=${Boolean(code)}, state=${Boolean(state)})`)
     return Response.redirect(`${settingsUrl}?error=missing_params`)
   }
 
   const anchor = cookieStore.get(anchorCookieName(platform))?.value
   cookieStore.delete(anchorCookieName(platform))
   if (!anchor || anchor !== state) {
+    console.warn(`[oauth/${platform}] completion: invalid_state — anchor cookie ${anchor ? 'present but mismatched' : 'missing entirely'}`)
     return Response.redirect(`${settingsUrl}?error=invalid_state`)
   }
 
@@ -67,9 +77,11 @@ export async function GET(req: Request) {
   // single-use-deletes the row so it can't be replayed.
   const consumed = await consumeOauthState(state, platform)
   if (!consumed) {
+    console.warn(`[oauth/${platform}] completion: consumeOauthState found no row (already consumed/expired)`)
     return Response.redirect(`${settingsUrl}?error=invalid_state`)
   }
   const { userId, codeVerifier } = consumed
+  console.log(`[oauth/${platform}] completion: state consumed for userId=${userId}`)
 
   const clientId = await getSetting(userId, `${platform}_client_id`)
   if (!clientId) return Response.redirect(`${settingsUrl}?error=missing_client_id`)
@@ -133,10 +145,15 @@ export async function GET(req: Request) {
         },
         body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: ruName }),
       })
-      if (!res.ok) return Response.redirect(`${settingsUrl}?error=token_exchange_failed`)
+      if (!res.ok) {
+        const body = await res.text().catch(() => '<unreadable>')
+        console.error(`[oauth/ebay] token exchange failed: HTTP ${res.status} ${body}`)
+        return Response.redirect(`${settingsUrl}?error=token_exchange_failed`)
+      }
       const data = await res.json() as { refresh_token?: string }
       if (!data.refresh_token) return Response.redirect(`${settingsUrl}?error=no_refresh_token`)
       await setSetting(userId, 'ebay_refresh_token', data.refresh_token, 'credential')
+      console.log(`[oauth/ebay] refresh token saved for userId=${userId}`)
 
     } else {
       return Response.redirect(`${settingsUrl}?error=not_implemented`)
