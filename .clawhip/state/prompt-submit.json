@@ -1,8 +1,8 @@
 {
-  "observed_at": "2026-05-21T08:31:23.877Z",
+  "observed_at": "2026-08-13T01:00:52.631Z",
   "provider": "claude-code",
   "event_name": "UserPromptSubmit",
-  "session_id": "8a94557f-18bf-4dac-8995-767b5eea6cf4",
+  "session_id": "278e6808-c8ad-4bdb-ac77-d3914a3f8960",
   "turn_id": null,
-  "prompt_summary": "b"
+  "prompt_summary": "You are a background memory extractor running after a Claude Code session. Read the session transcript at: /Users/joe/.claude/projects/-Users-joe-github-joeblackwaslike-ai-listings/f3861a63-fc4a-424b-…"
 }
