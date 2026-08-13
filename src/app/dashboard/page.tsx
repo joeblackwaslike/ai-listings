@@ -3,7 +3,7 @@ import { ListingsGrid } from '@/components/dashboard/ListingsGrid'
 import type { ListingWithCover } from '@/components/dashboard/ListingCard'
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { BlockedListingsBanner } from '@/components/dashboard/BlockedListingsBanner'
-import { DashboardAutoRefresh } from '@/components/dashboard/DashboardAutoRefresh'
+import { AutoRefresh } from '@/components/shared/AutoRefresh'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -46,7 +46,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
-      <DashboardAutoRefresh />
+      <AutoRefresh />
       <DashboardHeader listingsCount={listingsWithCovers.length} />
       {blockedCount > 0 && <BlockedListingsBanner blockedCount={blockedCount} />}
       <ListingsGrid initialListings={listingsWithCovers} />
