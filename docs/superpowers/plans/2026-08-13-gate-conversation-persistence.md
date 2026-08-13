@@ -706,7 +706,7 @@ git commit -m "feat(pipeline): persist id_gate prompt/answer/ack to conversation
 **Files:**
 - Modify: `src/app/api/pipeline/confirm-gender/route.ts`
 
-- [ ] **Step 1: Rewrite the route**
+- [x] **Step 1: Rewrite the route**
 
 Replace the full contents of `src/app/api/pipeline/confirm-gender/route.ts`:
 
@@ -781,7 +781,7 @@ export async function POST(req: Request) {
 }
 ```
 
-- [ ] **Step 2: Typecheck and lint**
+- [x] **Step 2: Typecheck and lint**
 
 Run: `npx tsc --noEmit`
 Expected: no errors.
@@ -789,7 +789,7 @@ Expected: no errors.
 Run: `npx eslint src/app/api/pipeline/confirm-gender/route.ts`
 Expected: no errors.
 
-- [ ] **Step 3: Manually verify against the dev DB**
+- [x] **Step 3: Manually verify against the dev DB**
 
 This route requires an authenticated session (`auth.getUser()`), which curl can't easily provide — verify through the running app instead. Run `npm run dev`, sign in, and find or advance a listing to `gender_gate` status (a `watches`/`clothing`/`sneakers` category needs gender; e.g. a `handbag` does not). On the listing detail page, answer the gender/measurements prompt through the chat UI as you normally would (e.g. click "Men's", then fill in and submit the measurement form).
 
@@ -806,7 +806,7 @@ Repeat with a listing in a non-gendered, measurement-needing category (e.g. `han
 
 Then confirm the guard: with dev tools open, replay the same POST body (visible in the Network tab) a second time against `/api/pipeline/confirm-gender` for that same listing, now that its status has moved on from `gender_gate` — expect no new conversation rows written (still exactly 3 from the first submission), only the Inngest send still fires.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/app/api/pipeline/confirm-gender/route.ts
