@@ -6,6 +6,7 @@ import {
   synthesizeGenderGateAnswer,
 } from '@/lib/pipeline/gate-messages'
 import type { GenderGateListing } from '@/lib/pipeline/gate-messages'
+import { insertConversationRowsSequentially } from '@/lib/pipeline/insert-conversation-rows'
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -36,30 +37,30 @@ export async function POST(req: Request) {
   if (listing && listing.status === 'gender_gate') {
     const { message, detailGateContext } = buildGenderGatePrompt(listing)
 
-    const { error: insertError } = await supabase.from('conversations').insert([
-      {
-        listing_id: listingId,
-        role: 'assistant',
-        content: message,
-        context_snapshot: detailGateContext,
-      },
-      {
-        listing_id: listingId,
-        role: 'user',
-        content: synthesizeGenderGateAnswer({ gender, measurements, detailGateContext }),
-        context_snapshot: { gender, measurements },
-      },
-      {
-        listing_id: listingId,
-        role: 'assistant',
-        content: buildGenderGateAck(),
-        context_snapshot: null,
-      },
-    ])
-
-    if (insertError) {
-      console.error('confirm-gender: failed to persist gate conversation for listing', listingId, insertError.message)
-    }
+    await insertConversationRowsSequentially(
+      supabase,
+      [
+        {
+          listing_id: listingId,
+          role: 'assistant',
+          content: message,
+          context_snapshot: detailGateContext,
+        },
+        {
+          listing_id: listingId,
+          role: 'user',
+          content: synthesizeGenderGateAnswer({ gender, measurements, detailGateContext }),
+          context_snapshot: { gender, measurements },
+        },
+        {
+          listing_id: listingId,
+          role: 'assistant',
+          content: buildGenderGateAck(),
+          context_snapshot: null,
+        },
+      ],
+      (error) => console.error('confirm-gender: failed to persist gate conversation for listing', listingId, error.message)
+    )
   }
 
   await inngest.send({

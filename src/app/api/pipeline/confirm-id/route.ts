@@ -8,6 +8,7 @@ import {
   synthesizeIdGateAnswer,
 } from '@/lib/pipeline/gate-messages'
 import type { IdGateListing } from '@/lib/pipeline/gate-messages'
+import { insertConversationRowsSequentially } from '@/lib/pipeline/insert-conversation-rows'
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -46,30 +47,30 @@ export async function POST(request: Request) {
     const confirmed = body.confirmed
     const corrections = body.corrections ?? null
 
-    const { error: insertError } = await supabase.from('conversations').insert([
-      {
-        listing_id: body.listingId,
-        role: 'assistant',
-        content: buildIdGatePrompt(listing),
-        context_snapshot: buildIdGateSnapshot(listing),
-      },
-      {
-        listing_id: body.listingId,
-        role: 'user',
-        content: synthesizeIdGateAnswer({ confirmed, corrections, listing }),
-        context_snapshot: { confirmed, corrections },
-      },
-      {
-        listing_id: body.listingId,
-        role: 'assistant',
-        content: buildIdGateAck({ confirmed }),
-        context_snapshot: null,
-      },
-    ])
-
-    if (insertError) {
-      console.error('confirm-id: failed to persist gate conversation for listing', body.listingId, insertError.message)
-    }
+    await insertConversationRowsSequentially(
+      supabase,
+      [
+        {
+          listing_id: body.listingId,
+          role: 'assistant',
+          content: buildIdGatePrompt(listing),
+          context_snapshot: buildIdGateSnapshot(listing),
+        },
+        {
+          listing_id: body.listingId,
+          role: 'user',
+          content: synthesizeIdGateAnswer({ confirmed, corrections, listing }),
+          context_snapshot: { confirmed, corrections },
+        },
+        {
+          listing_id: body.listingId,
+          role: 'assistant',
+          content: buildIdGateAck({ confirmed }),
+          context_snapshot: null,
+        },
+      ],
+      (error) => console.error('confirm-id: failed to persist gate conversation for listing', body.listingId, error.message)
+    )
   }
 
   await inngest.send({
