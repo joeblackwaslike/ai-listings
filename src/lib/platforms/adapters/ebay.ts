@@ -224,6 +224,11 @@ export class EbayAdapter implements PlatformSDK {
   ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
+      // Required by the Sell Inventory API on write calls (createOffer/inventory_item), or
+      // eBay rejects the request with "Invalid value for header Content-Language" — confirmed
+      // via a live smoke test against production. This app is US-only (EBAY_US is hardcoded
+      // wherever a marketplaceId is sent), so a fixed en-US is correct, not a per-request value.
+      'Content-Language': 'en-US',
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers as Record<string, string> | undefined),
     };
