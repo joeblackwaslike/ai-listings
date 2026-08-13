@@ -1,23 +1,16 @@
-// UNVERIFIED — pending spike ai-listings-j2d, confirm against installed package .d.ts before
-// first real use. Joe's CLAUDE_CODE_OAUTH_TOKEN doesn't exist yet, so nothing in this file has
-// ever been exercised against a live call. It is structurally complete (types check, dispatch
-// wiring works) but every call shape below — the `outputFormat`/`json_schema` behavior, the
-// image content-block shape, and Haiku-tier model selectability — is a best-effort reading of
-// `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`, not a confirmed contract. Re-check
-// against the installed package's .d.ts (and a real `query()` call) before trusting output from
-// this file in production.
+// Verified against a live query() call using a real CLAUDE_CODE_OAUTH_TOKEN (ai-listings-j2d,
+// 2026-08-12): outputFormat/json_schema returns structured_output reliably on the `result`
+// message for Haiku, Sonnet, and the default model; raw model strings ('claude-haiku-4-5',
+// 'claude-sonnet-4-6') pass through unchanged, no alias mapping needed; the base64-inlined
+// image content block below is parsed correctly. Two real, measured costs to know about: each
+// call carries ~36-50k tokens of cache-creation overhead (the full Claude Code system prompt
+// loads every time, even with tools: []) and 8.5-12s latency, vs ~1-3s for a direct Messages
+// API call — expected before wiring this into the pipeline, not a bug.
 import type { Anthropic } from '@anthropic-ai/sdk'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { ClaudeImageInput, StructuredCallParams, TextCallParams } from './types'
 import { ClaudeStructuredOutputError } from './types'
-
-function logUnverifiedWarning(fn: string): void {
-  console.warn(
-    `[claude/oauth-backend] TODO(ai-listings-j2d): ${fn} is UNVERIFIED against a live Agent SDK call. ` +
-      'Confirm outputFormat/image/model behavior via the spike before relying on this in production.'
-  )
-}
 
 async function fetchImageAsBase64(image: ClaudeImageInput): Promise<{ base64: string; mediaType: string }> {
   if ('base64' in image) return { base64: image.base64, mediaType: image.mediaType }
@@ -65,8 +58,6 @@ async function* buildImagePromptStream(
 }
 
 export async function runStructuredOauth<T>(params: StructuredCallParams): Promise<T> {
-  logUnverifiedWarning('runStructuredOauth')
-
   const prompt = params.image ? buildImagePromptStream(params.prompt, params.image) : params.prompt
 
   let structuredOutput: unknown
@@ -98,8 +89,6 @@ export async function runStructuredOauth<T>(params: StructuredCallParams): Promi
 }
 
 export async function runTextOauth(params: TextCallParams): Promise<string> {
-  logUnverifiedWarning('runTextOauth')
-
   const textChunks: string[] = []
 
   for await (const message of query({
