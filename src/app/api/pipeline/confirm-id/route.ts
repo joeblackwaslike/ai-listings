@@ -29,13 +29,17 @@ export async function POST(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
-  const { data: updatedListing } = await supabase
+  const { data: updatedListing, error: updateError } = await supabase
     .from('listings')
     .update({ status: 'intake' })
     .eq('id', body.listingId)
     .eq('status', 'id_gate')
     .select('id, brand, category, condition, condition_notes, intake_meta')
     .maybeSingle()
+
+  if (updateError) {
+    console.error('confirm-id: status update failed for listing', body.listingId, updateError.message)
+  }
 
   if (updatedListing) {
     const listing = updatedListing as unknown as IdGateListing
@@ -64,7 +68,7 @@ export async function POST(request: Request) {
     ])
 
     if (insertError) {
-      console.error('confirm-id: failed to persist gate conversation:', insertError.message)
+      console.error('confirm-id: failed to persist gate conversation for listing', body.listingId, insertError.message)
     }
   }
 
