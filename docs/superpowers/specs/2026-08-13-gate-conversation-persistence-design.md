@@ -116,6 +116,8 @@ The `user` row's `context_snapshot` is the raw confirm payload the route receive
 
 Conversation-row inserts are best-effort: any Supabase insert error is logged (not thrown) and the route proceeds to send its Inngest event and return `{ ok: true }` as it does today. A logging/history failure must never block the listing from advancing through the pipeline — that's the one behavior this spec explicitly will not change.
 
+Because the three rows are inserted sequentially as separate requests (see "Sequential, not batched" above), rather than one atomic multi-row statement, a mid-sequence failure is possible: e.g. the prompt row succeeds, the answer row's insert fails and is logged, and the ack row is still attempted and may succeed — leaving a visibly incomplete exchange (a prompt with no answer, or an answer with no trailing ack) rather than the all-or-nothing failure the previous batched approach would have produced. This is an accepted tradeoff, not an oversight: it's the same class of best-effort failure this section already accepts for any single insert, just now possible per-row instead of per-exchange, and correct row ordering (the actual bug being fixed) matters more than atomicity for a purely-cosmetic history feature.
+
 ---
 
 ## Testing
