@@ -569,7 +569,7 @@ git commit -m "feat(listings): persist in_loop first assistant message before an
 **Files:**
 - Modify: `src/app/api/pipeline/confirm-id/route.ts`
 
-- [ ] **Step 1: Rewrite the route**
+- [x] **Step 1: Rewrite the route**
 
 Replace the full contents of `src/app/api/pipeline/confirm-id/route.ts`:
 
@@ -661,7 +661,7 @@ export async function POST(request: Request) {
 }
 ```
 
-- [ ] **Step 2: Typecheck and lint**
+- [x] **Step 2: Typecheck and lint**
 
 Run: `npx tsc --noEmit`
 Expected: no errors.
@@ -669,7 +669,7 @@ Expected: no errors.
 Run: `npx eslint src/app/api/pipeline/confirm-id/route.ts`
 Expected: no errors.
 
-- [ ] **Step 3: Manually verify against the dev DB**
+- [x] **Step 3: Manually verify against the dev DB**
 
 Find or create a listing in `id_gate` status, then confirm it:
 
@@ -692,7 +692,7 @@ Repeat with a listing in `id_gate` status, this time posting `{"listingId":"<id>
 
 Then confirm the duplicate-call guard: POST the same `confirmed:true` request again for a listing that's already left `id_gate` — expect no new rows (still 3 total from the first call), since `.maybeSingle()` returns no row on the second call.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/app/api/pipeline/confirm-id/route.ts
