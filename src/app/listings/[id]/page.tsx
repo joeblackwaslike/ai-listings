@@ -200,7 +200,7 @@ export default async function WorkspacePage({
       context_snapshot: null,
     })
     if (firstMessageError) {
-      console.error('Failed to persist in_loop first message:', firstMessageError.message)
+      console.error(`Failed to persist in_loop first message for listing ${id}:`, firstMessageError.message)
     }
   }
 
