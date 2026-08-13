@@ -36,6 +36,9 @@ export const intakePipeline = inngest.createFunction(
       }
 
       const supabase = getSupabaseAdmin()
+      // Don't un-archive a listing the user archived while this run was still in flight
+      // (queued, mid-retry) — see supabase-push.ts's pushPipelineStep for the same guard
+      // on the success path.
       await supabase
         .from('listings')
         .update({
@@ -44,6 +47,7 @@ export const intakePipeline = inngest.createFunction(
           agent_blocked_reason: userMessage,
         })
         .eq('id', listingId)
+        .neq('status', 'archived')
     },
   },
   async ({ event, step }) => {
@@ -110,7 +114,7 @@ export const intakePipeline = inngest.createFunction(
 
     // All categories pause here to collect measurements (and gender for clothing/sneakers/watches)
     await step.run('gender-gate-start', () =>
-      supabase.from('listings').update({ status: 'gender_gate' }).eq('id', listingId)
+      supabase.from('listings').update({ status: 'gender_gate' }).eq('id', listingId).neq('status', 'archived')
     )
 
     const genderConfirmation = await step.waitForEvent('gender-gate-confirm', {
