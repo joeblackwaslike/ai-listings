@@ -192,6 +192,18 @@ export default async function WorkspacePage({
     ? buildWorkspaceContext(listing, photos, hasHistory)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
+  if (!hasHistory && firstMessage && listing.status !== 'id_gate' && listing.status !== 'gender_gate') {
+    const { error: firstMessageError } = await supabase.from('conversations').insert({
+      listing_id: id,
+      role: 'assistant',
+      content: firstMessage,
+      context_snapshot: null,
+    })
+    if (firstMessageError) {
+      console.error('Failed to persist in_loop first message:', firstMessageError.message)
+    }
+  }
+
   return (
     <div className="h-screen flex flex-col">
       <AutoRefresh active={listing.status !== 'published' && listing.status !== 'archived'} />
