@@ -91,7 +91,7 @@ The `user` row's `context_snapshot` is the raw confirm payload the route receive
    - `assistant`: `buildIdGateAck({confirmed})`, snapshot = `null`
    - Insert failures are logged and swallowed — they must not block the pipeline event below
 3. Send the existing `pipeline/id-confirmed` Inngest event — unchanged.
-4. If no row came back (gate already resolved — duplicate call), skip step 2 entirely; step 3 is unchanged from current behavior.
+4. If no row came back (gate already resolved — duplicate call), skip step 2 entirely; step 3 is unchanged from current behavior. This is indistinguishable, by data alone, from a genuine update failure (`.maybeSingle()` returns `data: null` for both) — the query's `error` is also logged (separately from the insert's own error logging) so a real failure is visible in production logs rather than silently collapsing into the same no-op path as the legitimate duplicate-call case.
 5. This route already uses a service-role Supabase client (bypasses RLS) for the status update — the same client is reused for the three inserts, consistent with existing behavior in this route.
 
 **`POST /api/pipeline/confirm-gender`**
