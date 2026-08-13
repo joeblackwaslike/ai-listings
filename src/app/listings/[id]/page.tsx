@@ -192,7 +192,7 @@ export default async function WorkspacePage({
     ? buildWorkspaceContext(listing, photos, hasHistory)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
-  if (!hasHistory && firstMessage && listing.status === 'in_loop') {
+  if (!hasHistory && firstMessage && !listing.agent_blocked && listing.status === 'in_loop') {
     const { error: firstMessageError } = await supabase.from('conversations').insert({
       listing_id: id,
       role: 'assistant',
