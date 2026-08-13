@@ -27,12 +27,16 @@ spec:
             - secretRef:
                 name: ai-listings-secret
           resources:
+            # Bumped for the Agent SDK's per-call `claude` CLI subprocess (only spawned when
+            # CLAUDE_CODE_OAUTH_TOKEN is set — the api-key backend path is unchanged). This is
+            # a conservative estimate, not a measured one — watch `kubectl top pod` under real
+            # pipeline load after enabling the OAuth backend and adjust if it's OOM-killing.
             requests:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: "256Mi"
+              cpu: "150m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "1Gi"
+              cpu: "750m"
           livenessProbe:
             httpGet:
               path: /
