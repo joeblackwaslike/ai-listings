@@ -7,9 +7,8 @@ import { PhotoSection } from '@/components/workspace/PhotoSection'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
-import { detectClothingSubType, getMeasurementFields, studioPhotosReady } from '@/lib/utils'
-
-const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
+import { studioPhotosReady } from '@/lib/utils'
+import { buildGenderGatePrompt, buildIdGatePrompt, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
 
 type WorkspaceContext = {
   firstMessage: string | null
@@ -99,61 +98,22 @@ function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): 
 }
 
 function idGateContext(listing: Listing): WorkspaceContext {
-  const brand = listing.brand ?? 'Unknown brand'
-  const category = listing.category ?? 'unknown category'
-  const condition = (listing.condition ?? 'unknown condition').replace(/_/g, ' ')
-  const notes = listing.condition_notes
-  const features = (listing.intake_meta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
-
-  const lines = [
-    "I've analyzed the photo. Here's what I found:",
-    '',
-    `Brand: ${brand}`,
-    `Category: ${category}`,
-    ...(features.length > 0 ? ['', ...features.map((f) => `• ${f}`)] : []),
-    '',
-    `Condition: ${condition}`,
-    notes ? `Notes: ${notes}` : null,
-    '',
-    "Does this look right? Confirm to continue to pricing research, or describe what's wrong.",
-  ].filter((l): l is string => l !== null).join('\n')
-
-  return ctx(lines, [
+  return ctx(buildIdGatePrompt(listing), [
     {
       label: 'Yes, that\'s correct',
       confirmId: true,
-      message: `Confirmed — ${brand} ${category}, condition: ${condition}.`,
+      message: synthesizeIdGateAnswer({ confirmed: true, corrections: null, listing }),
     },
     { label: "Something's wrong", focusInput: true },
   ])
 }
 
 function genderGateContext(listing: Listing): WorkspaceContext {
-  const category = listing.category ?? 'item'
-  const categoryNeedsGender = GENDER_CATEGORIES.has(category.toLowerCase())
-  const notableFeatures = (listing.intake_meta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
-  const clothingSubTypeHint = category === 'clothing' ? detectClothingSubType(notableFeatures) : null
-  const measurementFields = getMeasurementFields(category, clothingSubTypeHint)
-  const categoryNeedsMeasurements = measurementFields.length > 0
+  const { message, detailGateContext } = buildGenderGatePrompt(listing)
 
-  const detailGateContext: DetailGateContext = {
-    category,
-    categoryNeedsGender,
-    clothingSubTypeHint,
-    categoryNeedsMeasurements,
-    measurementFields,
-  }
-
-  if (!categoryNeedsGender) {
-    const message = categoryNeedsMeasurements
-      ? `Quick question before I run pricing — I need a few measurements for this ${category} to find accurate comps.`
-      : `Getting ready to run pricing research for this ${category}.`
+  if (!detailGateContext.categoryNeedsGender) {
     return ctx(message, [{ label: 'Enter measurements', focusInput: false }], detailGateContext)
   }
-
-  const message = categoryNeedsMeasurements
-    ? `Quick question before I run pricing — what's the gender and size for this ${category}? Pick the gender below, then I'll ask for measurements.`
-    : `Quick question before I run pricing — is this ${category} Men's or Women's?`
 
   return ctx(message, [
     { label: "Men's", confirmGender: 'mens', needsSize: false, message: "Men's" },
