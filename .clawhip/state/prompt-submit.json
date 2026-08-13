@@ -1,8 +1,8 @@
 {
-  "observed_at": "2026-08-13T01:00:52.631Z",
+  "observed_at": "2026-08-13T02:34:13.195Z",
   "provider": "claude-code",
   "event_name": "UserPromptSubmit",
-  "session_id": "278e6808-c8ad-4bdb-ac77-d3914a3f8960",
+  "session_id": "fc2428eb-7dab-405b-8588-9b5087588eb4",
   "turn_id": null,
-  "prompt_summary": "You are a background memory extractor running after a Claude Code session. Read the session transcript at: /Users/joe/.claude/projects/-Users-joe-github-joeblackwaslike-ai-listings/f3861a63-fc4a-424b-…"
+  "prompt_summary": "Extract the brand from: \"Vintage Levi's 501 jeans\""
 }
