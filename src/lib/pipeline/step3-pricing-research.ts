@@ -202,7 +202,8 @@ async function generatePricingMethodology(
   confidenceScore: number,
   retailPriceCents: number | null,
   priceHistory: Array<{ event_type: string; price_cents: number; created_at: string }>,
-  apiKeys: ApiKeys
+  apiKeys: ApiKeys,
+  isActiveOnly: boolean
 ): Promise<string> {
   const suggestedStr = suggestedPriceCents != null ? `$${(suggestedPriceCents / 100).toFixed(2)}` : 'N/A'
   const priceToMoveStr = priceToMoveCents != null ? `$${(priceToMoveCents / 100).toFixed(2)}` : 'N/A'
@@ -224,7 +225,10 @@ async function generatePricingMethodology(
     historyStr = ` Price history shows ${priceHistory.length} previous prices: ${priceList}. The listing has been on market for ${daysSinceListed} days.`
   }
 
-  const prompt = `In 80–100 words, explain how this resale price was determined. Comp count: ${compCount}. Sources: ${sourcesStr}. Median adjusted price: ${suggestedStr}. Confidence: ${confidenceScore}%. Speed-to-sell price: ${priceToMoveStr} (${Math.round(discountPct * 100)}% below market median, typically sells in days vs weeks at list price).${retailStr}${historyStr} Return only the paragraph, no headings.`
+  const dataBasisNote = isActiveOnly
+    ? ' IMPORTANT: these are CURRENT ASKING PRICES from active listings, not confirmed sales -- say so explicitly (e.g. "based on N active listings, no confirmed sold comps"), do not describe this as a "market median" or imply any sale has actually occurred at this price.'
+    : ''
+  const prompt = `In 80–100 words, explain how this resale price was determined. Comp count: ${compCount}. Sources: ${sourcesStr}. Median adjusted price: ${suggestedStr}. Confidence: ${confidenceScore}%. Speed-to-sell price: ${priceToMoveStr} (${Math.round(discountPct * 100)}% below market median, typically sells in days vs weeks at list price).${retailStr}${historyStr}${dataBasisNote} Return only the paragraph, no headings.`
 
   const text = await runText({
     model: 'claude-haiku-4-5',
@@ -765,7 +769,8 @@ export async function runStep3PricingResearch(
         confidenceScore,
         retailResult?.retailPriceCents ?? null,
         priceHistory ?? [],
-        apiKeys
+        apiKeys,
+        usingActiveFallback
       )
     : null
 
