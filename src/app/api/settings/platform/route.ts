@@ -23,8 +23,20 @@ export async function PATCH(req: Request) {
     return Response.json({ error: 'value must be a non-empty string' }, { status: 400 })
   }
 
+  const trimmedValue = value.trim()
+
+  // The Poshmark cookie field expects a real browser Cookie header (name=value; name2=value2; ...).
+  // A JWT-shaped or otherwise pair-less value sat here for months, silently returning zero
+  // comps/notifications with no visible error anywhere -- reject it at save time instead.
+  if (key === 'poshmark_cookies' && (!trimmedValue.includes('=') || !trimmedValue.includes(';'))) {
+    return Response.json({
+      error: 'This doesn\'t look like a valid cookie string (expected "name=value; name2=value2" pairs). ' +
+        'Log into poshmark.com, open DevTools → Network, click any poshmark.com request, and copy the full Cookie request header value.',
+    }, { status: 400 })
+  }
+
   try {
-    await setSetting(user.id, key, value.trim(), 'credential')
+    await setSetting(user.id, key, trimmedValue, 'credential')
   } catch (err) {
     console.error('platform setting save failed:', err)
     return Response.json({ error: 'Failed to save setting' }, { status: 500 })
