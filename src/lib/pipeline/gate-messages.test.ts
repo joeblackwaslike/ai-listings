@@ -134,7 +134,7 @@ test('synthesizeGenderGateAnswer combines gender and measurement lines', () => {
     measurements: { waist: 32, inseam: 30 },
     detailGateContext,
   })
-  assert.equal(answer, "Men's — Waist: 32, Inseam: 30")
+  assert.equal(answer, "Men's — Waist: 32 in (813 mm), Inseam: 30 in (762 mm)")
 })
 
 test('synthesizeGenderGateAnswer handles measurements-only (no gender)', () => {
@@ -154,7 +154,7 @@ test('synthesizeGenderGateAnswer handles measurements-only (no gender)', () => {
     measurements: { height: 10, width: 6, depth: 3 },
     detailGateContext,
   })
-  assert.equal(answer, 'Height: 10, Width: 6, Depth: 3')
+  assert.equal(answer, 'Height: 10 in (254 mm), Width: 6 in (152 mm), Depth: 3 in (76 mm)')
 })
 
 test('buildGenderGateAck returns the fixed acknowledgment', () => {

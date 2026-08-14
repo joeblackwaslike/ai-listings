@@ -1,5 +1,6 @@
 import type { DetailGateContext, Listing } from '@/types/listings'
 import { detectClothingSubType, getMeasurementFields } from '@/lib/utils'
+import { formatMeasurementValue } from '@/lib/units'
 
 const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
 
@@ -107,7 +108,7 @@ export function synthesizeGenderGateAnswer(args: {
     const measurements = args.measurements
     const lines = args.detailGateContext.measurementFields
       .filter((field) => measurements[field.key] !== undefined && measurements[field.key] !== null && measurements[field.key] !== '')
-      .map((field) => `${field.label}: ${String(measurements[field.key])}`)
+      .map((field) => `${field.label}: ${formatMeasurementValue(field, measurements[field.key])}`)
     if (lines.length > 0) parts.push(lines.join(', '))
   }
 
