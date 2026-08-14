@@ -27,8 +27,10 @@ export function MeasurementFields({ fields, inputUnit, onSubmit }: Readonly<Meas
         ;(result as Record<string, unknown>)[field.key] = String(raw).toLowerCase()
       } else {
         const n = parseFloat(String(raw))
-        if (!isNaN(n)) {
-          (result as Record<string, unknown>)[field.key] = inputUnit === 'metric' ? mmToInches(n) : n
+        if (!isNaN(n) && n >= 0) {
+          // us_size is a shoe size, not a physical length — never mm-converted
+          (result as Record<string, unknown>)[field.key] =
+            inputUnit === 'metric' && field.key !== 'us_size' ? mmToInches(n) : n
         }
       }
     }
@@ -39,7 +41,7 @@ export function MeasurementFields({ fields, inputUnit, onSubmit }: Readonly<Meas
     <div className="flex flex-col gap-3 p-3 rounded-lg border border-gray-700 bg-gray-900">
       {fields.map((field) => (
         <div key={field.key} className="flex flex-col gap-1">
-          <label className="text-xs text-gray-400">{field.label}</label>
+          <label htmlFor={`measurement-${field.key}`} className="text-xs text-gray-400">{field.label}</label>
           {field.useChips && field.chipOptions ? (
             <div className="flex gap-1.5 flex-wrap">
               {field.chipOptions.map((opt) => {
@@ -62,9 +64,11 @@ export function MeasurementFields({ fields, inputUnit, onSubmit }: Readonly<Meas
             </div>
           ) : (
             <input
+              id={`measurement-${field.key}`}
               type="number"
-              step={inputUnit === 'metric' ? '1' : '0.5'}
-              placeholder={inputUnit === 'metric' ? 'in mm' : field.hint}
+              min={0}
+              step={inputUnit === 'metric' && field.key !== 'us_size' ? '1' : '0.5'}
+              placeholder={inputUnit === 'metric' && field.key !== 'us_size' ? 'in mm' : field.hint}
               value={String(values[field.key] ?? '')}
               onChange={(e) => setField(field.key, e.target.value)}
               className="w-28 px-2 py-1 text-xs rounded bg-gray-800 border border-gray-700 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500"
