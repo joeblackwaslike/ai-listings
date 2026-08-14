@@ -193,7 +193,10 @@ ${rulesSection}Rules:
     pipeline_step: 4,
     title: draft.canonical_title,
     description: draft.canonical_description,
-    suggested_price_cents: draft.suggested_price_cents,
+    // step3's comps-derived price is authoritative whenever it exists (including a
+    // real low-confidence estimate) — Claude's own guess here only fills the gap
+    // when step3 genuinely found nothing to work with.
+    suggested_price_cents: suggestedPriceCents ?? draft.suggested_price_cents,
     platform_fields: {
       ebay: {
         title: draft.ebay_title,
