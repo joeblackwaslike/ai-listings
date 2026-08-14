@@ -702,9 +702,21 @@ export async function runStep3PricingResearch(
     }
   }
 
-  const confidenceScore = calcConfidenceScore(filteredComps.length)
+  // When there are zero relevant SOLD comps but real active-market data exists
+  // (the exact bug found auditing HB-0085/86/87: 9-38 active comps sitting unused
+  // while confidence/price both said "zero data"), derive a real, honestly-labeled
+  // active-market estimate instead of falling straight to the speed-to-sell "no
+  // data" narrative. Active-only estimates cap below sold-comp confidence tiers --
+  // this is asking-price data, not confirmed sales.
+  const usingActiveFallback = filteredComps.length === 0 && relevantActive.length > 0
 
-  const prices = filteredComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+  const confidenceScore = usingActiveFallback
+    ? Math.min(35, Math.round(calcConfidenceScore(relevantActive.length) * 0.5))
+    : calcConfidenceScore(filteredComps.length)
+
+  const prices = usingActiveFallback
+    ? relevantActive.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+    : filteredComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
   const mid = Math.floor(prices.length / 2)
   const suggestedPriceCents =
     prices.length === 0
@@ -736,10 +748,12 @@ export async function runStep3PricingResearch(
     .eq('listing_id', listingId)
     .order('created_at', { ascending: true })
 
-  const sources = [...new Set(filteredComps.map((r) => r.source))]
+  const sources = usingActiveFallback
+    ? [...new Set(relevantActive.map((r) => r.source))]
+    : [...new Set(filteredComps.map((r) => r.source))]
   const methodologyText = apiKeys.anthropic
     ? await generatePricingMethodology(
-        filteredComps.length,
+        usingActiveFallback ? relevantActive.length : filteredComps.length,
         sources,
         suggestedPriceCents,
         priceToMoveCents,
@@ -779,7 +793,7 @@ export async function runStep3PricingResearch(
         listing_id: listingId,
         event_type: 'initial',
         price_cents: suggestedPriceCents,
-        note: `Initial pricing — ${filteredComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
+        note: `Initial pricing — ${usingActiveFallback ? relevantActive.length : filteredComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
       })
     }
   } catch {
