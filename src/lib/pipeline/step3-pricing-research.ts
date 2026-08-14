@@ -703,7 +703,21 @@ export async function runStep3PricingResearch(
   // HB-0086 had 38 unfiltered active comps, most of them loosely-related Chanel
   // Cambon variants, none of them checked against item+color before this fix.
   const toInsert = [...filteredComps, ...relevantActive]
+  // Replace-on-regen: a re-run (fresh intake or a manual retry) must not accumulate
+  // comps on top of a prior run's rows -- HB-0086/HB-0087 each show multiple insert
+  // batches from re-runs minutes apart, confirmed during investigation. Delete this
+  // listing's existing rows before writing the new batch -- but only when this run
+  // actually found something to write. Most fetchers in this file degrade to an
+  // empty array on failure (expired cookies, API quota, flaky upstream) rather than
+  // throwing; if every source happens to fail on one re-run, toInsert is empty, and
+  // deleting anyway would silently wipe a prior run's real comps with no error
+  // signal. Skip the delete (and insert) together in that case, leaving existing
+  // data untouched.
   if (toInsert.length > 0) {
+    const { error: deleteError } = await supabase.from('pricing_comps').delete().eq('listing_id', listingId)
+    if (deleteError) {
+      throw new Error(`step3: pricing_comps delete-before-insert failed — ${deleteError.message}`)
+    }
     const { error } = await supabase.from('pricing_comps').insert(toInsert)
     if (error) {
       throw new Error(`step3: pricing_comps insert failed — ${error.message}`)
