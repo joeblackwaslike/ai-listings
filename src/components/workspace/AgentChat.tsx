@@ -33,6 +33,7 @@ interface AgentChatProps {
   readonly pendingIdGate?: boolean
   readonly pendingGenderGate?: boolean
   readonly detailGateContext?: DetailGateContext
+  readonly inputUnit?: 'imperial' | 'metric'
 }
 
 type AgentEvent =
@@ -119,7 +120,7 @@ async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setM
   }
 }
 
-export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext }: AgentChatProps) {
+export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext, inputUnit }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
@@ -387,6 +388,7 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
         {showMeasurements && detailGateContext?.measurementFields && detailGateContext.measurementFields.length > 0 && (
           <MeasurementFields
             fields={detailGateContext.measurementFields}
+            inputUnit={inputUnit ?? 'imperial'}
             onSubmit={(m) => void handleMeasurementsSubmit(m)}
           />
         )}

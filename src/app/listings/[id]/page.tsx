@@ -9,6 +9,7 @@ import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
 import { studioPhotosReady } from '@/lib/utils'
 import { buildGenderGatePrompt, buildIdGatePrompt, shouldPersistInLoopGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
+import { getSetting } from '@/lib/user-settings'
 
 type WorkspaceContext = {
   firstMessage: string | null
@@ -152,6 +153,16 @@ export default async function WorkspacePage({
   const { id } = await params
   const supabase = await createClient()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  let measurementInputUnit: 'imperial' | 'metric' = 'imperial'
+  if (user) {
+    try {
+      measurementInputUnit = (await getSetting(user.id, 'measurement_input_unit')) === 'metric' ? 'metric' : 'imperial'
+    } catch (err) {
+      console.error(`Failed to read measurement_input_unit for user ${user.id}:`, err)
+    }
+  }
+
   const [listingResult, photosResult, compsResult, historyResult, priceHistoryResult] = await Promise.all([
     supabase.from('listings').select('*').eq('id', id).single(),
     supabase
@@ -243,6 +254,7 @@ export default async function WorkspacePage({
             detailGateContext={detailGateContext}
             firstMessage={firstMessage}
             suggestions={suggestions}
+            inputUnit={measurementInputUnit}
           />
         </div>
       </div>

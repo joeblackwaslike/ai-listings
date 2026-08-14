@@ -3,6 +3,9 @@ import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { getPlatformRules } from '@/lib/platform-rules'
+import { getMeasurementFields } from '@/lib/utils'
+import { formatMeasurementValue } from '@/lib/units'
+import type { ClothingSubType } from '@/types/listings'
 
 interface DraftOutput {
   canonical_title: string
@@ -53,6 +56,28 @@ export async function runStep4aDraftListing(
     // Never block pipeline if rules fetch fails
   }
 
+  const { data: measurementsRow } = await supabase
+    .from('listings')
+    .select('measurements, clothing_sub_type')
+    .eq('id', listingId)
+    .single()
+
+  const measurementFields = getMeasurementFields(
+    step2.category,
+    (measurementsRow?.clothing_sub_type ?? null) as ClothingSubType | null
+  )
+  const populatedMeasurements = measurementsRow?.measurements
+    ? measurementFields.filter((field) => {
+        const value = (measurementsRow.measurements as Record<string, unknown>)[field.key]
+        return value !== undefined && value !== null && value !== ''
+      })
+    : []
+  const measurementsLine = populatedMeasurements.length > 0
+    ? `\n- Measurements: ${populatedMeasurements
+        .map((field) => `${field.label}: ${formatMeasurementValue(field, (measurementsRow!.measurements as Record<string, unknown>)[field.key])}`)
+        .join(', ')}`
+    : ''
+
   const { data: comps } = await supabase
     .from('pricing_comps')
     .select('source, title, sale_price_cents, condition, condition_delta, adjusted_price_cents')
@@ -85,7 +110,7 @@ Item details:
 - Inclusions: ${step2.inclusions
     .filter((i) => i.included)
     .map((i) => i.item)
-    .join(', ') || 'None noted'}
+    .join(', ') || 'None noted'}${measurementsLine}
 
 Comparable sold prices:
 ${compsText}
