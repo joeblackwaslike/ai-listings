@@ -139,6 +139,60 @@ async function fetchEbaySoldComps(
   }
 }
 
+interface SerpApiOrganicResult {
+  title?: string
+  snippet?: string
+  link?: string
+}
+
+interface SerpApiGoogleResponse {
+  organic_results?: SerpApiOrganicResult[]
+}
+
+function extractPriceFromSnippet(snippet: string): number | null {
+  const match = snippet.match(/\$([\d,]+(?:\.\d{2})?)/)
+  if (!match) return null
+  const dollars = parseFloat(match[1].replace(/,/g, ''))
+  return isNaN(dollars) ? null : Math.round(dollars * 100)
+}
+
+// site:therealreal.com search via SerpAPI's generic Google engine. TheRealReal has
+// no public API; TheRealRealAdapter.searchSoldComps() (src/lib/platforms/adapters/
+// therealreal.ts) already implements this exact approach but takes a userId the
+// pricing pipeline doesn't have and never actually uses it (only reads
+// process.env.SERPAPI_API_KEY) -- reimplemented standalone here to match this
+// file's existing fetcher(query, apiKey) shape instead of instantiating that class.
+// Search-result snippets can't distinguish "for sale" from "sold" -- every result
+// here is classified therealreal_active by default; URL-verification (Task 12)
+// reclassifies confirmed sold items.
+async function fetchTheRealRealComps(
+  query: string,
+  apiKey: string
+): Promise<Array<{ title: string; priceCents: number; listingUrl: string }>> {
+  if (!apiKey) return []
+  try {
+    const url = new URL('https://serpapi.com/search')
+    url.searchParams.set('engine', 'google')
+    url.searchParams.set('q', `site:therealreal.com ${query}`)
+    url.searchParams.set('num', '10')
+    url.searchParams.set('api_key', apiKey)
+
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) })
+    if (!res.ok) return []
+
+    const data = (await res.json()) as SerpApiGoogleResponse
+    return (data.organic_results ?? [])
+      .map((r) => {
+        const priceCents = r.snippet ? extractPriceFromSnippet(r.snippet) : null
+        if (!priceCents) return null
+        return { title: r.title ?? '', priceCents, listingUrl: r.link ?? '' }
+      })
+      .filter((c): c is { title: string; priceCents: number; listingUrl: string } => c !== null)
+  } catch {
+    return []
+  }
+}
+
 async function generatePricingMethodology(
   compCount: number,
   sources: string[],
