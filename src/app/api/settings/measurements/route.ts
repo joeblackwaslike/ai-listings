@@ -20,14 +20,19 @@ export async function PATCH(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { inputUnit?: 'imperial' | 'metric' }
+  let body: unknown
   try {
-    body = await req.json() as typeof body
+    body = await req.json()
   } catch {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  if (body.inputUnit !== 'imperial' && body.inputUnit !== 'metric') {
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !('inputUnit' in body) ||
+    (body.inputUnit !== 'imperial' && body.inputUnit !== 'metric')
+  ) {
     return Response.json({ error: 'inputUnit must be "imperial" or "metric"' }, { status: 400 })
   }
 
