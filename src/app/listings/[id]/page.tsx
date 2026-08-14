@@ -154,9 +154,14 @@ export default async function WorkspacePage({
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  const measurementInputUnit: 'imperial' | 'metric' = user
-    ? (await getSetting(user.id, 'measurement_input_unit')) === 'metric' ? 'metric' : 'imperial'
-    : 'imperial'
+  let measurementInputUnit: 'imperial' | 'metric' = 'imperial'
+  if (user) {
+    try {
+      measurementInputUnit = (await getSetting(user.id, 'measurement_input_unit')) === 'metric' ? 'metric' : 'imperial'
+    } catch (err) {
+      console.error(`Failed to read measurement_input_unit for user ${user.id}:`, err)
+    }
+  }
 
   const [listingResult, photosResult, compsResult, historyResult, priceHistoryResult] = await Promise.all([
     supabase.from('listings').select('*').eq('id', id).single(),

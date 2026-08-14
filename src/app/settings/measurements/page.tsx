@@ -8,8 +8,13 @@ export default async function MeasurementSettingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const unit = await getSetting(user.id, 'measurement_input_unit')
-  const inputUnit = unit === 'metric' ? 'metric' : 'imperial'
+  let inputUnit: 'imperial' | 'metric' = 'imperial'
+  try {
+    const unit = await getSetting(user.id, 'measurement_input_unit')
+    inputUnit = unit === 'metric' ? 'metric' : 'imperial'
+  } catch (err) {
+    console.error(`Failed to read measurement_input_unit for user ${user.id}:`, err)
+  }
 
   return (
     <div className="min-h-screen bg-gray-950">
