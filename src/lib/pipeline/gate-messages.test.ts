@@ -115,7 +115,7 @@ test('buildGenderGatePrompt asks for measurements only when the category needs n
   assert.match(message, /I need a few measurements/)
   assert.equal(detailGateContext.categoryNeedsGender, false)
   assert.equal(detailGateContext.categoryNeedsMeasurements, true)
-  assert.deepEqual(detailGateContext.measurementFields.map((f) => f.key), ['height', 'width', 'depth'])
+  assert.deepEqual(detailGateContext.measurementFields.map((f) => f.key), ['width', 'height', 'depth'])
 })
 
 test('synthesizeGenderGateAnswer combines gender and measurement lines', () => {

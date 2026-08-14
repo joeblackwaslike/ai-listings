@@ -86,8 +86,8 @@ export function getMeasurementFields(
   // Everything else (handbag, small_leather_goods, electronics, keyboards,
   // collectibles, watches, jewelry, other, etc.) — 3D dimensions
   return [
-    { key: 'height', label: 'Height', hint: 'in inches' },
     { key: 'width', label: 'Width', hint: 'in inches' },
+    { key: 'height', label: 'Height', hint: 'in inches' },
     { key: 'depth', label: 'Depth', hint: 'in inches' },
   ]
 }
