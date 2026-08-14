@@ -2,13 +2,15 @@
 
 import { useState } from 'react'
 import type { MeasurementField, Measurements } from '@/types/listings'
+import { mmToInches } from '@/lib/units'
 
 interface MeasurementFieldsProps {
   fields: MeasurementField[]
+  inputUnit: 'imperial' | 'metric'
   onSubmit: (measurements: Partial<Measurements>) => void
 }
 
-export function MeasurementFields({ fields, onSubmit }: Readonly<MeasurementFieldsProps>) {
+export function MeasurementFields({ fields, inputUnit, onSubmit }: Readonly<MeasurementFieldsProps>) {
   const [values, setValues] = useState<Record<string, string | number>>({})
 
   function setField(key: string, value: string | number) {
@@ -25,7 +27,9 @@ export function MeasurementFields({ fields, onSubmit }: Readonly<MeasurementFiel
         ;(result as Record<string, unknown>)[field.key] = String(raw).toLowerCase()
       } else {
         const n = parseFloat(String(raw))
-        if (!isNaN(n)) (result as Record<string, unknown>)[field.key] = n
+        if (!isNaN(n)) {
+          (result as Record<string, unknown>)[field.key] = inputUnit === 'metric' ? mmToInches(n) : n
+        }
       }
     }
     onSubmit(result)
@@ -59,8 +63,8 @@ export function MeasurementFields({ fields, onSubmit }: Readonly<MeasurementFiel
           ) : (
             <input
               type="number"
-              step="0.5"
-              placeholder={field.hint}
+              step={inputUnit === 'metric' ? '1' : '0.5'}
+              placeholder={inputUnit === 'metric' ? 'in mm' : field.hint}
               value={String(values[field.key] ?? '')}
               onChange={(e) => setField(field.key, e.target.value)}
               className="w-28 px-2 py-1 text-xs rounded bg-gray-800 border border-gray-700 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500"
