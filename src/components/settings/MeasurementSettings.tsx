@@ -8,22 +8,33 @@ interface MeasurementSettingsProps {
 }
 
 async function patchInputUnit(inputUnit: 'imperial' | 'metric') {
-  await fetch('/api/settings/measurements', {
+  const response = await fetch('/api/settings/measurements', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ inputUnit }),
   })
+  if (!response.ok) throw new Error('Failed to save measurement input unit')
 }
 
 export function MeasurementSettings({ initialInputUnit }: MeasurementSettingsProps) {
   const router = useRouter()
   const [inputUnit, setInputUnit] = useState(initialInputUnit)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   async function select(next: 'imperial' | 'metric') {
-    if (next === inputUnit) return
-    setInputUnit(next)
-    await patchInputUnit(next)
-    router.refresh()
+    if (next === inputUnit || saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await patchInputUnit(next)
+      setInputUnit(next)
+      router.refresh()
+    } catch {
+      setSaveError('Could not save the measurement input unit. Try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const optionClass = (active: boolean) =>
@@ -37,10 +48,22 @@ export function MeasurementSettings({ initialInputUnit }: MeasurementSettingsPro
     <div className="space-y-3">
       <p className="text-sm font-medium text-gray-200">Measurement input unit</p>
       <div className="flex gap-2">
-        <button type="button" onClick={() => void select('imperial')} className={optionClass(inputUnit === 'imperial')}>
+        <button
+          type="button"
+          onClick={() => void select('imperial')}
+          aria-pressed={inputUnit === 'imperial'}
+          disabled={saving}
+          className={optionClass(inputUnit === 'imperial')}
+        >
           Imperial (inches)
         </button>
-        <button type="button" onClick={() => void select('metric')} className={optionClass(inputUnit === 'metric')}>
+        <button
+          type="button"
+          onClick={() => void select('metric')}
+          aria-pressed={inputUnit === 'metric'}
+          disabled={saving}
+          className={optionClass(inputUnit === 'metric')}
+        >
           Metric (mm)
         </button>
       </div>
@@ -49,6 +72,7 @@ export function MeasurementSettings({ initialInputUnit }: MeasurementSettingsPro
           ? 'The measurements form will ask for millimeters. Every listing still shows both units.'
           : 'The measurements form will ask for fractional inches. Every listing still shows both units.'}
       </p>
+      {saveError && <p className="text-[11px] text-red-400">{saveError}</p>}
     </div>
   )
 }
