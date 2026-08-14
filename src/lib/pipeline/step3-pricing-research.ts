@@ -559,7 +559,7 @@ export async function runStep3PricingResearch(
 
   const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
   const searchQuery = `${genderPrefix}${step2.brand} ${model}`
-  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive] = await Promise.all([
+  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, ebaySold, theRealRealComps] = await Promise.all([
     searchEbayActive(searchQuery),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
@@ -568,6 +568,8 @@ export async function runStep3PricingResearch(
     fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
     fetchPoshmarkSoldComps(searchQuery, apiKeys.poshmarkCookies),
     fetchPoshmarkActiveFloor(searchQuery, apiKeys.poshmarkCookies),
+    fetchEbaySoldComps(searchQuery, apiKeys.serpapi),
+    fetchTheRealRealComps(searchQuery, apiKeys.serpapi),
   ])
 
   const compRows: Array<{
@@ -629,6 +631,16 @@ export async function runStep3PricingResearch(
     })
   }
 
+  for (const item of ebaySold) {
+    const delta = conditionDelta(step2.condition, 'Not specified')
+    compRows.push({
+      listing_id: listingId, source: 'ebay', title: item.title,
+      sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
+      listing_url: item.listingUrl, condition_delta: delta,
+      adjusted_price_cents: adjustForCondition(item.priceCents, delta),
+    })
+  }
+
   // Active market comps — context only, excluded from sold-price median
   const activeRows: typeof compRows = []
   for (const item of ebayActive) {
@@ -641,6 +653,13 @@ export async function runStep3PricingResearch(
   for (const item of poshmarkActive) {
     activeRows.push({
       listing_id: listingId, source: 'poshmark_active', title: item.title,
+      sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
+      listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
+    })
+  }
+  for (const item of theRealRealComps) {
+    activeRows.push({
+      listing_id: listingId, source: 'therealreal_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
     })
