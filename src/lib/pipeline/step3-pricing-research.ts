@@ -90,6 +90,55 @@ async function fetchRetailPrice(
   }
 }
 
+interface SerpApiEbayResult {
+  title?: string
+  price?: { extracted_value?: number }
+  sold_date?: string
+  link?: string
+  condition?: string
+}
+
+interface SerpApiEbayResponse {
+  organic_results?: SerpApiEbayResult[]
+  error?: string
+}
+
+// SerpAPI's dedicated eBay engine scrapes eBay's own public "Sold Items" search page
+// (show_only=Sold) -- no OAuth scope needed, unlike Marketplace Insights. Observed
+// flaky in practice (503s, multi-minute timeouts on some queries) -- always resolve
+// to an empty array rather than let a slow/failed scrape block the pipeline.
+async function fetchEbaySoldComps(
+  query: string,
+  apiKey: string
+): Promise<Array<{ title: string; priceCents: number; soldAt: string | null; listingUrl: string }>> {
+  if (!apiKey) return []
+  try {
+    const url = new URL('https://serpapi.com/search')
+    url.searchParams.set('engine', 'ebay')
+    url.searchParams.set('_nkw', query)
+    url.searchParams.set('show_only', 'Sold')
+    url.searchParams.set('api_key', apiKey)
+
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) })
+    if (!res.ok) return []
+
+    const data = (await res.json()) as SerpApiEbayResponse
+    if (data.error) return []
+
+    return (data.organic_results ?? [])
+      .filter((r) => r.title && r.price?.extracted_value && r.sold_date)
+      .map((r) => ({
+        title: r.title ?? '',
+        priceCents: Math.round((r.price?.extracted_value ?? 0) * 100),
+        soldAt: r.sold_date ? new Date(r.sold_date).toISOString() : null,
+        listingUrl: r.link ?? '',
+      }))
+      .filter((c) => c.priceCents > 0)
+  } catch {
+    return []
+  }
+}
+
 async function generatePricingMethodology(
   compCount: number,
   sources: string[],
