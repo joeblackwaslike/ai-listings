@@ -2,7 +2,8 @@
 
 import { useState, useRef } from 'react'
 import { ChevronRight, Check, CheckCircle2, Circle, AlertCircle, Plus, SkipForward, X } from 'lucide-react'
-import { formatPrice } from '@/lib/utils'
+import { formatPrice, getMeasurementFields } from '@/lib/utils'
+import { formatMeasurementValue } from '@/lib/units'
 import { EvidenceDrawer } from './EvidenceDrawer'
 import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
@@ -83,6 +84,14 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
 
   const doneCount = authSteps.filter((s) => s.status === 'done').length
   const failedCount = authSteps.filter((s) => s.status === 'failed').length
+
+  const measurementFields = getMeasurementFields(listing.category ?? '', listing.clothing_sub_type)
+  const populatedMeasurements = listing.measurements
+    ? measurementFields.filter((field) => {
+        const value = (listing.measurements as Record<string, unknown>)[field.key]
+        return value !== undefined && value !== null && value !== ''
+      })
+    : []
 
   async function saveAuthPlan(updated: AuthStep[]) {
     setSaving(true)
@@ -197,6 +206,24 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
             </div>
           )}
         </dl>
+
+        {populatedMeasurements.length > 0 && (
+          <section>
+            <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Measurements
+            </h3>
+            <dl className="space-y-2">
+              {populatedMeasurements.map((field) => (
+                <div key={field.key} className="flex justify-between text-xs">
+                  <dt className="text-gray-600">{field.label}</dt>
+                  <dd className="text-gray-300">
+                    {formatMeasurementValue(field, (listing.measurements as Record<string, unknown>)[field.key])}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
 
         {listing.description && (
           <section>
