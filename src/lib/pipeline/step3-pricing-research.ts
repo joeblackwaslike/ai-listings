@@ -221,8 +221,6 @@ ${postsText}`,
   }
 }
 
-const MERCARI_CONSUMER_API = 'https://api.mercari.com/v2/entities:search'
-
 async function fetchPoshmarkSoldComps(
   query: string,
   cookies: string
@@ -294,75 +292,6 @@ async function fetchPoshmarkActiveFloor(
         return { title: item.title ?? '', priceCents, listingUrl: `https://poshmark.com/listing/${item.id}` }
       })
       .filter((item) => item.priceCents > 0)
-  } catch {
-    return []
-  }
-}
-
-async function fetchMercariSoldComps(
-  query: string,
-  accessToken: string
-): Promise<Array<{ title: string; priceCents: number; soldAt: string | null; listingUrl: string }>> {
-  if (!accessToken) return []
-  try {
-    const body = {
-      pageToken: '',
-      searchSessionId: crypto.randomUUID(),
-      indexRouting: 'INDEX_ROUTING_UNSPECIFIED',
-      searchCondition: { keyword: query, status: ['STATUS_SOLD_OUT'], categoryId: [], brandId: [] },
-      defaultDatasets: ['DATASET_TYPE_MERCARI'],
-      serviceFrom: 'suruga',
-    }
-    const res = await fetch(MERCARI_CONSUMER_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) return []
-    const data = (await res.json()) as { items?: Array<{ id: string; name: string; price: number; updated: number }> }
-    return (data.items ?? [])
-      .filter((item) => item.name && item.price > 0)
-      .map((item) => ({
-        title: item.name,
-        priceCents: Math.round(item.price * 100),
-        soldAt: item.updated ? new Date(item.updated * 1000).toISOString() : null,
-        listingUrl: `https://www.mercari.com/us/item/${item.id}`,
-      }))
-  } catch {
-    return []
-  }
-}
-
-async function fetchMercariActiveFloor(
-  query: string,
-  accessToken: string
-): Promise<Array<{ title: string; priceCents: number; listingUrl: string }>> {
-  if (!accessToken) return []
-  try {
-    const body = {
-      pageToken: '',
-      searchSessionId: crypto.randomUUID(),
-      indexRouting: 'INDEX_ROUTING_UNSPECIFIED',
-      searchCondition: { keyword: query, status: ['STATUS_ON_SALE'], categoryId: [], brandId: [] },
-      defaultDatasets: ['DATASET_TYPE_MERCARI'],
-      serviceFrom: 'suruga',
-      sort: { by: 'SORT_PRICE', order: 'ORDER_ASC' },
-      paging: { limit: 10, offset: 0 },
-    }
-    const res = await fetch(MERCARI_CONSUMER_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) return []
-    const data = (await res.json()) as { items?: Array<{ id: string; name: string; price: number }> }
-    return (data.items ?? [])
-      .filter((item) => item.name && item.price > 0)
-      .map((item) => ({
-        title: item.name,
-        priceCents: Math.round(item.price * 100),
-        listingUrl: `https://www.mercari.com/us/item/${item.id}`,
-      }))
   } catch {
     return []
   }
@@ -527,7 +456,7 @@ export async function runStep3PricingResearch(
 
   const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
   const searchQuery = `${genderPrefix}${step2.brand} ${model}`
-  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, mercariSold, mercariActive] = await Promise.all([
+  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive] = await Promise.all([
     searchEbayActive(searchQuery),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
@@ -536,8 +465,6 @@ export async function runStep3PricingResearch(
     fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
     fetchPoshmarkSoldComps(searchQuery, apiKeys.poshmarkCookies),
     fetchPoshmarkActiveFloor(searchQuery, apiKeys.poshmarkCookies),
-    fetchMercariSoldComps(searchQuery, apiKeys.mercariToken),
-    fetchMercariActiveFloor(searchQuery, apiKeys.mercariToken),
   ])
 
   const compRows: Array<{
@@ -599,16 +526,6 @@ export async function runStep3PricingResearch(
     })
   }
 
-  for (const item of mercariSold) {
-    const delta = conditionDelta(step2.condition, 'Not specified')
-    compRows.push({
-      listing_id: listingId, source: 'mercari', title: item.title,
-      sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
-      listing_url: item.listingUrl, condition_delta: delta,
-      adjusted_price_cents: adjustForCondition(item.priceCents, delta),
-    })
-  }
-
   // Active market comps — context only, excluded from sold-price median
   const activeRows: typeof compRows = []
   for (const item of ebayActive) {
@@ -621,13 +538,6 @@ export async function runStep3PricingResearch(
   for (const item of poshmarkActive) {
     activeRows.push({
       listing_id: listingId, source: 'poshmark_active', title: item.title,
-      sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
-      listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
-    })
-  }
-  for (const item of mercariActive) {
-    activeRows.push({
-      listing_id: listingId, source: 'mercari_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
     })
