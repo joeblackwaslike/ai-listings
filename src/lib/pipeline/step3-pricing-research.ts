@@ -693,8 +693,12 @@ export async function runStep3PricingResearch(
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
 
-  // Insert all: filtered sold comps + active market context
-  const toInsert = [...filteredComps, ...activeRows]
+  // Insert all: filtered sold comps + relevant active market context. activeRows
+  // itself stays unfiltered (used above for the lowestActive/relevantActive
+  // fallback signal), but only the relevance-filtered subset gets written --
+  // HB-0086 had 38 unfiltered active comps, most of them loosely-related Chanel
+  // Cambon variants, none of them checked against item+color before this fix.
+  const toInsert = [...filteredComps, ...relevantActive]
   if (toInsert.length > 0) {
     const { error } = await supabase.from('pricing_comps').insert(toInsert)
     if (error) {
