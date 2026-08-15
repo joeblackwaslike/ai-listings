@@ -1237,13 +1237,15 @@ Follow-up bd tickets filed: `ai-listings-5iy` (ring_inscribed_size numeric-input
 
 **Final holistic review (across all 16 commits) found two real, undisclosed cross-commit gaps — added as Tasks 17-18 before Plan A is considered done:**
 
-## Task 17: Fix jewelry mm fields not exempted from inches↔mm conversion (units.ts)
+## Task 17: Fix jewelry mm fields not exempted from inches↔mm conversion (units.ts) ✅ done (db3a80c) — real bug confirmed RED then GREEN; refactored exemption to a self-maintaining `_mm`-suffix naming convention instead of a manual list, preventing recurrence
 
 Task 11 fixed the `shoe_size_raw`/`ring_inscribed_size`/`us_size` exemption gap in `NON_LENGTH_FIELD_KEYS` (`src/lib/units.ts`), but never revisited it for the jewelry mm fields Task 9 added two commits earlier: `ring_id_mm`, `ring_id_widest_mm`, `ring_id_narrowest_mm`, `bangle_id_mm`. These fields are natively mm (per spec's Data Model: "Jewelry fields embed their unit in the key name... unlike clothing's unitless keys"), but since they're not exempted, `MeasurementFields.tsx`'s submit logic runs them through `mmToInches()` when the user's global unit preference is metric (corrupting the stored value), and `formatMeasurementValue` always displays them via `formatDualMeasurement`, which assumes the stored number IS inches — producing nonsense like "18.3 in (465 mm)" for what should just read "18.3mm". This reaches gate-confirmation chat text, `FieldsPanel` display, and the `step4a-draft-listing.ts` prompt that generates the actual eBay/Poshmark description. `units.test.ts` currently locks in the broken behavior as a passing "regression" test.
 
 **Fix:** add the 4 jewelry mm keys to `NON_LENGTH_FIELD_KEYS` in `src/lib/units.ts`, update the misleading test in `units.test.ts` to assert the correct passthrough behavior instead, add tests for the 4 new keys.
 
-## Task 18: Wire necklace chain-length pre-fill end-to-end
+## Task 18: Wire necklace chain-length pre-fill end-to-end ✅ done (310547b) — real red-before-green confirmed for the pre-fill path; JW-0010/011/ring fixtures all trace correctly
+
+**PLAN A TRULY COMPLETE (18/18 tasks, including 2 added from final holistic review).** 107/107 tests passing, 0 tsc errors, lint clean (1 pre-existing unrelated error). HEAD at 310547b. Ready for PR.
 
 `parseChainLengthInches` (Task 5) and `MeasurementFields`'s `defaultValues` prop (Task 11) both exist and pass their isolated tests, but nothing connects them — `gate-messages.ts` never calls `parseChainLengthInches`, `DetailGateContext` has no field to carry a default value, and `AgentChat.tsx` never passes `defaultValues` to `<MeasurementFields>`. JW-0010 (parseable chain length) and JW-0011 (unparseable) currently present an identical blank input — the "near-zero extra effort when parsing succeeds" the spec describes for necklaces doesn't actually happen yet.
 
