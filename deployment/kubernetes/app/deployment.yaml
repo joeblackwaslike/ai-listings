@@ -4,7 +4,7 @@ metadata:
   name: ai-listings
   namespace: ai-listings
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ai-listings
@@ -13,6 +13,18 @@ spec:
       labels:
         app: ai-listings
     spec:
+      # Soft preference to land replicas on different nodes -- gives real
+      # node-failure redundancy on this 3-node cluster when there's room, but
+      # won't block scheduling (e.g. during a node drain) if there isn't.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: ai-listings
+                topologyKey: kubernetes.io/hostname
       imagePullSecrets:
         - name: ghcr-credentials
       containers:
