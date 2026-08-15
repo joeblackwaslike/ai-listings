@@ -15,7 +15,12 @@ export const intakePipeline = inngest.createFunction(
     name: 'Intake Pipeline',
     triggers: [{ event: 'photo/uploaded' }],
     retries: 5,
-    concurrency: { limit: 4 },
+    // Capped at 2: each concurrent run does Claude Vision + image handling for a
+    // single item, which is memory-heavy on this cluster's resource-constrained
+    // Pi node. A batch upload of 4 items running fully in parallel (the old
+    // limit) OOM-killed the pod (2026-08-15 incident) -- this bounds per-pod
+    // memory use regardless of how many items get uploaded in one batch.
+    concurrency: { limit: 2 },
     onFailure: async ({ error, event }) => {
       const { listingId } = (
         event as unknown as { data: { event: PhotoUploadedEvent } }
