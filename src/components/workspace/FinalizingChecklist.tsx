@@ -9,12 +9,13 @@ interface FinalizingChecklistProps {
   listing: Pick<Listing, 'id' | 'category' | 'inclusions' | 'measurements' | 'platform_fields'>
 }
 
-async function saveMeasurements(listingId: string, patch: Record<string, number>) {
-  await fetch(`/api/listings/${listingId}/measurements`, {
+async function saveMeasurements(listingId: string, patch: Record<string, number>): Promise<boolean> {
+  const res = await fetch(`/api/listings/${listingId}/measurements`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   })
+  return res.ok
 }
 
 export function FinalizingChecklist({ listing }: Readonly<FinalizingChecklistProps>) {
@@ -24,6 +25,10 @@ export function FinalizingChecklist({ listing }: Readonly<FinalizingChecklistPro
   const [weight, setWeight] = useState('')
   const [savedBox, setSavedBox] = useState(false)
   const [savedWeight, setSavedWeight] = useState(false)
+  const [boxPending, setBoxPending] = useState(false)
+  const [boxError, setBoxError] = useState<string | null>(null)
+  const [weightPending, setWeightPending] = useState(false)
+  const [weightError, setWeightError] = useState<string | null>(null)
 
   const showBox = needsBoxMeasurement(listing) && !savedBox
   const showWeight = needsWeight(listing) && !savedWeight
@@ -33,16 +38,36 @@ export function FinalizingChecklist({ listing }: Readonly<FinalizingChecklistPro
     const length = parseFloat(boxLength)
     const width = parseFloat(boxWidth)
     const height = parseFloat(boxHeight)
-    if (isNaN(length) || isNaN(width) || isNaN(height)) return
-    await saveMeasurements(listing.id, { box_length_in: length, box_width_in: width, box_height_in: height })
-    setSavedBox(true)
+    if (isNaN(length) || isNaN(width) || isNaN(height) || length <= 0 || width <= 0 || height <= 0) {
+      setBoxError('Enter positive numbers for all three dimensions.')
+      return
+    }
+    setBoxPending(true)
+    setBoxError(null)
+    const ok = await saveMeasurements(listing.id, { box_length_in: length, box_width_in: width, box_height_in: height })
+    setBoxPending(false)
+    if (ok) {
+      setSavedBox(true)
+    } else {
+      setBoxError('Save failed — check the values and try again.')
+    }
   }
 
   async function submitWeight() {
     const oz = parseFloat(weight)
-    if (isNaN(oz)) return
-    await saveMeasurements(listing.id, { weight_oz: oz })
-    setSavedWeight(true)
+    if (isNaN(oz) || oz <= 0) {
+      setWeightError('Enter a positive number.')
+      return
+    }
+    setWeightPending(true)
+    setWeightError(null)
+    const ok = await saveMeasurements(listing.id, { weight_oz: oz })
+    setWeightPending(false)
+    if (ok) {
+      setSavedWeight(true)
+    } else {
+      setWeightError('Save failed — check the value and try again.')
+    }
   }
 
   if (!showBox && !showWeight && titleWarnings.length === 0) {
@@ -95,12 +120,13 @@ export function FinalizingChecklist({ listing }: Readonly<FinalizingChecklistPro
               />
               <button
                 onClick={() => void submitBox()}
-                disabled={!boxLength || !boxWidth || !boxHeight}
+                disabled={!boxLength || !boxWidth || !boxHeight || boxPending}
                 className="text-xs text-gray-600 hover:text-emerald-400 disabled:opacity-30 transition-colors"
               >
                 Save
               </button>
             </div>
+            {boxError && <p className="text-xs text-red-400">{boxError}</p>}
           </div>
         )}
 
@@ -117,12 +143,13 @@ export function FinalizingChecklist({ listing }: Readonly<FinalizingChecklistPro
               />
               <button
                 onClick={() => void submitWeight()}
-                disabled={!weight}
+                disabled={!weight || weightPending}
                 className="text-xs text-gray-600 hover:text-emerald-400 disabled:opacity-30 transition-colors"
               >
                 Save
               </button>
             </div>
+            {weightError && <p className="text-xs text-red-400">{weightError}</p>}
           </div>
         )}
       </div>
