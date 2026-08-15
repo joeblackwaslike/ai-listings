@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { FieldsPanel } from '@/components/workspace/FieldsPanel'
 import { AgentChat } from '@/components/workspace/AgentChat'
 import { ArchiveButton } from '@/components/workspace/ArchiveButton'
+import { FinalizeButton } from '@/components/workspace/FinalizeButton'
 import { PhotoSection } from '@/components/workspace/PhotoSection'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
@@ -225,6 +226,7 @@ export default async function WorkspacePage({
         <span className="text-gray-800">/</span>
         <span className="text-xs text-gray-400 font-mono">{listing.sku ?? listing.id.slice(0, 8)}</span>
         <div className="ml-auto flex items-center gap-4">
+          {listing.status === 'in_loop' && <FinalizeButton listingId={id} />}
           <ArchiveButton listingId={id} />
           <a href={`/listings/${id}/publish`} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
             Export →
