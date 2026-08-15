@@ -128,6 +128,44 @@ test('buildGenderGatePrompt threads notableFeatures through to detect an irregul
   assert.deepEqual(detailGateContext.measurementFields.map((f) => f.key), ['ring_inscribed_size', 'ring_id_widest_mm', 'ring_id_narrowest_mm'])
 })
 
+test('buildGenderGatePrompt pre-fills necklace chain length when the vision notes state it', () => {
+  const listing = genderListing({
+    category: 'jewelry',
+    intake_meta: {
+      visionAnalysis: {
+        notable_features: ['Model: Elsa Peretti Teardrop Pendant Necklace', 'Chain length: approximately 16"'],
+      },
+    },
+  })
+  const { detailGateContext } = buildGenderGatePrompt(listing)
+  assert.equal(detailGateContext.subTypeHint, 'necklace')
+  assert.deepEqual(detailGateContext.defaultMeasurementValues, { necklace_chain_length_in: 16 })
+})
+
+test('buildGenderGatePrompt leaves defaultMeasurementValues undefined when chain length is not parseable', () => {
+  const listing = genderListing({
+    category: 'jewelry',
+    intake_meta: {
+      visionAnalysis: {
+        notable_features: ['Model: Elsa Peretti Bean Pendant Necklace', 'Chain style: fine cable chain'],
+      },
+    },
+  })
+  const { detailGateContext } = buildGenderGatePrompt(listing)
+  assert.equal(detailGateContext.subTypeHint, 'necklace')
+  assert.equal(detailGateContext.defaultMeasurementValues, undefined)
+})
+
+test('buildGenderGatePrompt leaves defaultMeasurementValues undefined for non-necklace jewelry', () => {
+  const listing = genderListing({
+    category: 'jewelry',
+    intake_meta: { visionAnalysis: { notable_features: ['Model: Solitaire Diamond Ring'] } },
+  })
+  const { detailGateContext } = buildGenderGatePrompt(listing)
+  assert.equal(detailGateContext.subTypeHint, 'ring')
+  assert.equal(detailGateContext.defaultMeasurementValues, undefined)
+})
+
 test('synthesizeGenderGateAnswer combines gender and measurement lines', () => {
   const detailGateContext: DetailGateContext = {
     category: 'clothing',

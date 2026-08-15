@@ -1,6 +1,6 @@
 import type { DetailGateContext, Listing } from '@/types/listings'
 import { detectClothingSubType, getMeasurementFields } from '@/lib/utils'
-import { detectJewelrySubType } from '@/lib/jewelry-detection'
+import { detectJewelrySubType, parseChainLengthInches } from '@/lib/jewelry-detection'
 import { formatMeasurementValue } from '@/lib/units'
 
 const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
@@ -64,12 +64,21 @@ export function buildGenderGatePrompt(
   const measurementFields = getMeasurementFields(category, subTypeHint, notableFeatures)
   const categoryNeedsMeasurements = measurementFields.length > 0
 
+  let defaultMeasurementValues: DetailGateContext['defaultMeasurementValues']
+  if (subTypeHint === 'necklace') {
+    const chainLengthInches = parseChainLengthInches(notableFeatures)
+    if (chainLengthInches !== null) {
+      defaultMeasurementValues = { necklace_chain_length_in: chainLengthInches }
+    }
+  }
+
   const detailGateContext: DetailGateContext = {
     category,
     categoryNeedsGender,
     subTypeHint,
     categoryNeedsMeasurements,
     measurementFields,
+    defaultMeasurementValues,
   }
 
   if (!categoryNeedsGender) {

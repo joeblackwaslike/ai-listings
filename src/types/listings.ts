@@ -174,6 +174,7 @@ export interface DetailGateContext {
   subTypeHint: ClothingSubType | JewelrySubType | null;
   categoryNeedsMeasurements: boolean;
   measurementFields: MeasurementField[];
+  defaultMeasurementValues?: Partial<Record<string, string | number>>;
 }
 
 export interface Listing {
