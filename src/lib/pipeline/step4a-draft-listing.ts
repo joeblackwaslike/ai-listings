@@ -5,7 +5,7 @@ import type { ApiKeys } from '@/lib/user-api-keys'
 import { getPlatformRules } from '@/lib/platform-rules'
 import { getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
-import type { ClothingSubType } from '@/types/listings'
+import type { ClothingSubType, JewelrySubType } from '@/types/listings'
 
 interface DraftOutput {
   canonical_title: string
@@ -58,13 +58,14 @@ export async function runStep4aDraftListing(
 
   const { data: measurementsRow } = await supabase
     .from('listings')
-    .select('measurements, clothing_sub_type')
+    .select('measurements, sub_type')
     .eq('id', listingId)
     .single()
 
   const measurementFields = getMeasurementFields(
     step2.category,
-    (measurementsRow?.clothing_sub_type ?? null) as ClothingSubType | null
+    (measurementsRow?.sub_type ?? null) as ClothingSubType | JewelrySubType | null,
+    step2.notableFeatures
   )
   const populatedMeasurements = measurementsRow?.measurements
     ? measurementFields.filter((field) => {

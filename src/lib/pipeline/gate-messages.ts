@@ -14,7 +14,7 @@ const GENDER_LABELS: Record<string, string> = {
 export type IdGateListing = Pick<Listing, 'brand' | 'category' | 'condition' | 'condition_notes' | 'intake_meta'>
 export type GenderGateListing = Pick<Listing, 'category' | 'intake_meta'>
 
-function notableFeaturesOf(intakeMeta: Record<string, unknown> | null): string[] {
+export function notableFeaturesOf(intakeMeta: Record<string, unknown> | null): string[] {
   return (intakeMeta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
 }
 
