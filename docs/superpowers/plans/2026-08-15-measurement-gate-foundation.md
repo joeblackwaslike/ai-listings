@@ -1233,11 +1233,21 @@ git commit -m "feat(db): backfill sub_type for existing listings"
 
 ## Task 16: Full regression pass ✅ done — tsc clean (0 errors, full project), lint clean (1 pre-existing unrelated error in ListingsGrid.tsx from May, 55 pre-existing warnings), 98/98 tests passing (ran directly via `find src -name "*.test.ts"` since npm test's glob is broken under sh — see Task 13 follow-up note). Pushed, HEAD at 608f95b.
 
-**PLAN A COMPLETE (16/16 tasks).** Follow-up items surfaced during execution, not yet filed as bd tickets:
-- Ring diameter conversion has no domain-sanity range check (only n>=0 upstream) — Task 6
-- ring_inscribed_size renders as `type="number"` input but can hold non-numeric stamps (e.g. "6 1/4") — Task 11
-- `npm test`'s glob silently only runs 3/11 test files under sh (no globstar expansion) — Task 13
-- 1 jewelry listing (no parseable Model line) remains sub_type=null after backfill — Task 15, expected
+Follow-up bd tickets filed: `ai-listings-5iy` (ring_inscribed_size numeric-input mismatch), `ai-listings-b27` (no domain-sanity range check on ring diameter), `ai-listings-aqz` (npm test glob broken). 1 jewelry listing (no parseable Model line) remains sub_type=null after backfill — expected, not filed.
+
+**Final holistic review (across all 16 commits) found two real, undisclosed cross-commit gaps — added as Tasks 17-18 before Plan A is considered done:**
+
+## Task 17: Fix jewelry mm fields not exempted from inches↔mm conversion (units.ts)
+
+Task 11 fixed the `shoe_size_raw`/`ring_inscribed_size`/`us_size` exemption gap in `NON_LENGTH_FIELD_KEYS` (`src/lib/units.ts`), but never revisited it for the jewelry mm fields Task 9 added two commits earlier: `ring_id_mm`, `ring_id_widest_mm`, `ring_id_narrowest_mm`, `bangle_id_mm`. These fields are natively mm (per spec's Data Model: "Jewelry fields embed their unit in the key name... unlike clothing's unitless keys"), but since they're not exempted, `MeasurementFields.tsx`'s submit logic runs them through `mmToInches()` when the user's global unit preference is metric (corrupting the stored value), and `formatMeasurementValue` always displays them via `formatDualMeasurement`, which assumes the stored number IS inches — producing nonsense like "18.3 in (465 mm)" for what should just read "18.3mm". This reaches gate-confirmation chat text, `FieldsPanel` display, and the `step4a-draft-listing.ts` prompt that generates the actual eBay/Poshmark description. `units.test.ts` currently locks in the broken behavior as a passing "regression" test.
+
+**Fix:** add the 4 jewelry mm keys to `NON_LENGTH_FIELD_KEYS` in `src/lib/units.ts`, update the misleading test in `units.test.ts` to assert the correct passthrough behavior instead, add tests for the 4 new keys.
+
+## Task 18: Wire necklace chain-length pre-fill end-to-end
+
+`parseChainLengthInches` (Task 5) and `MeasurementFields`'s `defaultValues` prop (Task 11) both exist and pass their isolated tests, but nothing connects them — `gate-messages.ts` never calls `parseChainLengthInches`, `DetailGateContext` has no field to carry a default value, and `AgentChat.tsx` never passes `defaultValues` to `<MeasurementFields>`. JW-0010 (parseable chain length) and JW-0011 (unparseable) currently present an identical blank input — the "near-zero extra effort when parsing succeeds" the spec describes for necklaces doesn't actually happen yet.
+
+**Fix:** add `defaultMeasurementValues?: Partial<Record<string, string | number>>` to `DetailGateContext` (`src/types/listings.ts`); in `gate-messages.ts`'s `buildGenderGatePrompt`, when `subTypeHint === 'necklace'`, call `parseChainLengthInches(notableFeatures)` and populate `defaultMeasurementValues` if non-null; wire `AgentChat.tsx` to read it and pass as `<MeasurementFields defaultValues={...}>`.
 
 **Files:** none (verification only)
 
