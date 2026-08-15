@@ -8,6 +8,10 @@ import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
 import { getSupabaseAdmin, pushPipelineStep } from '@/lib/pipeline/supabase-push'
 import { getUserApiKeys } from '@/lib/user-api-keys'
+import { detectClothingSubType } from '@/lib/utils'
+import { detectJewelrySubType } from '@/lib/jewelry-detection'
+import { classifyJewelrySubTypeWithLlm } from '@/lib/jewelry-llm-fallback'
+import type { ClothingSubType, JewelrySubType } from '@/types/listings'
 
 export const intakePipeline = inngest.createFunction(
   {
@@ -134,9 +138,32 @@ export const intakePipeline = inngest.createFunction(
       }).data
       gender = needsGender ? (gd.gender ?? null) : null
       measurements = gd.measurements ?? null
+
+      const category = (step2Result.category ?? '').toLowerCase()
+      const subType: ClothingSubType | JewelrySubType | null =
+        category === 'clothing' ? detectClothingSubType(step2Result.notableFeatures)
+        : category === 'jewelry' ? detectJewelrySubType(step2Result.notableFeatures)
+        : null
+
       await step.run('store-gender', () =>
-        supabase.from('listings').update({ gender, measurements }).eq('id', listingId)
+        supabase.from('listings').update({ gender, measurements, sub_type: subType }).eq('id', listingId)
       )
+
+      if (subType === null && category === 'jewelry') {
+        await step.run('jewelry-subtype-llm-fallback', async () => {
+          // Best-effort, deliberately non-fatal: a failed classification here would
+          // otherwise mark the whole listing agent_blocked via onFailure, which isn't
+          // warranted for a nice-to-have enrichment.
+          try {
+            const llmSubType = await classifyJewelrySubTypeWithLlm(step2Result.notableFeatures, apiKeys)
+            if (llmSubType) {
+              await supabase.from('listings').update({ sub_type: llmSubType }).eq('id', listingId)
+            }
+          } catch (err) {
+            console.error('jewelry-subtype-llm-fallback failed for listing', listingId, err)
+          }
+        })
+      }
     }
 
     const titleForComps = (step2Result.notableFeatures[0] ?? '').replace(/^Model:\s*/i, '').trim()
