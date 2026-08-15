@@ -390,6 +390,7 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
             fields={detailGateContext.measurementFields}
             inputUnit={inputUnit ?? 'imperial'}
             onSubmit={(m) => void handleMeasurementsSubmit(m)}
+            defaultValues={detailGateContext.defaultMeasurementValues}
           />
         )}
         {!showMeasurements && !suggestionsDismissed && suggestions && suggestions.length > 0 && (

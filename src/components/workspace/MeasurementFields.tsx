@@ -2,16 +2,23 @@
 
 import { useState } from 'react'
 import type { MeasurementField, Measurements } from '@/types/listings'
-import { mmToInches } from '@/lib/units'
+import { mmToInches, isPhysicalLengthField } from '@/lib/units'
 
 interface MeasurementFieldsProps {
   fields: MeasurementField[]
   inputUnit: 'imperial' | 'metric'
   onSubmit: (measurements: Partial<Measurements>) => void
+  defaultValues?: Partial<Record<string, string | number>>
 }
 
-export function MeasurementFields({ fields, inputUnit, onSubmit }: Readonly<MeasurementFieldsProps>) {
-  const [values, setValues] = useState<Record<string, string | number>>({})
+export function MeasurementFields({ fields, inputUnit, onSubmit, defaultValues }: Readonly<MeasurementFieldsProps>) {
+  // Partial<Record<...>> so callers can omit keys, but internal state never needs to
+  // distinguish "absent" from "undefined" — every read goes through `values[key] ?? ''`
+  // or the `raw === undefined` guard in handleSubmit, so treating it as fully-populated
+  // here is safe.
+  const [values, setValues] = useState<Record<string, string | number>>(
+    (defaultValues ?? {}) as Record<string, string | number>
+  )
 
   function setField(key: string, value: string | number) {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -28,9 +35,8 @@ export function MeasurementFields({ fields, inputUnit, onSubmit }: Readonly<Meas
       } else {
         const n = parseFloat(String(raw))
         if (!isNaN(n) && n >= 0) {
-          // us_size is a shoe size, not a physical length — never mm-converted
           (result as Record<string, unknown>)[field.key] =
-            inputUnit === 'metric' && field.key !== 'us_size' ? mmToInches(n) : n
+            inputUnit === 'metric' && isPhysicalLengthField(field.key) ? mmToInches(n) : n
         }
       }
     }
@@ -67,8 +73,8 @@ export function MeasurementFields({ fields, inputUnit, onSubmit }: Readonly<Meas
               id={`measurement-${field.key}`}
               type="number"
               min={0}
-              step={inputUnit === 'metric' && field.key !== 'us_size' ? '1' : '0.5'}
-              placeholder={inputUnit === 'metric' && field.key !== 'us_size' ? 'in mm' : field.hint}
+              step={inputUnit === 'metric' && isPhysicalLengthField(field.key) ? '1' : '0.5'}
+              placeholder={inputUnit === 'metric' && isPhysicalLengthField(field.key) ? 'in mm' : field.hint}
               value={String(values[field.key] ?? '')}
               onChange={(e) => setField(field.key, e.target.value)}
               className="w-28 px-2 py-1 text-xs rounded bg-gray-800 border border-gray-700 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500"

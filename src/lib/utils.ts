@@ -1,4 +1,5 @@
 import type { Listing, Photo } from '@/types/listings'
+import { detectIrregularRingStyle } from './jewelry-detection'
 
 export function formatPrice(cents: number | null): string {
   if (cents == null) return '—'
@@ -29,12 +30,49 @@ export function detectClothingSubType(notableFeatures: string[]): import('@/type
   return null
 }
 
+// Everything else (handbag, small_leather_goods, electronics, keyboards,
+// collectibles, watches, jewelry sub-types with no dedicated fields, other, etc.) — 3D dimensions
+const genericDimensionFields: import('@/types/listings').MeasurementField[] = [
+  { key: 'width', label: 'Width', hint: 'in inches' },
+  { key: 'height', label: 'Height', hint: 'in inches' },
+  { key: 'depth', label: 'Depth', hint: 'in inches' },
+]
+
 export function getMeasurementFields(
   category: string,
-  subType: import('@/types/listings').ClothingSubType | null
+  subType: import('@/types/listings').ClothingSubType | import('@/types/listings').JewelrySubType | null,
+  notableFeatures: string[] = []
 ): import('@/types/listings').MeasurementField[] {
   if (category === 'sneakers') {
-    return [{ key: 'us_size', label: 'US Size', hint: 'e.g. 9.5' }]
+    return [
+      { key: 'shoe_size_system', label: 'Sizing System', hint: 'which system is printed on the tag', useChips: true, chipOptions: ['US', 'EU', 'UK'] },
+      { key: 'shoe_size_raw', label: 'Size (as printed)', hint: 'e.g. 39, 6.5, 8.5' },
+      { key: 'us_size', label: 'US Size (if directly on the tag)', hint: 'skip if only EU/UK is shown — this gets computed otherwise' },
+    ]
+  }
+  if (category === 'jewelry') {
+    const ringInscribedSizeField: import('@/types/listings').MeasurementField = {
+      key: 'ring_inscribed_size',
+      label: 'Inscribed Size (if stamped inside the band)',
+      hint: 'worth checking with a magnifying glass — often present on precious-metal pieces, not universally reliable',
+    }
+    switch (subType) {
+      case 'ring':
+        if (detectIrregularRingStyle(notableFeatures)) {
+          return [
+            ringInscribedSizeField,
+            { key: 'ring_id_widest_mm', label: 'Inner Diameter — Widest Point', hint: "mm, at the band's widest point" },
+            { key: 'ring_id_narrowest_mm', label: 'Inner Diameter — Narrowest Point', hint: "mm, at the band's narrowest point" },
+          ]
+        }
+        return [ringInscribedSizeField, { key: 'ring_id_mm', label: 'Inner Diameter', hint: 'mm, single reading' }]
+      case 'bangle':
+        return [{ key: 'bangle_id_mm', label: 'Inner Diameter', hint: 'mm' }]
+      case 'necklace':
+        return [{ key: 'necklace_chain_length_in', label: 'Chain Length', hint: 'inches' }]
+      default:
+        return genericDimensionFields
+    }
   }
   if (category === 'clothing') {
     switch (subType) {
@@ -83,13 +121,7 @@ export function getMeasurementFields(
         ]
     }
   }
-  // Everything else (handbag, small_leather_goods, electronics, keyboards,
-  // collectibles, watches, jewelry, other, etc.) — 3D dimensions
-  return [
-    { key: 'width', label: 'Width', hint: 'in inches' },
-    { key: 'height', label: 'Height', hint: 'in inches' },
-    { key: 'depth', label: 'Depth', hint: 'in inches' },
-  ]
+  return genericDimensionFields
 }
 
 // Studio photos are "ready" for confirmation once their backgrounds are processed,

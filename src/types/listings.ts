@@ -114,6 +114,16 @@ export type ClothingSubType =
   | 'skirt'
   | 'other';
 
+export type JewelrySubType =
+  | 'ring'
+  | 'bangle'
+  | 'bracelet'
+  | 'necklace'
+  | 'earrings'
+  | 'pendant'
+  | 'brooch'
+  | 'other';
+
 export interface Measurements {
   // clothing
   waist?: number;
@@ -130,6 +140,22 @@ export interface Measurements {
   depth?: number;
   // sneakers
   us_size?: number;
+  // Jewelry fields below embed their unit in the key name (_mm/_in), unlike
+  // clothing's unitless keys (waist, chest, ...) -- jewelry mixes mm (ring/
+  // bangle diameters) and inches (chain length) in the same interface, so
+  // the suffix disambiguates at a glance without relying on the hint string.
+  // jewelry: ring ("id" = inner diameter, not identifier)
+  ring_inscribed_size?: string;
+  ring_id_mm?: number;
+  ring_id_widest_mm?: number;
+  ring_id_narrowest_mm?: number;
+  // jewelry: bangle ("id" = inner diameter, same as ring)
+  bangle_id_mm?: number;
+  // jewelry: necklace
+  necklace_chain_length_in?: number;
+  // sneakers: sizing system capture (us_size above stays the resolved value)
+  shoe_size_system?: string;
+  shoe_size_raw?: string;
   // general
   weight_oz?: number;
 }
@@ -145,9 +171,10 @@ export interface MeasurementField {
 export interface DetailGateContext {
   category: string;
   categoryNeedsGender: boolean;
-  clothingSubTypeHint: ClothingSubType | null;
+  subTypeHint: ClothingSubType | JewelrySubType | null;
   categoryNeedsMeasurements: boolean;
   measurementFields: MeasurementField[];
+  defaultMeasurementValues?: Partial<Record<string, string | number>>;
 }
 
 export interface Listing {
@@ -166,7 +193,7 @@ export interface Listing {
   condition_notes: string | null;
   gender: string | null;
   item_size: string | null;
-  clothing_sub_type: ClothingSubType | null;
+  sub_type: ClothingSubType | JewelrySubType | null;
   measurements: Measurements | null;
   tags: string[];
   inclusions: Inclusion[];

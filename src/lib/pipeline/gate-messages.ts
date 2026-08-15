@@ -1,5 +1,6 @@
 import type { DetailGateContext, Listing } from '@/types/listings'
 import { detectClothingSubType, getMeasurementFields } from '@/lib/utils'
+import { detectJewelrySubType, parseChainLengthInches } from '@/lib/jewelry-detection'
 import { formatMeasurementValue } from '@/lib/units'
 
 const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
@@ -13,7 +14,7 @@ const GENDER_LABELS: Record<string, string> = {
 export type IdGateListing = Pick<Listing, 'brand' | 'category' | 'condition' | 'condition_notes' | 'intake_meta'>
 export type GenderGateListing = Pick<Listing, 'category' | 'intake_meta'>
 
-function notableFeaturesOf(intakeMeta: Record<string, unknown> | null): string[] {
+export function notableFeaturesOf(intakeMeta: Record<string, unknown> | null): string[] {
   return (intakeMeta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
 }
 
@@ -54,16 +55,30 @@ export function buildGenderGatePrompt(
   const category = listing.category ?? 'item'
   const categoryNeedsGender = GENDER_CATEGORIES.has(category.toLowerCase())
   const notableFeatures = notableFeaturesOf(listing.intake_meta)
-  const clothingSubTypeHint = category === 'clothing' ? detectClothingSubType(notableFeatures) : null
-  const measurementFields = getMeasurementFields(category, clothingSubTypeHint)
+  let subTypeHint: DetailGateContext['subTypeHint'] = null
+  if (category === 'clothing') {
+    subTypeHint = detectClothingSubType(notableFeatures)
+  } else if (category === 'jewelry') {
+    subTypeHint = detectJewelrySubType(notableFeatures)
+  }
+  const measurementFields = getMeasurementFields(category, subTypeHint, notableFeatures)
   const categoryNeedsMeasurements = measurementFields.length > 0
+
+  let defaultMeasurementValues: DetailGateContext['defaultMeasurementValues']
+  if (subTypeHint === 'necklace') {
+    const chainLengthInches = parseChainLengthInches(notableFeatures)
+    if (chainLengthInches !== null) {
+      defaultMeasurementValues = { necklace_chain_length_in: chainLengthInches }
+    }
+  }
 
   const detailGateContext: DetailGateContext = {
     category,
     categoryNeedsGender,
-    clothingSubTypeHint,
+    subTypeHint,
     categoryNeedsMeasurements,
     measurementFields,
+    defaultMeasurementValues,
   }
 
   if (!categoryNeedsGender) {

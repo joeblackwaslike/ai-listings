@@ -18,7 +18,7 @@ function fixtureListing(overrides: Partial<Listing> = {}): Listing {
     condition_notes: null,
     gender: null,
     item_size: null,
-    clothing_sub_type: null,
+    sub_type: null,
     measurements: null,
     tags: [],
     inclusions: [],

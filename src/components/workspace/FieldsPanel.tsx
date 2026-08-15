@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { ChevronRight, Check, CheckCircle2, Circle, AlertCircle, Plus, SkipForward, X } from 'lucide-react'
 import { formatPrice, getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
+import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
 import { EvidenceDrawer } from './EvidenceDrawer'
 import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
@@ -85,7 +86,8 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const doneCount = authSteps.filter((s) => s.status === 'done').length
   const failedCount = authSteps.filter((s) => s.status === 'failed').length
 
-  const measurementFields = getMeasurementFields(listing.category ?? '', listing.clothing_sub_type)
+  const notableFeatures = notableFeaturesOf(listing.intake_meta)
+  const measurementFields = getMeasurementFields(listing.category ?? '', listing.sub_type, notableFeatures)
   const populatedMeasurements = listing.measurements
     ? measurementFields.filter((field) => {
         const value = (listing.measurements as Record<string, unknown>)[field.key]
