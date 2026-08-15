@@ -74,6 +74,14 @@ export interface PhotoShot {
   photo_type: PhotoType;
 }
 
+// Always inches -- no unit suffix needed on the individual fields since, unlike jewelry's
+// mixed mm/in measurements, everything in this shape is the same unit.
+export interface ShippingBoxDims {
+  length: number;
+  width: number;
+  height: number;
+}
+
 export interface PlatformFields {
   ebay?: {
     title: string;
@@ -164,7 +172,7 @@ export interface Measurements {
   item_height_in?: number;
   // shipping: computed estimate (padded item dims, or the real box below when known) --
   // never asked for directly. See computeEstimatedShippingBox in lib/sizing/shipping-box.ts.
-  estimated_shipping_box?: { length: number; width: number; height: number };
+  estimated_shipping_box?: ShippingBoxDims;
   // shipping: real box dimensions, filled in via the finalizing-gate checklist when the
   // original box is included -- overrides estimated_shipping_box when all three are known.
   box_length_in?: number;
