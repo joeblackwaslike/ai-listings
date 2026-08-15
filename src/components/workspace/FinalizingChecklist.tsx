@@ -10,12 +10,16 @@ interface FinalizingChecklistProps {
 }
 
 async function saveMeasurements(listingId: string, patch: Record<string, number>): Promise<boolean> {
-  const res = await fetch(`/api/listings/${listingId}/measurements`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
-  })
-  return res.ok
+  try {
+    const res = await fetch(`/api/listings/${listingId}/measurements`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
 export function FinalizingChecklist({ listing }: Readonly<FinalizingChecklistProps>) {
