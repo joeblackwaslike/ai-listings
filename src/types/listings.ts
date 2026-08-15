@@ -156,6 +156,20 @@ export interface Measurements {
   // sneakers: sizing system capture (us_size above stays the resolved value)
   shoe_size_system?: string;
   shoe_size_raw?: string;
+  // sneakers: physical item dimensions -- one shoe of the pair, not the box. Only
+  // sneakers get dedicated L/W/H fields; every other category without sub-type-specific
+  // fields uses the generic width/height/depth above instead.
+  item_length_in?: number;
+  item_width_in?: number;
+  item_height_in?: number;
+  // shipping: computed estimate (padded item dims, or the real box below when known) --
+  // never asked for directly. See computeEstimatedShippingBox in lib/sizing/shipping-box.ts.
+  estimated_shipping_box?: { length: number; width: number; height: number };
+  // shipping: real box dimensions, filled in via the finalizing-gate checklist when the
+  // original box is included -- overrides estimated_shipping_box when all three are known.
+  box_length_in?: number;
+  box_width_in?: number;
+  box_height_in?: number;
   // general
   weight_oz?: number;
 }
