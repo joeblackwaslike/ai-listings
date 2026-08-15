@@ -5,7 +5,13 @@ import type { NextRequest } from 'next/server'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin
+  // Always redirect back to whatever origin this callback actually ran on, never
+  // NEXT_PUBLIC_SITE_URL -- the session cookie set by exchangeCodeForSession is
+  // scoped to the request's own domain, and NEXT_PUBLIC_SITE_URL points at the
+  // separate public joeblack.nyc domain (used only for platform OAuth callbacks,
+  // not sign-in). Redirecting there sent every login to an unreachable domain
+  // with no valid session cookie regardless (2026-08-15 incident).
+  const origin = new URL(request.url).origin
   const code = searchParams.get('code')
 
   if (!code) {
