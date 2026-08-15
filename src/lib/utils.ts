@@ -33,9 +33,9 @@ export function detectClothingSubType(notableFeatures: string[]): import('@/type
 // Everything else (handbag, small_leather_goods, electronics, keyboards,
 // collectibles, watches, jewelry sub-types with no dedicated fields, other, etc.) — 3D dimensions
 const genericDimensionFields: import('@/types/listings').MeasurementField[] = [
-  { key: 'width', label: 'Width', hint: 'in inches' },
-  { key: 'height', label: 'Height', hint: 'in inches' },
-  { key: 'depth', label: 'Depth', hint: 'in inches' },
+  { key: 'width', label: 'Width', hint: 'in inches — side to side at the widest point' },
+  { key: 'height', label: 'Height', hint: 'in inches — base to top' },
+  { key: 'depth', label: 'Depth', hint: 'in inches — front to back' },
 ]
 
 export function getMeasurementFields(
@@ -48,6 +48,9 @@ export function getMeasurementFields(
       { key: 'shoe_size_system', label: 'Sizing System', hint: 'which system is printed on the tag', useChips: true, chipOptions: ['US', 'EU', 'UK'] },
       { key: 'shoe_size_raw', label: 'Size (as printed)', hint: 'e.g. 39, 6.5, 8.5' },
       { key: 'us_size', label: 'US Size (if directly on the tag)', hint: 'skip if only EU/UK is shown — this gets computed otherwise' },
+      { key: 'item_length_in', label: 'Length', hint: 'one shoe of the pair — toe to heel, in inches' },
+      { key: 'item_width_in', label: 'Width', hint: 'one shoe of the pair — side to side at the widest point, in inches' },
+      { key: 'item_height_in', label: 'Height', hint: 'one shoe of the pair — base to top, in inches' },
     ]
   }
   if (category === 'jewelry') {
