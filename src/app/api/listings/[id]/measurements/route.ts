@@ -35,8 +35,8 @@ export async function PATCH(
     if (!isEditableKey(key)) {
       return Response.json({ error: `Unknown measurement key: ${key}` }, { status: 400 })
     }
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      return Response.json({ error: `${key} must be a finite number` }, { status: 400 })
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      return Response.json({ error: `${key} must be a positive number` }, { status: 400 })
     }
     patch[key] = value
   }
@@ -45,6 +45,12 @@ export async function PATCH(
 
   // Verify the listing belongs to the caller before updating with the admin client (RLS is
   // bypassed here) -- same pattern as skip-bg/route.ts.
+  // Known gap: this is read-then-merge-then-write in application code, not an atomic
+  // DB-side merge -- two independent PATCH calls for the same listing (e.g. the box-dims
+  // save and the weight save from the finalizing checklist UI) can race and silently lose
+  // an update. Low-probability under this app's single-user-per-listing usage; tracked as
+  // ai-listings-0en rather than fixed here (a proper fix needs a Postgres-side JSONB merge,
+  // which is out of scope for this plan's "no new migrations" design).
   const { data: current } = await supabase
     .from('listings')
     .select('measurements, user_id')
