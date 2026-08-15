@@ -118,11 +118,21 @@ test('buildGenderGatePrompt asks for measurements only when the category needs n
   assert.deepEqual(detailGateContext.measurementFields.map((f) => f.key), ['width', 'height', 'depth'])
 })
 
+test('buildGenderGatePrompt threads notableFeatures through to detect an irregular ring band', () => {
+  const listing = genderListing({
+    category: 'jewelry',
+    intake_meta: { visionAnalysis: { notable_features: ['Model: Teardrop Bypass Ring', 'Style: Open bypass band'] } },
+  })
+  const { detailGateContext } = buildGenderGatePrompt(listing)
+  assert.equal(detailGateContext.subTypeHint, 'ring')
+  assert.deepEqual(detailGateContext.measurementFields.map((f) => f.key), ['ring_inscribed_size', 'ring_id_widest_mm', 'ring_id_narrowest_mm'])
+})
+
 test('synthesizeGenderGateAnswer combines gender and measurement lines', () => {
   const detailGateContext: DetailGateContext = {
     category: 'clothing',
     categoryNeedsGender: true,
-    clothingSubTypeHint: 'jeans',
+    subTypeHint: 'jeans',
     categoryNeedsMeasurements: true,
     measurementFields: [
       { key: 'waist', label: 'Waist', hint: 'in inches' },
@@ -141,7 +151,7 @@ test('synthesizeGenderGateAnswer handles measurements-only (no gender)', () => {
   const detailGateContext: DetailGateContext = {
     category: 'handbag',
     categoryNeedsGender: false,
-    clothingSubTypeHint: null,
+    subTypeHint: null,
     categoryNeedsMeasurements: true,
     measurementFields: [
       { key: 'height', label: 'Height', hint: 'in inches' },

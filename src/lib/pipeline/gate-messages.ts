@@ -1,5 +1,6 @@
 import type { DetailGateContext, Listing } from '@/types/listings'
 import { detectClothingSubType, getMeasurementFields } from '@/lib/utils'
+import { detectJewelrySubType } from '@/lib/jewelry-detection'
 import { formatMeasurementValue } from '@/lib/units'
 
 const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
@@ -54,14 +55,19 @@ export function buildGenderGatePrompt(
   const category = listing.category ?? 'item'
   const categoryNeedsGender = GENDER_CATEGORIES.has(category.toLowerCase())
   const notableFeatures = notableFeaturesOf(listing.intake_meta)
-  const clothingSubTypeHint = category === 'clothing' ? detectClothingSubType(notableFeatures) : null
-  const measurementFields = getMeasurementFields(category, clothingSubTypeHint)
+  let subTypeHint: DetailGateContext['subTypeHint'] = null
+  if (category === 'clothing') {
+    subTypeHint = detectClothingSubType(notableFeatures)
+  } else if (category === 'jewelry') {
+    subTypeHint = detectJewelrySubType(notableFeatures)
+  }
+  const measurementFields = getMeasurementFields(category, subTypeHint, notableFeatures)
   const categoryNeedsMeasurements = measurementFields.length > 0
 
   const detailGateContext: DetailGateContext = {
     category,
     categoryNeedsGender,
-    clothingSubTypeHint,
+    subTypeHint,
     categoryNeedsMeasurements,
     measurementFields,
   }
