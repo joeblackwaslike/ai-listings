@@ -41,9 +41,20 @@ test('getMeasurementFields: existing clothing behavior is unchanged (regression 
   assert.deepEqual(fields.map((f) => f.key), ['waist', 'inseam'])
 })
 
-test('getMeasurementFields: existing sneakers behavior is unchanged for now (regression check — a later task changes this)', () => {
+test('getMeasurementFields: sneakers ask for sizing system, raw size, and optional US size', () => {
   const fields = getMeasurementFields('sneakers', null, [])
-  assert.deepEqual(fields.map((f) => f.key), ['us_size'])
+  assert.deepEqual(fields.map((f) => f.key), ['shoe_size_system', 'shoe_size_raw', 'us_size'])
+})
+
+test('getMeasurementFields: sneakers asks for a sizing system and a size value', () => {
+  const fields = getMeasurementFields('sneakers', null, [])
+  const systemField = fields.find((f) => f.key === 'shoe_size_system')
+  assert.ok(systemField)
+  assert.equal(systemField?.useChips, true)
+  assert.ok(systemField?.chipOptions?.includes('US'))
+  assert.ok(systemField?.chipOptions?.includes('EU'))
+  assert.ok(fields.some((f) => f.key === 'shoe_size_raw'))
+  assert.ok(fields.some((f) => f.key === 'us_size'))
 })
 
 test('getMeasurementFields: jewelry ring called without notableFeatures (2-arg form) defaults to the non-irregular single-reading path', () => {
