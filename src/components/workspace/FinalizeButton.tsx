@@ -9,10 +9,17 @@ export function FinalizeButton({ listingId }: Readonly<{ listingId: string }>) {
   const [loading, setLoading] = useState(false)
 
   async function handleFinalize() {
+    if (!confirm("Finalize this listing? This moves it to the finalizing checklist and can't be undone from here.")) return
     setLoading(true)
     try {
       const res = await fetch(`/api/listings/${listingId}/finalize`, { method: 'PATCH' })
-      if (res.ok) router.refresh()
+      if (res.ok) {
+        router.refresh()
+      } else {
+        alert('Could not finalize this listing. Please try again.')
+      }
+    } catch {
+      alert('Network error — could not finalize this listing.')
     } finally {
       setLoading(false)
     }
