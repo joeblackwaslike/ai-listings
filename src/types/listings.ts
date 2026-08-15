@@ -145,7 +145,7 @@ export interface MeasurementField {
 export interface DetailGateContext {
   category: string;
   categoryNeedsGender: boolean;
-  clothingSubTypeHint: ClothingSubType | null;
+  subTypeHint: ClothingSubType | JewelrySubType | null;
   categoryNeedsMeasurements: boolean;
   measurementFields: MeasurementField[];
 }
@@ -166,7 +166,7 @@ export interface Listing {
   condition_notes: string | null;
   gender: string | null;
   item_size: string | null;
-  clothing_sub_type: ClothingSubType | null;
+  sub_type: ClothingSubType | JewelrySubType | null;
   measurements: Measurements | null;
   tags: string[];
   inclusions: Inclusion[];
