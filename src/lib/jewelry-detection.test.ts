@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectJewelrySubType, detectIrregularRingStyle } from './jewelry-detection'
+import { detectJewelrySubType, detectIrregularRingStyle, parseChainLengthInches } from './jewelry-detection'
 
 test('detectJewelrySubType identifies a necklace from the Model line', () => {
   const features = ['Model: Elsa Peretti Teardrop Pendant Necklace', 'Chain length: approximately 16"']
@@ -86,4 +86,26 @@ test('detectIrregularRingStyle is true for a toi-et-moi setting', () => {
 
 test('detectIrregularRingStyle is false for "unwrapped" (word-boundary regression)', () => {
   assert.equal(detectIrregularRingStyle(['Condition notes: Ships unwrapped, no original box']), false)
+})
+
+test('parseChainLengthInches extracts a stated length (JW-0010 fixture)', () => {
+  const features = [
+    'Model: Elsa Peretti Teardrop Pendant Necklace',
+    'Chain length: approximately 16"',
+    'Material: Sterling silver (925)',
+  ]
+  assert.equal(parseChainLengthInches(features), 16)
+})
+
+test('parseChainLengthInches returns null for a qualitative-only description (JW-0011 fixture)', () => {
+  const features = [
+    'Model: Elsa Peretti Bean Pendant Necklace',
+    'Pendant size: approximately 18 mm',
+    'Chain style: fine cable chain',
+  ]
+  assert.equal(parseChainLengthInches(features), null)
+})
+
+test('parseChainLengthInches returns null when there is no chain info at all', () => {
+  assert.equal(parseChainLengthInches(['Model: Ring']), null)
 })

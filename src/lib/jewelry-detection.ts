@@ -20,3 +20,10 @@ export function detectIrregularRingStyle(notableFeatures: string[]): boolean {
     allText,
   )
 }
+
+export function parseChainLengthInches(notableFeatures: string[]): number | null {
+  const chainLine = notableFeatures.find((f) => /^chain length/i.test(f))
+  if (!chainLine) return null
+  const match = chainLine.match(/(\d+(?:\.\d+)?)/)
+  return match ? parseFloat(match[1]) : null
+}
