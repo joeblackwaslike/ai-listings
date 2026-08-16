@@ -59,3 +59,10 @@ test('computeEstimatedShippingBox: treats a non-numeric string dimension as miss
     null
   )
 })
+
+test('computeEstimatedShippingBox: treats zero or negative dimensions as missing, not as valid input to pad', () => {
+  assert.equal(computeEstimatedShippingBox('sneakers', { item_length_in: 0, item_width_in: 4, item_height_in: 5 }), null)
+  assert.equal(computeEstimatedShippingBox('sneakers', { item_length_in: 12, item_width_in: -4, item_height_in: 5 }), null)
+  assert.equal(computeEstimatedShippingBox('handbag', { width: 0, height: 8, depth: 4 }), null)
+  assert.equal(computeEstimatedShippingBox('handbag', { width: 10, height: 8, depth: -4 }), null)
+})

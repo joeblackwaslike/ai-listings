@@ -6,10 +6,14 @@ import type { ListingCategory, Measurements, ShippingBoxDims } from '@/types/lis
 export const SHIPPING_BOX_PADDING_IN = 2
 
 // Number.isFinite alone isn't a type predicate, so TS can't narrow `number | undefined`
-// fields with it directly -- this wrapper gives it one while keeping identical runtime
-// behavior (false for null/undefined/NaN/Infinity/non-numeric strings).
-function isFiniteNumber(value: unknown): value is number {
-  return Number.isFinite(value)
+// fields with it directly -- this wrapper gives it one while keeping equivalent runtime
+// behavior for non-numeric input (false for null/undefined/NaN/Infinity/non-numeric
+// strings), plus a positivity check: zero/negative dimensions are physically nonsensical
+// and treated as missing rather than as valid input to pad (flagged in PR #33 review --
+// a client submitting item_length_in: 0 directly to /api/pipeline/confirm-gender would
+// otherwise silently produce a padded-zero or negative estimated_shipping_box).
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return Number.isFinite(value) && (value as number) > 0
 }
 
 // Computed from item dims collected at the identity gate, never asked for directly.
@@ -23,7 +27,7 @@ export function computeEstimatedShippingBox(
 
   if (category === 'sneakers') {
     const { item_length_in, item_width_in, item_height_in } = measurements
-    if (!isFiniteNumber(item_length_in) || !isFiniteNumber(item_width_in) || !isFiniteNumber(item_height_in)) return null
+    if (!isPositiveFiniteNumber(item_length_in) || !isPositiveFiniteNumber(item_width_in) || !isPositiveFiniteNumber(item_height_in)) return null
     // The box has to fit both shoes of the pair, not one -- length and height are shared,
     // width doubles (two shoes side by side).
     const pairWidth = item_width_in * 2
@@ -35,7 +39,7 @@ export function computeEstimatedShippingBox(
   }
 
   const { width, height, depth } = measurements
-  if (!isFiniteNumber(width) || !isFiniteNumber(height) || !isFiniteNumber(depth)) return null
+  if (!isPositiveFiniteNumber(width) || !isPositiveFiniteNumber(height) || !isPositiveFiniteNumber(depth)) return null
   return {
     length: depth + 2 * SHIPPING_BOX_PADDING_IN,
     width: width + 2 * SHIPPING_BOX_PADDING_IN,
