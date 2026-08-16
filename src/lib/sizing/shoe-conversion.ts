@@ -96,6 +96,16 @@ function nearestUsSize(table: ShoeConversionEntry[], eu: number): number | null 
   return closest.us
 }
 
+// Reverse of nearestUsSize -- same nearest-match/empty-table-guard shape, just comparing the
+// `.us` field instead of `.eu`. Needed so a raw US-system input (which today's field hint
+// explicitly allows: "skip if only EU/UK is shown") can still produce an EU/UK display row.
+// Tie-breaks to the earlier (lower-US-value) entry on an exact match, same as nearestUsSize.
+function nearestEuForUs(table: ShoeConversionEntry[], us: number): number | null {
+  if (table.length === 0) return null
+  const closest = table.reduce((a, b) => (Math.abs(b.us - us) < Math.abs(a.us - us) ? b : a))
+  return closest.eu
+}
+
 // UK footwear sizes have no direct entry in the sourced table above. Per the task's fallback
 // instruction, UK is converted to its EU equivalent using the standard UK+33 offset
 // (EU ~= UK + 33) before doing the EU lookup. This is a widely used approximation for adult
@@ -120,19 +130,74 @@ export function convertShoeSize(args: {
   system: 'us' | 'eu' | 'uk'
   value: number
   gender: 'mens' | 'womens'
-}): { usSize: number; source: 'brand' | 'generic'; note?: string } {
+}): { usSize: number; euSize: number; ukSize: number; source: 'brand' | 'generic'; note?: string } {
   if (args.system === 'us') {
-    return { usSize: args.value, source: 'generic' }
+    const euValue = nearestEuForUs(SHOE_SIZE_CONVERSION[args.gender], args.value)
+    if (euValue === null) {
+      throw new Error(`No generic shoe size conversion table entries for gender "${args.gender}"`)
+    }
+    return { usSize: args.value, euSize: euValue, ukSize: euValue - 33, source: 'generic' }
   }
   const euValue = args.system === 'uk' ? ukToEu(args.value) : args.value
   const override = SHOE_BRAND_OVERRIDES[normalizeBrandKey(args.brand)]
   const brandUsSize = override ? nearestUsSize(override.conversions[args.gender], euValue) : null
   if (brandUsSize !== null) {
-    return { usSize: brandUsSize, source: 'brand', note: override?.note }
+    return { usSize: brandUsSize, euSize: euValue, ukSize: euValue - 33, source: 'brand', note: override?.note }
   }
   const genericUsSize = nearestUsSize(SHOE_SIZE_CONVERSION[args.gender], euValue)
   if (genericUsSize === null) {
     throw new Error(`No generic shoe size conversion table entries for gender "${args.gender}"`)
   }
-  return { usSize: genericUsSize, source: 'generic' }
+  return { usSize: genericUsSize, euSize: euValue, ukSize: euValue - 33, source: 'generic' }
+}
+
+// Backfills `us_size` at gate-confirmation write time when the shopper only entered an EU/UK
+// size -- the measurement field's own hint promises this ("skip if only EU/UK is shown -- this
+// gets computed otherwise") but nothing called convertShoeSize to actually do it. Returns null
+// (no-op) rather than a copy of the input when there's nothing to compute, so callers can do
+// `if (result) measurements = result` without a redundant no-op assignment.
+export function deriveShoeUsSizeForStorage(args: {
+  category: string
+  gender: string | null
+  brand: string
+  measurements: Record<string, unknown> | null
+}): Record<string, unknown> | null {
+  if (args.category !== 'sneakers' || !args.measurements) return null
+  const m = args.measurements
+  if (typeof m.us_size === 'number' && !Number.isNaN(m.us_size)) return null
+  const rawSystem = typeof m.shoe_size_system === 'string' ? m.shoe_size_system.toLowerCase() : null
+  if (rawSystem !== 'us' && rawSystem !== 'eu' && rawSystem !== 'uk') return null
+  const rawValue = typeof m.shoe_size_raw === 'string' ? Number.parseFloat(m.shoe_size_raw) : null
+  if (rawValue === null || Number.isNaN(rawValue)) return null
+  if (args.gender !== 'mens' && args.gender !== 'womens') return null
+  const converted = convertShoeSize({ brand: args.brand, system: rawSystem as 'us' | 'eu' | 'uk', value: rawValue, gender: args.gender })
+  return { ...m, us_size: converted.usSize }
+}
+
+// Builds step4a's sizing-table prompt input. Deliberately mirrors deriveShoeUsSizeForStorage's
+// guard order (same shape, different failure mode: '' instead of null) since both are answering
+// "is there enough raw data here to say anything about shoe size at all". Numbers only ever come
+// from convertShoeSize -- the LLM's job downstream is formatting/prose only, never inventing sizes.
+export function buildShoeSizingPromptSection(args: {
+  category: string
+  brand: string
+  gender: string | null
+  measurements: Record<string, unknown> | null
+}): string {
+  if (args.category !== 'sneakers' || !args.measurements) return ''
+  const m = args.measurements
+  const rawSystem = typeof m.shoe_size_system === 'string' ? m.shoe_size_system.toLowerCase() : null
+  if (rawSystem !== 'us' && rawSystem !== 'eu' && rawSystem !== 'uk') return ''
+  const rawValue = typeof m.shoe_size_raw === 'string' ? Number.parseFloat(m.shoe_size_raw) : null
+  if (rawValue === null || Number.isNaN(rawValue)) return ''
+  if (args.gender !== 'mens' && args.gender !== 'womens') return ''
+  const converted = convertShoeSize({ brand: args.brand, system: rawSystem as 'us' | 'eu' | 'uk', value: rawValue, gender: args.gender })
+  // A seller can fill in both the raw EU/UK size and a direct us_size on the same gate screen
+  // (the field hint only says the latter is optional, not mutually exclusive with the former).
+  // deriveShoeUsSizeForStorage already treats a directly-entered us_size as authoritative and
+  // never overwrites it -- this has to agree, or the prompt shows a recomputed US size that can
+  // be a half size off from what's actually stored and displayed elsewhere.
+  const usSize = typeof m.us_size === 'number' && !Number.isNaN(m.us_size) ? m.us_size : converted.usSize
+  const table = `EU ${converted.euSize} · UK ${converted.ukSize} · US ${usSize}`
+  return converted.note ? `\n- Sizing: ${table}\n- Sizing note: ${converted.note}` : `\n- Sizing: ${table}`
 }
