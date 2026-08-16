@@ -12,6 +12,7 @@ import { detectClothingSubType } from '@/lib/utils'
 import { detectJewelrySubType } from '@/lib/jewelry-detection'
 import { classifyJewelrySubTypeWithLlm } from '@/lib/jewelry-llm-fallback'
 import { computeEstimatedShippingBox } from '@/lib/sizing/shipping-box'
+import { deriveShoeUsSizeForStorage } from '@/lib/sizing/shoe-conversion'
 import type { ClothingSubType, JewelrySubType, Measurements } from '@/types/listings'
 
 export const intakePipeline = inngest.createFunction(
@@ -145,6 +146,16 @@ export const intakePipeline = inngest.createFunction(
         category === 'clothing' ? detectClothingSubType(step2Result.notableFeatures)
         : category === 'jewelry' ? detectJewelrySubType(step2Result.notableFeatures)
         : null
+
+      const shoeSizeMeasurements = deriveShoeUsSizeForStorage({
+        category,
+        gender,
+        brand: step2Result.brand,
+        measurements,
+      })
+      if (shoeSizeMeasurements) {
+        measurements = shoeSizeMeasurements
+      }
 
       const estimatedShippingBox = computeEstimatedShippingBox(category, measurements as Measurements | null)
       const measurementsWithShippingBox = estimatedShippingBox
