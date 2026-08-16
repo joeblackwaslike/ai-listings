@@ -99,6 +99,7 @@ function nearestUsSize(table: ShoeConversionEntry[], eu: number): number | null 
 // Reverse of nearestUsSize -- same nearest-match/empty-table-guard shape, just comparing the
 // `.us` field instead of `.eu`. Needed so a raw US-system input (which today's field hint
 // explicitly allows: "skip if only EU/UK is shown") can still produce an EU/UK display row.
+// Tie-breaks to the earlier (lower-US-value) entry on an exact match, same as nearestUsSize.
 function nearestEuForUs(table: ShoeConversionEntry[], us: number): number | null {
   if (table.length === 0) return null
   const closest = table.reduce((a, b) => (Math.abs(b.us - us) < Math.abs(a.us - us) ? b : a))
