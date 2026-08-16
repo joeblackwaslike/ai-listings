@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { checkTitleLengths } from '@/lib/pipeline/title-check'
 import type { Listing } from '@/types/listings'
 
 export async function PATCH(
@@ -71,15 +72,11 @@ export async function PATCH(
 
   // Title length validation — warn but do not block
   let titleWarning: { warning: string; currentLength: number; maxLength: number } | null = null
-  if (platform && current.user_id) {
-    const TITLE_LIMITS: Record<string, number> = { ebay: 80, poshmark: 60 }
-    const maxLength = TITLE_LIMITS[platform]
-    if (maxLength) {
-      const platformFields = current.platform_fields as Record<string, Record<string, string>> | null
-      const title: string | undefined = platformFields?.[platform]?.title
-      if (title && title.length > maxLength) {
-        titleWarning = { warning: 'title_too_long', currentLength: title.length, maxLength }
-      }
+  if (platform && current.user_id && (platform === 'ebay' || platform === 'poshmark')) {
+    const platformFields = current.platform_fields as Partial<Record<'ebay' | 'poshmark', { title?: string }>> | null
+    const match = checkTitleLengths(platformFields).find((w) => w.platform === platform)
+    if (match) {
+      titleWarning = { warning: 'title_too_long', currentLength: match.currentLength, maxLength: match.maxLength }
     }
   }
 

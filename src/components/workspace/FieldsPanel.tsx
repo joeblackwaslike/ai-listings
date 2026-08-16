@@ -8,6 +8,7 @@ import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
 import { EvidenceDrawer } from './EvidenceDrawer'
 import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
+import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
@@ -226,6 +227,8 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
             </dl>
           </section>
         )}
+
+        {listing.status === 'finalizing' && <FinalizingChecklist listing={listing} />}
 
         {listing.description && (
           <section>

@@ -11,7 +11,8 @@ import { getUserApiKeys } from '@/lib/user-api-keys'
 import { detectClothingSubType } from '@/lib/utils'
 import { detectJewelrySubType } from '@/lib/jewelry-detection'
 import { classifyJewelrySubTypeWithLlm } from '@/lib/jewelry-llm-fallback'
-import type { ClothingSubType, JewelrySubType } from '@/types/listings'
+import { computeEstimatedShippingBox } from '@/lib/sizing/shipping-box'
+import type { ClothingSubType, JewelrySubType, Measurements } from '@/types/listings'
 
 export const intakePipeline = inngest.createFunction(
   {
@@ -145,8 +146,13 @@ export const intakePipeline = inngest.createFunction(
         : category === 'jewelry' ? detectJewelrySubType(step2Result.notableFeatures)
         : null
 
+      const estimatedShippingBox = computeEstimatedShippingBox(category, measurements as Measurements | null)
+      const measurementsWithShippingBox = estimatedShippingBox
+        ? { ...measurements, estimated_shipping_box: estimatedShippingBox }
+        : measurements
+
       await step.run('store-gender', () =>
-        supabase.from('listings').update({ gender, measurements, sub_type: subType }).eq('id', listingId)
+        supabase.from('listings').update({ gender, measurements: measurementsWithShippingBox, sub_type: subType }).eq('id', listingId)
       )
 
       if (subType === null && category === 'jewelry') {

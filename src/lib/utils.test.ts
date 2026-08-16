@@ -41,9 +41,35 @@ test('getMeasurementFields: existing clothing behavior is unchanged (regression 
   assert.deepEqual(fields.map((f) => f.key), ['waist', 'inseam'])
 })
 
-test('getMeasurementFields: sneakers ask for sizing system, raw size, and optional US size', () => {
+test('getMeasurementFields: sneakers ask for sizing system, raw size, optional US size, and one-shoe item dimensions', () => {
   const fields = getMeasurementFields('sneakers', null, [])
-  assert.deepEqual(fields.map((f) => f.key), ['shoe_size_system', 'shoe_size_raw', 'us_size'])
+  assert.deepEqual(fields.map((f) => f.key), [
+    'shoe_size_system',
+    'shoe_size_raw',
+    'us_size',
+    'item_length_in',
+    'item_width_in',
+    'item_height_in',
+  ])
+})
+
+test('getMeasurementFields: sneaker item-dimension hints say explicitly this is one shoe of the pair', () => {
+  const fields = getMeasurementFields('sneakers', null, [])
+  const dims = fields.filter((f) => f.key.startsWith('item_'))
+  assert.equal(dims.length, 3)
+  for (const field of dims) {
+    assert.match(field.hint, /one shoe of the pair/)
+  }
+})
+
+test('getMeasurementFields: generic W/H/D fallback hints disambiguate which physical dimension is which', () => {
+  const fields = getMeasurementFields('handbag', null, [])
+  const width = fields.find((f) => f.key === 'width')
+  const height = fields.find((f) => f.key === 'height')
+  const depth = fields.find((f) => f.key === 'depth')
+  assert.match(width!.hint, /side to side/)
+  assert.match(height!.hint, /base to top/)
+  assert.match(depth!.hint, /front to back/)
 })
 
 test('getMeasurementFields: sneakers asks for a sizing system and a size value', () => {
