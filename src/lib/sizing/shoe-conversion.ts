@@ -192,6 +192,12 @@ export function buildShoeSizingPromptSection(args: {
   if (rawValue === null || Number.isNaN(rawValue)) return ''
   if (args.gender !== 'mens' && args.gender !== 'womens') return ''
   const converted = convertShoeSize({ brand: args.brand, system: rawSystem as 'us' | 'eu' | 'uk', value: rawValue, gender: args.gender })
-  const table = `EU ${converted.euSize} · UK ${converted.ukSize} · US ${converted.usSize}`
+  // A seller can fill in both the raw EU/UK size and a direct us_size on the same gate screen
+  // (the field hint only says the latter is optional, not mutually exclusive with the former).
+  // deriveShoeUsSizeForStorage already treats a directly-entered us_size as authoritative and
+  // never overwrites it -- this has to agree, or the prompt shows a recomputed US size that can
+  // be a half size off from what's actually stored and displayed elsewhere.
+  const usSize = typeof m.us_size === 'number' && !Number.isNaN(m.us_size) ? m.us_size : converted.usSize
+  const table = `EU ${converted.euSize} · UK ${converted.ukSize} · US ${usSize}`
   return converted.note ? `\n- Sizing: ${table}\n- Sizing note: ${converted.note}` : `\n- Sizing: ${table}`
 }

@@ -226,3 +226,17 @@ test('buildShoeSizingPromptSection includes a Sizing note line when a brand over
     delete SHOE_BRAND_OVERRIDES[fakeBrand]
   }
 })
+
+test('buildShoeSizingPromptSection uses a directly-entered us_size instead of recomputing it, when both are present', () => {
+  // A seller can fill in the raw EU size AND a direct US size on the same gate screen (e.g. the
+  // box says both). deriveShoeUsSizeForStorage treats the direct value as authoritative and never
+  // overwrites it -- this must show the same number, not a recomputed one that can be a half size
+  // off from the generic table.
+  const result = buildShoeSizingPromptSection({
+    category: 'sneakers',
+    brand: 'Nike',
+    gender: 'womens',
+    measurements: { shoe_size_system: 'eu', shoe_size_raw: '39', us_size: 8.5 },
+  })
+  assert.equal(result, '\n- Sizing: EU 39 · UK 6 · US 8.5')
+})
