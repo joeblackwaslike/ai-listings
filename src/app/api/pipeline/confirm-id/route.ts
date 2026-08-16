@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 import { inngest } from '@/lib/inngest/client'
 import {
   buildIdGateAck,
@@ -11,6 +11,10 @@ import type { IdGateListing } from '@/lib/pipeline/gate-messages'
 import { insertConversationRowsSequentially } from '@/lib/pipeline/insert-conversation-rows'
 
 export async function POST(request: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const body = (await request.json()) as {
     listingId?: string
     confirmed?: boolean
@@ -25,11 +29,9 @@ export async function POST(request: Request) {
   }
 
   // Stamp intake immediately so the card stops showing the overlay even
-  // before Inngest processes the event (which takes a few seconds).
-  const supabase = createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  // before Inngest processes the event (which takes a few seconds). RLS
+  // (owner_access on listings) scopes this update to the caller's own rows --
+  // a non-owner's request matches zero rows and updatedListing stays null.
   const { data: updatedListing, error: updateError } = await supabase
     .from('listings')
     .update({ status: 'intake' })
@@ -42,36 +44,38 @@ export async function POST(request: Request) {
     console.error('confirm-id: status update failed for listing', body.listingId, updateError.message)
   }
 
-  if (updatedListing) {
-    const listing = updatedListing as unknown as IdGateListing
-    const confirmed = body.confirmed
-    const corrections = body.corrections ?? null
-
-    await insertConversationRowsSequentially(
-      supabase,
-      [
-        {
-          listing_id: body.listingId,
-          role: 'assistant',
-          content: buildIdGatePrompt(listing),
-          context_snapshot: buildIdGateSnapshot(listing),
-        },
-        {
-          listing_id: body.listingId,
-          role: 'user',
-          content: synthesizeIdGateAnswer({ confirmed, corrections, listing }),
-          context_snapshot: { confirmed, corrections },
-        },
-        {
-          listing_id: body.listingId,
-          role: 'assistant',
-          content: buildIdGateAck({ confirmed }),
-          context_snapshot: null,
-        },
-      ],
-      (error) => console.error('confirm-id: failed to persist gate conversation for listing', body.listingId, error.message)
-    )
+  if (!updatedListing) {
+    return NextResponse.json({ ok: true })
   }
+
+  const listing = updatedListing as unknown as IdGateListing
+  const confirmed = body.confirmed
+  const corrections = body.corrections ?? null
+
+  await insertConversationRowsSequentially(
+    supabase,
+    [
+      {
+        listing_id: body.listingId,
+        role: 'assistant',
+        content: buildIdGatePrompt(listing),
+        context_snapshot: buildIdGateSnapshot(listing),
+      },
+      {
+        listing_id: body.listingId,
+        role: 'user',
+        content: synthesizeIdGateAnswer({ confirmed, corrections, listing }),
+        context_snapshot: { confirmed, corrections },
+      },
+      {
+        listing_id: body.listingId,
+        role: 'assistant',
+        content: buildIdGateAck({ confirmed }),
+        context_snapshot: null,
+      },
+    ],
+    (error) => console.error('confirm-id: failed to persist gate conversation for listing', body.listingId, error.message)
+  )
 
   await inngest.send({
     name: 'pipeline/id-confirmed',
