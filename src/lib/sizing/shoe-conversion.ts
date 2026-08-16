@@ -173,3 +173,25 @@ export function deriveShoeUsSizeForStorage(args: {
   const converted = convertShoeSize({ brand: args.brand, system: rawSystem as 'us' | 'eu' | 'uk', value: rawValue, gender: args.gender })
   return { ...m, us_size: converted.usSize }
 }
+
+// Builds step4a's sizing-table prompt input. Deliberately mirrors deriveShoeUsSizeForStorage's
+// guard order (same shape, different failure mode: '' instead of null) since both are answering
+// "is there enough raw data here to say anything about shoe size at all". Numbers only ever come
+// from convertShoeSize -- the LLM's job downstream is formatting/prose only, never inventing sizes.
+export function buildShoeSizingPromptSection(args: {
+  category: string
+  brand: string
+  gender: string | null
+  measurements: Record<string, unknown> | null
+}): string {
+  if (args.category !== 'sneakers' || !args.measurements) return ''
+  const m = args.measurements
+  const rawSystem = typeof m.shoe_size_system === 'string' ? m.shoe_size_system.toLowerCase() : null
+  if (rawSystem !== 'us' && rawSystem !== 'eu' && rawSystem !== 'uk') return ''
+  const rawValue = typeof m.shoe_size_raw === 'string' ? Number.parseFloat(m.shoe_size_raw) : null
+  if (rawValue === null || Number.isNaN(rawValue)) return ''
+  if (args.gender !== 'mens' && args.gender !== 'womens') return ''
+  const converted = convertShoeSize({ brand: args.brand, system: rawSystem as 'us' | 'eu' | 'uk', value: rawValue, gender: args.gender })
+  const table = `EU ${converted.euSize} · UK ${converted.ukSize} · US ${converted.usSize}`
+  return converted.note ? `\n- Sizing: ${table}\n- Sizing note: ${converted.note}` : `\n- Sizing: ${table}`
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { convertShoeSize, deriveShoeUsSizeForStorage, SHOE_BRAND_OVERRIDES } from './shoe-conversion'
+import { convertShoeSize, deriveShoeUsSizeForStorage, buildShoeSizingPromptSection, SHOE_BRAND_OVERRIDES } from './shoe-conversion'
 
 test('convertShoeSize uses the generic table when no brand override exists', () => {
   const result = convertShoeSize({ brand: 'Nike', system: 'eu', value: 39, gender: 'womens' })
@@ -176,4 +176,53 @@ test('deriveShoeUsSizeForStorage computes us_size from a UK raw value', () => {
   })
   assert.ok(result)
   assert.equal(result!.us_size, 8)
+})
+
+test('buildShoeSizingPromptSection returns empty string for a non-sneakers category', () => {
+  const result = buildShoeSizingPromptSection({
+    category: 'clothing',
+    brand: 'Nike',
+    gender: 'womens',
+    measurements: { shoe_size_system: 'eu', shoe_size_raw: '39' },
+  })
+  assert.equal(result, '')
+})
+
+test('buildShoeSizingPromptSection returns empty string when raw system/value are missing', () => {
+  const result = buildShoeSizingPromptSection({
+    category: 'sneakers',
+    brand: 'Nike',
+    gender: 'womens',
+    measurements: { item_length_in: 10 },
+  })
+  assert.equal(result, '')
+})
+
+test('buildShoeSizingPromptSection renders the EU/UK/US table with no note when no brand override exists', () => {
+  const result = buildShoeSizingPromptSection({
+    category: 'sneakers',
+    brand: 'Nike',
+    gender: 'womens',
+    measurements: { shoe_size_system: 'eu', shoe_size_raw: '39' },
+  })
+  assert.equal(result, '\n- Sizing: EU 39 · UK 6 · US 8')
+})
+
+test('buildShoeSizingPromptSection includes a Sizing note line when a brand override note is present', () => {
+  const fakeBrand = 'test-brand-with-override'
+  SHOE_BRAND_OVERRIDES[fakeBrand] = {
+    conversions: { mens: [], womens: [{ eu: 39, us: 99 }] },
+    note: 'runs half a size small',
+  }
+  try {
+    const result = buildShoeSizingPromptSection({
+      category: 'sneakers',
+      brand: fakeBrand,
+      gender: 'womens',
+      measurements: { shoe_size_system: 'eu', shoe_size_raw: '39' },
+    })
+    assert.equal(result, '\n- Sizing: EU 39 · UK 6 · US 99\n- Sizing note: runs half a size small')
+  } finally {
+    delete SHOE_BRAND_OVERRIDES[fakeBrand]
+  }
 })
