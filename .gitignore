@@ -48,10 +48,17 @@ next-env.d.ts
 
 # Git worktrees
 .worktrees/
+.claude/worktrees/
 
 # Seed files with real credentials
 supabase/seed/
 .serena/
+
+# Agent/hook ephemeral state
+.clawhip/
+
+# bd migration backups
+.beads/_premigration_backup_*/
 
 # Deployment — generated secret manifest (never commit real secrets)
 deployment/kubernetes/app/secret.yaml
