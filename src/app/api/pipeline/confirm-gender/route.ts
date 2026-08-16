@@ -34,35 +34,40 @@ export async function POST(req: Request) {
   }
   const listing = data as unknown as (GenderGateListing & { status: string }) | null
 
-  if (listing && listing.status === 'gender_gate') {
-    const { message, detailGateContext } = buildGenderGatePrompt(listing)
-
-    await insertConversationRowsSequentially(
-      supabase,
-      [
-        {
-          listing_id: listingId,
-          role: 'assistant',
-          content: message,
-          context_snapshot: detailGateContext,
-        },
-        {
-          listing_id: listingId,
-          role: 'user',
-          content: synthesizeGenderGateAnswer({ gender, measurements, detailGateContext }),
-          context_snapshot: { gender, measurements },
-        },
-        {
-          listing_id: listingId,
-          role: 'assistant',
-          content: buildGenderGateAck(),
-          context_snapshot: null,
-        },
-      ],
-      (error) => console.error('confirm-gender: failed to persist gate conversation for listing', listingId, error.message)
-    )
+  if (!listing || listing.status !== 'gender_gate') {
+    return Response.json({ ok: true })
   }
 
+  const { message, detailGateContext } = buildGenderGatePrompt(listing)
+
+  await insertConversationRowsSequentially(
+    supabase,
+    [
+      {
+        listing_id: listingId,
+        role: 'assistant',
+        content: message,
+        context_snapshot: detailGateContext,
+      },
+      {
+        listing_id: listingId,
+        role: 'user',
+        content: synthesizeGenderGateAnswer({ gender, measurements, detailGateContext }),
+        context_snapshot: { gender, measurements },
+      },
+      {
+        listing_id: listingId,
+        role: 'assistant',
+        content: buildGenderGateAck(),
+        context_snapshot: null,
+      },
+    ],
+    (error) => console.error('confirm-gender: failed to persist gate conversation for listing', listingId, error.message)
+  )
+
+  // RLS (owner_access on listings) already scoped the SELECT above to the caller's own
+  // rows -- a non-owner's listingId returns null and we return early before this point,
+  // so a cross-tenant request never reaches inngest.send.
   await inngest.send({
     name: 'pipeline/gender-confirmed',
     data: { listingId, gender, measurements },
