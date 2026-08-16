@@ -150,3 +150,26 @@ export function convertShoeSize(args: {
   }
   return { usSize: genericUsSize, euSize: euValue, ukSize: euValue - 33, source: 'generic' }
 }
+
+// Backfills `us_size` at gate-confirmation write time when the shopper only entered an EU/UK
+// size -- the measurement field's own hint promises this ("skip if only EU/UK is shown -- this
+// gets computed otherwise") but nothing called convertShoeSize to actually do it. Returns null
+// (no-op) rather than a copy of the input when there's nothing to compute, so callers can do
+// `if (result) measurements = result` without a redundant no-op assignment.
+export function deriveShoeUsSizeForStorage(args: {
+  category: string
+  gender: string | null
+  brand: string
+  measurements: Record<string, unknown> | null
+}): Record<string, unknown> | null {
+  if (args.category !== 'sneakers' || !args.measurements) return null
+  const m = args.measurements
+  if (typeof m.us_size === 'number' && !Number.isNaN(m.us_size)) return null
+  const rawSystem = typeof m.shoe_size_system === 'string' ? m.shoe_size_system.toLowerCase() : null
+  if (rawSystem !== 'us' && rawSystem !== 'eu' && rawSystem !== 'uk') return null
+  const rawValue = typeof m.shoe_size_raw === 'string' ? Number.parseFloat(m.shoe_size_raw) : null
+  if (rawValue === null || Number.isNaN(rawValue)) return null
+  if (args.gender !== 'mens' && args.gender !== 'womens') return null
+  const converted = convertShoeSize({ brand: args.brand, system: rawSystem as 'us' | 'eu' | 'uk', value: rawValue, gender: args.gender })
+  return { ...m, us_size: converted.usSize }
+}

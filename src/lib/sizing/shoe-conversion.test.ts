@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { convertShoeSize, SHOE_BRAND_OVERRIDES } from './shoe-conversion'
+import { convertShoeSize, deriveShoeUsSizeForStorage, SHOE_BRAND_OVERRIDES } from './shoe-conversion'
 
 test('convertShoeSize uses the generic table when no brand override exists', () => {
   const result = convertShoeSize({ brand: 'Nike', system: 'eu', value: 39, gender: 'womens' })
@@ -112,4 +112,68 @@ test('convertShoeSize keeps the EU leg as the passthrough value even when a bran
   } finally {
     delete SHOE_BRAND_OVERRIDES[fakeBrand]
   }
+})
+
+test('deriveShoeUsSizeForStorage returns null for a non-sneakers category', () => {
+  const result = deriveShoeUsSizeForStorage({
+    category: 'clothing',
+    gender: 'womens',
+    brand: 'Nike',
+    measurements: { shoe_size_system: 'eu', shoe_size_raw: '39' },
+  })
+  assert.equal(result, null)
+})
+
+test('deriveShoeUsSizeForStorage returns null when us_size is already present (respects a directly-entered value)', () => {
+  const result = deriveShoeUsSizeForStorage({
+    category: 'sneakers',
+    gender: 'womens',
+    brand: 'Nike',
+    measurements: { shoe_size_system: 'eu', shoe_size_raw: '39', us_size: 8 },
+  })
+  assert.equal(result, null)
+})
+
+test('deriveShoeUsSizeForStorage returns null when the raw system/value fields are missing', () => {
+  const result = deriveShoeUsSizeForStorage({
+    category: 'sneakers',
+    gender: 'womens',
+    brand: 'Nike',
+    measurements: { item_length_in: 10 },
+  })
+  assert.equal(result, null)
+})
+
+test('deriveShoeUsSizeForStorage returns null when gender is missing (sneakers requires it, but guard defensively)', () => {
+  const result = deriveShoeUsSizeForStorage({
+    category: 'sneakers',
+    gender: null,
+    brand: 'Nike',
+    measurements: { shoe_size_system: 'eu', shoe_size_raw: '39' },
+  })
+  assert.equal(result, null)
+})
+
+test('deriveShoeUsSizeForStorage computes and merges us_size from an EU raw value, preserving other keys', () => {
+  const result = deriveShoeUsSizeForStorage({
+    category: 'sneakers',
+    gender: 'womens',
+    brand: 'Nike',
+    measurements: { shoe_size_system: 'EU', shoe_size_raw: '39', item_length_in: 10 },
+  })
+  assert.ok(result)
+  assert.equal(result!.us_size, 8)
+  assert.equal(result!.item_length_in, 10)
+  assert.equal(result!.shoe_size_system, 'EU')
+})
+
+test('deriveShoeUsSizeForStorage computes us_size from a UK raw value', () => {
+  const result = deriveShoeUsSizeForStorage({
+    category: 'sneakers',
+    gender: 'mens',
+    brand: 'Nike',
+    measurements: { shoe_size_system: 'UK', shoe_size_raw: '8' },
+  })
+  assert.ok(result)
+  assert.equal(result!.us_size, 8)
 })
