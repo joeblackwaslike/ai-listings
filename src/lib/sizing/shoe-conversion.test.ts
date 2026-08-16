@@ -75,3 +75,41 @@ test('convertShoeSize falls through to the generic table when the brand override
     delete SHOE_BRAND_OVERRIDES[fakeBrand]
   }
 })
+
+test('convertShoeSize returns the EU and UK legs alongside the US size (EU input)', () => {
+  const result = convertShoeSize({ brand: 'Nike', system: 'eu', value: 39, gender: 'womens' })
+  assert.equal(result.euSize, 39)
+  // UK is derived via the same EU-33 approximation used elsewhere in this file.
+  assert.equal(result.ukSize, 6)
+})
+
+test('convertShoeSize returns the EU and UK legs alongside the US size (UK input)', () => {
+  // UK 8 -> EU 41 (UK+33 offset) -> round-trips back to UK 8 exactly.
+  const result = convertShoeSize({ brand: 'Nike', system: 'uk', value: 8, gender: 'mens' })
+  assert.equal(result.euSize, 41)
+  assert.equal(result.ukSize, 8)
+})
+
+test('convertShoeSize derives the EU/UK legs via reverse lookup for a US-system input', () => {
+  // US men's 9 is an exact table entry at EU 42.5 (see SHOE_SIZE_CONVERSION.mens).
+  const result = convertShoeSize({ brand: 'Nike', system: 'us', value: 9, gender: 'mens' })
+  assert.equal(result.usSize, 9)
+  assert.equal(result.euSize, 42.5)
+  assert.equal(result.ukSize, 9.5)
+})
+
+test('convertShoeSize keeps the EU leg as the passthrough value even when a brand override changes the US leg', () => {
+  const fakeBrand = 'test-brand-with-override'
+  SHOE_BRAND_OVERRIDES[fakeBrand] = {
+    conversions: { mens: [], womens: [{ eu: 39, us: 99 }] },
+    note: 'test fixture',
+  }
+  try {
+    const result = convertShoeSize({ brand: fakeBrand, system: 'eu', value: 39, gender: 'womens' })
+    assert.equal(result.usSize, 99)
+    assert.equal(result.euSize, 39)
+    assert.equal(result.ukSize, 6)
+  } finally {
+    delete SHOE_BRAND_OVERRIDES[fakeBrand]
+  }
+})

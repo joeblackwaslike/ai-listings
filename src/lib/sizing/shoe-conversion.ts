@@ -96,6 +96,15 @@ function nearestUsSize(table: ShoeConversionEntry[], eu: number): number | null 
   return closest.us
 }
 
+// Reverse of nearestUsSize -- same nearest-match/empty-table-guard shape, just comparing the
+// `.us` field instead of `.eu`. Needed so a raw US-system input (which today's field hint
+// explicitly allows: "skip if only EU/UK is shown") can still produce an EU/UK display row.
+function nearestEuForUs(table: ShoeConversionEntry[], us: number): number | null {
+  if (table.length === 0) return null
+  const closest = table.reduce((a, b) => (Math.abs(b.us - us) < Math.abs(a.us - us) ? b : a))
+  return closest.eu
+}
+
 // UK footwear sizes have no direct entry in the sourced table above. Per the task's fallback
 // instruction, UK is converted to its EU equivalent using the standard UK+33 offset
 // (EU ~= UK + 33) before doing the EU lookup. This is a widely used approximation for adult
@@ -120,19 +129,23 @@ export function convertShoeSize(args: {
   system: 'us' | 'eu' | 'uk'
   value: number
   gender: 'mens' | 'womens'
-}): { usSize: number; source: 'brand' | 'generic'; note?: string } {
+}): { usSize: number; euSize: number; ukSize: number; source: 'brand' | 'generic'; note?: string } {
   if (args.system === 'us') {
-    return { usSize: args.value, source: 'generic' }
+    const euValue = nearestEuForUs(SHOE_SIZE_CONVERSION[args.gender], args.value)
+    if (euValue === null) {
+      throw new Error(`No generic shoe size conversion table entries for gender "${args.gender}"`)
+    }
+    return { usSize: args.value, euSize: euValue, ukSize: euValue - 33, source: 'generic' }
   }
   const euValue = args.system === 'uk' ? ukToEu(args.value) : args.value
   const override = SHOE_BRAND_OVERRIDES[normalizeBrandKey(args.brand)]
   const brandUsSize = override ? nearestUsSize(override.conversions[args.gender], euValue) : null
   if (brandUsSize !== null) {
-    return { usSize: brandUsSize, source: 'brand', note: override?.note }
+    return { usSize: brandUsSize, euSize: euValue, ukSize: euValue - 33, source: 'brand', note: override?.note }
   }
   const genericUsSize = nearestUsSize(SHOE_SIZE_CONVERSION[args.gender], euValue)
   if (genericUsSize === null) {
     throw new Error(`No generic shoe size conversion table entries for gender "${args.gender}"`)
   }
-  return { usSize: genericUsSize, source: 'generic' }
+  return { usSize: genericUsSize, euSize: euValue, ukSize: euValue - 33, source: 'generic' }
 }
