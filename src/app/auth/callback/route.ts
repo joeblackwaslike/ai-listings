@@ -2,8 +2,9 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { authLog, summarizeCookies, errorInfo } from '@/lib/auth-log'
 
-export async function GET(request: NextRequest) {
+async function handleCallback(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url)
   // Prefer APP_URL -- the same "where the user's browser actually lives" env var the
   // platform-OAuth routes already use (src/app/api/auth/connect|callback/[platform]) --
@@ -19,11 +20,16 @@ export async function GET(request: NextRequest) {
   const origin = process.env.APP_URL ?? new URL(request.url).origin
   const code = searchParams.get('code')
 
+  const cookieStore = await cookies()
+  const incomingCookies = summarizeCookies(cookieStore.getAll())
+
+  authLog.info('callback_start', { origin, hasCode: Boolean(code), incomingCookies })
+
   if (!code) {
+    authLog.warn('callback_no_code', { origin, incomingCookies })
     return NextResponse.redirect(new URL('/auth/error?reason=no_code', origin))
   }
 
-  const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -42,12 +48,26 @@ export async function GET(request: NextRequest) {
   )
 
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+  // Read cookies back out after the exchange to see exactly what got written -- this is
+  // the ground truth for whether the session actually persisted, not an assumption.
+  const postExchangeCookies = summarizeCookies(cookieStore.getAll())
   if (exchangeError) {
+    authLog.error('callback_exchange_failed', {
+      origin,
+      error: errorInfo(exchangeError),
+      incomingCookies,
+      postExchangeCookies,
+    })
     return NextResponse.redirect(new URL('/auth/error?reason=exchange_failed', origin))
   }
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user }, error: getUserError } = await supabase.auth.getUser()
   if (!user) {
+    authLog.error('callback_no_user_after_exchange', {
+      origin,
+      error: getUserError ? errorInfo(getUserError) : null,
+      postExchangeCookies,
+    })
     return NextResponse.redirect(new URL('/auth/error?reason=no_user', origin))
   }
 
@@ -59,6 +79,7 @@ export async function GET(request: NextRequest) {
 
   const userEmail = (user.email ?? '').toLowerCase()
   if (mode === 'whitelist' && !allowedEmails.map((e) => e.toLowerCase()).includes(userEmail)) {
+    authLog.warn('callback_not_allowed', { origin, userId: user.id, userEmail })
     await supabase.auth.signOut()
     return NextResponse.redirect(new URL('/auth/error?reason=not_allowed', origin))
   }
@@ -67,10 +88,30 @@ export async function GET(request: NextRequest) {
     const createdAt = new Date(user.created_at).getTime()
     const isNewUser = Date.now() - createdAt < 60_000
     if (isNewUser) {
+      authLog.warn('callback_closed_new_user', { origin, userId: user.id, userEmail })
       await supabase.auth.signOut()
       return NextResponse.redirect(new URL('/auth/error?reason=closed', origin))
     }
   }
 
+  authLog.info('callback_success', {
+    origin,
+    userId: user.id,
+    userEmail,
+    postExchangeCookies,
+  })
   return NextResponse.redirect(new URL('/dashboard', origin))
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    return await handleCallback(request)
+  } catch (err) {
+    // Previously uncaught: any unexpected throw here (a network error reaching Supabase,
+    // a malformed cookie, etc.) fell through to Next.js's default error handling with no
+    // auth-specific log line, indistinguishable later from any other route crash.
+    const origin = process.env.APP_URL ?? new URL(request.url).origin
+    authLog.error('callback_unexpected_error', { origin, error: errorInfo(err) })
+    return NextResponse.redirect(new URL('/auth/error?reason=unexpected', origin))
+  }
 }

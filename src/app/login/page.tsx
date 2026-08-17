@@ -1,16 +1,27 @@
 'use client'
 
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
+  const [error, setError] = useState<string | null>(null)
+
   async function signInWithGoogle() {
+    setError(null)
     const supabase = createClient()
-    await supabase.auth.signInWithOAuth({
+    const { error: signInError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     })
+    // Previously discarded entirely -- a failed signInWithOAuth() call (misconfigured
+    // provider, network error) left the button just doing nothing with no feedback and no
+    // console trace.
+    if (signInError) {
+      console.error('[login] signInWithOAuth failed:', signInError.message)
+      setError('Could not start sign-in. Please try again.')
+    }
   }
 
   return (
@@ -30,6 +41,7 @@ export default function LoginPage() {
           </svg>
           Sign in with Google
         </button>
+        {error && <p className="text-xs text-red-400">{error}</p>}
       </div>
     </div>
   )

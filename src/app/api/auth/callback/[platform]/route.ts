@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { getSetting, setSetting } from '@/lib/user-settings'
 import { consumeOauthState, peekOauthState } from '@/lib/oauth-states'
 import { buildProviderAuthUrl } from '@/lib/oauth-providers'
+import { authLog, errorInfo } from '@/lib/auth-log'
 
 const SUPPORTED = new Set(['imgur', 'etsy', 'ebay', 'mercari'])
 
@@ -158,7 +159,15 @@ export async function GET(req: Request) {
     } else {
       return Response.redirect(`${settingsUrl}?error=not_implemented`)
     }
-  } catch {
+  } catch (err) {
+    // Previously silent -- any unexpected throw during the token exchange (network failure,
+    // malformed provider response, etc.) redirected to a generic error with no trace of what
+    // actually happened, indistinguishable later from every other failure mode above.
+    authLog.error('platform_oauth_token_exchange_unexpected_error', {
+      platform,
+      userId,
+      error: errorInfo(err),
+    })
     return Response.redirect(`${settingsUrl}?error=unexpected`)
   }
 
