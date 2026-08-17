@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { estimatedShippingBoxFromMeasuredBox } from '@/lib/sizing/shipping-box'
 import type { Measurements } from '@/types/listings'
 
 const EDITABLE_KEYS = ['box_length_in', 'box_width_in', 'box_height_in', 'weight_oz'] as const
@@ -43,42 +44,40 @@ export async function PATCH(
 
   const supabase = getSupabaseAdmin()
 
-  // Verify the listing belongs to the caller before updating with the admin client (RLS is
-  // bypassed here) -- same pattern as skip-bg/route.ts.
-  // Known gap: this is read-then-merge-then-write in application code, not an atomic
-  // DB-side merge -- two independent PATCH calls for the same listing (e.g. the box-dims
-  // save and the weight save from the finalizing checklist UI) can race and silently lose
-  // an update. Low-probability under this app's single-user-per-listing usage; tracked as
-  // ai-listings-0en rather than fixed here (a proper fix needs a Postgres-side JSONB merge,
-  // which is out of scope for this plan's "no new migrations" design).
-  const { data: current } = await supabase
-    .from('listings')
-    .select('measurements, user_id')
-    .eq('id', id)
-    .single()
+  // Atomic JSONB merge (ai-listings-0en) -- replaces the prior read-then-merge-then-write
+  // pattern, which could silently lose a concurrent PATCH's fields (e.g. the box-dims save
+  // and the weight save from the finalizing checklist UI racing each other). Ownership is
+  // enforced inside the RPC's WHERE clause, so a mismatched/missing owner returns NULL.
+  const { data: merged, error } = await supabase.rpc('merge_listing_measurements', {
+    p_listing_id: id,
+    p_user_id: user.id,
+    p_patch: patch,
+  })
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (merged === null) return Response.json({ error: 'Not found' }, { status: 404 })
 
-  if (!current || current.user_id !== user.id) {
-    return Response.json({ error: 'Not found' }, { status: 404 })
-  }
-
-  const merged: Measurements = { ...(current.measurements as Measurements | null ?? {}), ...patch }
+  let measurements = merged as Measurements
 
   // Known-value-first: a real measured box overrides the padded estimate once all three
-  // dimensions are known -- see Feature 3's "Estimated shipping box" in the spec.
-  if (merged.box_length_in != null && merged.box_width_in != null && merged.box_height_in != null) {
-    merged.estimated_shipping_box = {
-      length: merged.box_length_in,
-      width: merged.box_width_in,
-      height: merged.box_height_in,
+  // dimensions are known -- see Feature 3's "Estimated shipping box" in the spec. This is a
+  // second, non-atomic RPC call, but only for the derived estimated_shipping_box field, not
+  // the user-authored patch above. Its failure is treated as non-fatal to the request -- the
+  // first call's result (the user's actual patch) is already committed and is still a valid
+  // response even if this follow-up errors; the box will simply be recomputed on the next
+  // PATCH that touches box dims.
+  const box = estimatedShippingBoxFromMeasuredBox(measurements)
+  if (box) {
+    const { data: mergedWithBox, error: boxError } = await supabase.rpc('merge_listing_measurements', {
+      p_listing_id: id,
+      p_user_id: user.id,
+      p_patch: { estimated_shipping_box: box },
+    })
+    if (boxError) {
+      console.error(`measurements route: estimated_shipping_box recompute failed for listing ${id} — ${boxError.message}`)
+    } else if (mergedWithBox !== null) {
+      measurements = mergedWithBox as Measurements
     }
   }
 
-  const { error } = await supabase
-    .from('listings')
-    .update({ measurements: merged })
-    .eq('id', id)
-
-  if (error) return Response.json({ error: error.message }, { status: 500 })
-
-  return Response.json({ ok: true, measurements: merged })
+  return Response.json({ ok: true, measurements })
 }

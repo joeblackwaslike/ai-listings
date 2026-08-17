@@ -46,3 +46,13 @@ export function computeEstimatedShippingBox(
     height: height + 2 * SHIPPING_BOX_PADDING_IN,
   }
 }
+
+// The real-box override for the finalizing-checklist flow (PATCH /api/listings/[id]/measurements)
+// -- distinct from computeEstimatedShippingBox, which pads an *estimate* from item dims. This one
+// just reshapes the three directly-measured box_*_in fields once all three are present; no
+// padding, no category branching.
+export function estimatedShippingBoxFromMeasuredBox(measurements: Measurements): ShippingBoxDims | null {
+  const { box_length_in, box_width_in, box_height_in } = measurements
+  if (box_length_in == null || box_width_in == null || box_height_in == null) return null
+  return { length: box_length_in, width: box_width_in, height: box_height_in }
+}

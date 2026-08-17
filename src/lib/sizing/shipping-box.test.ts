@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeEstimatedShippingBox, SHIPPING_BOX_PADDING_IN } from './shipping-box'
+import { computeEstimatedShippingBox, estimatedShippingBoxFromMeasuredBox, SHIPPING_BOX_PADDING_IN } from './shipping-box'
 
 test('computeEstimatedShippingBox: generic category pads each of width/height/depth by 2x the padding constant', () => {
   const box = computeEstimatedShippingBox('handbag', { width: 10, height: 8, depth: 4 })
@@ -65,4 +65,21 @@ test('computeEstimatedShippingBox: treats zero or negative dimensions as missing
   assert.equal(computeEstimatedShippingBox('sneakers', { item_length_in: 12, item_width_in: -4, item_height_in: 5 }), null)
   assert.equal(computeEstimatedShippingBox('handbag', { width: 0, height: 8, depth: 4 }), null)
   assert.equal(computeEstimatedShippingBox('handbag', { width: 10, height: 8, depth: -4 }), null)
+})
+
+test('estimatedShippingBoxFromMeasuredBox: returns the box dims verbatim when all three are present', () => {
+  const box = estimatedShippingBoxFromMeasuredBox({ box_length_in: 12, box_width_in: 8, box_height_in: 4 })
+  assert.deepEqual(box, { length: 12, width: 8, height: 4 })
+})
+
+test('estimatedShippingBoxFromMeasuredBox: returns null when box_length_in is missing', () => {
+  assert.equal(estimatedShippingBoxFromMeasuredBox({ box_width_in: 8, box_height_in: 4 }), null)
+})
+
+test('estimatedShippingBoxFromMeasuredBox: returns null when box_width_in is missing', () => {
+  assert.equal(estimatedShippingBoxFromMeasuredBox({ box_length_in: 12, box_height_in: 4 }), null)
+})
+
+test('estimatedShippingBoxFromMeasuredBox: returns null when box_height_in is missing', () => {
+  assert.equal(estimatedShippingBoxFromMeasuredBox({ box_length_in: 12, box_width_in: 8 }), null)
 })
