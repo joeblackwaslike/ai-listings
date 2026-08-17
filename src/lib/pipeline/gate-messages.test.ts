@@ -6,6 +6,7 @@ import {
   buildIdGateAck,
   buildIdGatePrompt,
   buildIdGateSnapshot,
+  isGenderGateAnswered,
   notableFeaturesOf,
   shouldPersistInLoopGreeting,
   synthesizeGenderGateAnswer,
@@ -210,6 +211,41 @@ test('buildGenderGateAck returns the fixed acknowledgment', () => {
   assert.equal(
     buildGenderGateAck(),
     'Got it — running pricing research now. The listing will update in a moment.'
+  )
+})
+
+test('isGenderGateAnswered is false for empty history', () => {
+  assert.equal(isGenderGateAnswered([]), false)
+})
+
+test('isGenderGateAnswered is false when the last message is not the ack', () => {
+  assert.equal(
+    isGenderGateAnswered([
+      { role: 'assistant', content: 'Quick question before I run pricing — I need a few measurements.' },
+      { role: 'user', content: 'Chain Length: 17 in' },
+    ]),
+    false
+  )
+})
+
+test('isGenderGateAnswered is true when the last message is the gender-gate ack', () => {
+  assert.equal(
+    isGenderGateAnswered([
+      { role: 'assistant', content: 'Quick question before I run pricing — I need a few measurements.' },
+      { role: 'user', content: 'Chain Length: 17 in' },
+      { role: 'assistant', content: buildGenderGateAck() },
+    ]),
+    true
+  )
+})
+
+test('isGenderGateAnswered is false when the ack text appears but is not the last message', () => {
+  assert.equal(
+    isGenderGateAnswered([
+      { role: 'assistant', content: buildGenderGateAck() },
+      { role: 'user', content: 'What is the current price?' },
+    ]),
+    false
   )
 })
 

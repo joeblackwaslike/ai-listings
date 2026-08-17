@@ -141,6 +141,18 @@ export function buildGenderGateAck(): string {
   return 'Got it — running pricing research now. The listing will update in a moment.'
 }
 
+// listings.status stays 'gender_gate' for the rest of the intake pipeline (pricing research,
+// draft listing, background removal) after the gate is answered -- it only advances once all
+// of that finishes, which can take a while. A page reload/remount during that window would
+// otherwise re-derive "gate still pending" from status alone and re-show the gender/measurement
+// form even though it was already submitted (ai-listings-ftg). confirm-gender's
+// route always ends its conversation insert with buildGenderGateAck() as the last row, so its
+// presence at the tail of history is a reliable, DB-persisted "already answered" signal.
+export function isGenderGateAnswered(history: { role: string; content: string }[]): boolean {
+  const last = history[history.length - 1]
+  return last?.role === 'assistant' && last.content === buildGenderGateAck()
+}
+
 export function shouldPersistInLoopGreeting(
   listing: Pick<Listing, 'status' | 'agent_blocked'>,
   hasHistory: boolean,
