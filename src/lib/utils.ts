@@ -58,6 +58,7 @@ export function getMeasurementFields(
       key: 'ring_inscribed_size',
       label: 'Inscribed Size (if stamped inside the band)',
       hint: 'worth checking with a magnifying glass — often present on precious-metal pieces, not universally reliable',
+      textInput: true,
     }
     switch (subType) {
       case 'ring':

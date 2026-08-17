@@ -32,6 +32,8 @@ export function MeasurementFields({ fields, inputUnit, onSubmit, defaultValues }
       if (field.useChips) {
         // chip value is stored as lowercase string matching Measurements type
         ;(result as Record<string, unknown>)[field.key] = String(raw).toLowerCase()
+      } else if (field.textInput) {
+        (result as Record<string, unknown>)[field.key] = String(raw)
       } else {
         const n = parseFloat(String(raw))
         if (!isNaN(n) && n >= 0) {
@@ -68,6 +70,15 @@ export function MeasurementFields({ fields, inputUnit, onSubmit, defaultValues }
                 )
               })}
             </div>
+          ) : field.textInput ? (
+            <input
+              id={`measurement-${field.key}`}
+              type="text"
+              placeholder={field.hint}
+              value={String(values[field.key] ?? '')}
+              onChange={(e) => setField(field.key, e.target.value)}
+              className="w-40 px-2 py-1 text-xs rounded bg-gray-800 border border-gray-700 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500"
+            />
           ) : (
             <input
               id={`measurement-${field.key}`}

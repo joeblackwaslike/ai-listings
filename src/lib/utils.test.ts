@@ -87,3 +87,9 @@ test('getMeasurementFields: jewelry ring called without notableFeatures (2-arg f
   const fields = getMeasurementFields('jewelry', 'ring')
   assert.deepEqual(fields.map((f) => f.key), ['ring_inscribed_size', 'ring_id_mm'])
 })
+
+test('getMeasurementFields: ring_inscribed_size field is configured as free text, not numeric', () => {
+  const fields = getMeasurementFields('jewelry', 'ring', [])
+  const inscribedField = fields.find((f) => f.key === 'ring_inscribed_size')
+  assert.equal(inscribedField?.textInput, true)
+})

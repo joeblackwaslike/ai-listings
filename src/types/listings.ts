@@ -186,6 +186,7 @@ export interface MeasurementField {
   key: keyof Measurements;
   label: string;
   hint: string;
+  textInput?: true;
   useChips?: true;
   chipOptions?: string[];
 }

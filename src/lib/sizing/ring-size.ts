@@ -7,6 +7,9 @@
 // meaningfully off (see test file), which is why irregular-band rings need
 // two readings (detectIrregularRingStyle in ../jewelry-detection.ts).
 export function ringDiameterMmToUsSize(diameterMm: number): number {
+  if (!Number.isFinite(diameterMm) || diameterMm < 12 || diameterMm > 24) {
+    throw new Error(`Implausible ring diameter: ${diameterMm}mm (expected roughly 12-24mm)`)
+  }
   const circumferenceMm = Math.PI * diameterMm
   return (circumferenceMm - 36.5) / 2.55
 }

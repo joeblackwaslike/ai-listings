@@ -6,6 +6,7 @@ import { Send, Zap, Check, X, AlertCircle, ImagePlus } from 'lucide-react'
 import { SuggestedReplies } from './SuggestedReplies'
 import type { Suggestion } from './SuggestedReplies'
 import { MeasurementFields } from './MeasurementFields'
+import { formatMeasurementValue } from '@/lib/units'
 import type { DetailGateContext, Measurements } from '@/types/listings'
 
 interface ChatMessage {
@@ -156,6 +157,14 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     genderGateResolvedRef.current = true
     setShowMeasurements(false)
     setSuggestionsDismissed(true)
+
+    const parts = (detailGateContext?.measurementFields ?? [])
+      .filter((f) => measurements[f.key] !== undefined)
+      .map((f) => `${f.label}: ${formatMeasurementValue(f, measurements[f.key])}`)
+    const genderPart = pendingGender ? `Gender: ${pendingGender}` : null
+    const echoContent = [genderPart, ...parts].filter(Boolean).join(', ')
+    setMessages((prev) => [...prev, { id: uid(), role: 'user', content: echoContent }])
+
     setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Got it — running pricing research now. The listing will update in a moment." }])
     await fetch('/api/pipeline/confirm-gender', {
       method: 'POST',

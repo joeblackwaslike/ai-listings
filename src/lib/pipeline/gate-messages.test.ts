@@ -6,6 +6,7 @@ import {
   buildIdGateAck,
   buildIdGatePrompt,
   buildIdGateSnapshot,
+  notableFeaturesOf,
   shouldPersistInLoopGreeting,
   synthesizeGenderGateAnswer,
   synthesizeIdGateAnswer,
@@ -245,4 +246,22 @@ test('shouldPersistInLoopGreeting is false for every non-in_loop status', () => 
       `expected false for status ${status}`
     )
   }
+})
+
+test('notableFeaturesOf reads notable_features from visionAnalysis when present', () => {
+  const features = notableFeaturesOf({ visionAnalysis: { notable_features: ['Model: Submariner'] } })
+  assert.deepEqual(features, ['Model: Submariner'])
+})
+
+test('notableFeaturesOf falls back to textAnalysis when visionAnalysis is absent', () => {
+  const features = notableFeaturesOf({ textAnalysis: { notable_features: ['Model: Solitaire Ring'] }, source: 'text' })
+  assert.deepEqual(features, ['Model: Solitaire Ring'])
+})
+
+test('notableFeaturesOf returns an empty array when intake_meta is null', () => {
+  assert.deepEqual(notableFeaturesOf(null), [])
+})
+
+test('notableFeaturesOf returns an empty array when neither visionAnalysis nor textAnalysis is present', () => {
+  assert.deepEqual(notableFeaturesOf({}), [])
 })

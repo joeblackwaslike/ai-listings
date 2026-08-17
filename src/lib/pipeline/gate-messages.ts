@@ -15,7 +15,8 @@ export type IdGateListing = Pick<Listing, 'brand' | 'category' | 'condition' | '
 export type GenderGateListing = Pick<Listing, 'category' | 'intake_meta'>
 
 export function notableFeaturesOf(intakeMeta: Record<string, unknown> | null): string[] {
-  return (intakeMeta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
+  const source = intakeMeta?.visionAnalysis ?? intakeMeta?.textAnalysis
+  return (source as { notable_features?: string[] } | undefined)?.notable_features ?? []
 }
 
 export function buildIdGatePrompt(listing: IdGateListing): string {
