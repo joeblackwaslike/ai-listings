@@ -5,17 +5,22 @@ import type { NextRequest } from 'next/server'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  // Always redirect back to whatever origin this callback actually ran on, never
-  // NEXT_PUBLIC_SITE_URL -- the session cookie set by exchangeCodeForSession is
-  // scoped to the request's own domain, and NEXT_PUBLIC_SITE_URL points at the
-  // separate public joeblack.nyc domain (used only for platform OAuth callbacks,
-  // not sign-in). Redirecting there sent every login to an unreachable domain
-  // with no valid session cookie regardless (2026-08-15 incident).
-  const origin = new URL(request.url).origin
+  // Prefer APP_URL -- the same "where the user's browser actually lives" env var the
+  // platform-OAuth routes already use (src/app/api/auth/connect|callback/[platform]) --
+  // over deriving the origin from request.url. Behind this deployment's Tailscale ingress,
+  // request.url's origin resolves to http://0.0.0.0:3000 (the standalone server's own
+  // HOSTNAME/PORT bind config, deployment/Dockerfile), not the public hostname, because
+  // the ingress doesn't hand Next.js a usable Host header. Never NEXT_PUBLIC_SITE_URL
+  // either -- that points at the separate public joeblack.nyc domain (platform OAuth
+  // callbacks only), which 404s for sign-in and wouldn't carry the session cookie
+  // exchangeCodeForSession scopes to this request's own domain (2026-08-15 incident).
+  // APP_URL is unset in local dev, where request.url already resolves correctly (no
+  // proxy in the way), so fall back to it there.
+  const origin = process.env.APP_URL ?? new URL(request.url).origin
   const code = searchParams.get('code')
 
   if (!code) {
-    return NextResponse.redirect(new URL('/auth/error?reason=no_code', request.url))
+    return NextResponse.redirect(new URL('/auth/error?reason=no_code', origin))
   }
 
   const cookieStore = await cookies()
@@ -38,12 +43,12 @@ export async function GET(request: NextRequest) {
 
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
   if (exchangeError) {
-    return NextResponse.redirect(new URL('/auth/error?reason=exchange_failed', request.url))
+    return NextResponse.redirect(new URL('/auth/error?reason=exchange_failed', origin))
   }
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.redirect(new URL('/auth/error?reason=no_user', request.url))
+    return NextResponse.redirect(new URL('/auth/error?reason=no_user', origin))
   }
 
   const mode = process.env.REGISTRATION_MODE ?? 'open'
@@ -55,7 +60,7 @@ export async function GET(request: NextRequest) {
   const userEmail = (user.email ?? '').toLowerCase()
   if (mode === 'whitelist' && !allowedEmails.map((e) => e.toLowerCase()).includes(userEmail)) {
     await supabase.auth.signOut()
-    return NextResponse.redirect(new URL('/auth/error?reason=not_allowed', request.url))
+    return NextResponse.redirect(new URL('/auth/error?reason=not_allowed', origin))
   }
 
   if (mode === 'closed') {
@@ -63,7 +68,7 @@ export async function GET(request: NextRequest) {
     const isNewUser = Date.now() - createdAt < 60_000
     if (isNewUser) {
       await supabase.auth.signOut()
-      return NextResponse.redirect(new URL('/auth/error?reason=closed', request.url))
+      return NextResponse.redirect(new URL('/auth/error?reason=closed', origin))
     }
   }
 
