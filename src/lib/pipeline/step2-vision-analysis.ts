@@ -86,13 +86,17 @@ export async function runStep2VisionAnalysis(
     attrsStr ? `Attributes: ${attrsStr}` : null,
   ].filter(Boolean).join('\n')
 
+  const lensHint = step1.hasLensMatch
+    ? `Google Lens previously identified this item as: "${step1.title}" (brand: ${step1.brand}, category: ${step1.category}).
+Top lens matches: ${step1.lensMatches
+        .slice(0, 5)
+        .map((m) => m.title)
+        .join('; ')}.`
+    : 'Google Lens found no visual matches for this item -- identify it directly from the photo.'
+
   const prompt = `You are analyzing a product photo for a resale listing platform.
 
-Google Lens previously identified this item as: "${step1.title}" (brand: ${step1.brand}, category: ${step1.category}).
-Top lens matches: ${step1.lensMatches
-    .slice(0, 5)
-    .map((m) => m.title)
-    .join('; ')}.
+${lensHint}
 ${kgContext ? `\nGoogle Knowledge Graph:\n${kgContext}` : ''}
 ${correctionContext}
 
