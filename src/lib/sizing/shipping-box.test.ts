@@ -83,3 +83,15 @@ test('estimatedShippingBoxFromMeasuredBox: returns null when box_width_in is mis
 test('estimatedShippingBoxFromMeasuredBox: returns null when box_height_in is missing', () => {
   assert.equal(estimatedShippingBoxFromMeasuredBox({ box_length_in: 12, box_width_in: 8 }), null)
 })
+
+test('estimatedShippingBoxFromMeasuredBox: treats a non-numeric string dimension as missing, not as data to concatenate', () => {
+  assert.equal(
+    estimatedShippingBoxFromMeasuredBox({ box_length_in: '12' as unknown as number, box_width_in: 8, box_height_in: 4 }),
+    null
+  )
+})
+
+test('estimatedShippingBoxFromMeasuredBox: treats zero or negative dimensions as missing, not as valid input', () => {
+  assert.equal(estimatedShippingBoxFromMeasuredBox({ box_length_in: 0, box_width_in: 8, box_height_in: 4 }), null)
+  assert.equal(estimatedShippingBoxFromMeasuredBox({ box_length_in: 12, box_width_in: -8, box_height_in: 4 }), null)
+})

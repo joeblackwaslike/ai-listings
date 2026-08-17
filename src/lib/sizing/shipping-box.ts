@@ -53,6 +53,6 @@ export function computeEstimatedShippingBox(
 // padding, no category branching.
 export function estimatedShippingBoxFromMeasuredBox(measurements: Measurements): ShippingBoxDims | null {
   const { box_length_in, box_width_in, box_height_in } = measurements
-  if (box_length_in == null || box_width_in == null || box_height_in == null) return null
+  if (!isPositiveFiniteNumber(box_length_in) || !isPositiveFiniteNumber(box_width_in) || !isPositiveFiniteNumber(box_height_in)) return null
   return { length: box_length_in, width: box_width_in, height: box_height_in }
 }
