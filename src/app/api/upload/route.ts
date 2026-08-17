@@ -50,8 +50,11 @@ export async function POST(request: Request) {
     ext = 'png'
   }
 
-  // Auto-rotate per EXIF orientation, then normalise per-channel luminance (exposure + colour cast)
-  rawBuffer = Buffer.from(await sharp(rawBuffer).rotate().normalise().toBuffer())
+  // Auto-rotate per EXIF orientation. normalise() previously ran here too, but its
+  // percentile-based histogram stretch darkens already well-exposed photos (it assumes the
+  // input under-uses the 0-255 range, which most phone camera photos don't) -- confirmed via
+  // a controlled before/after brightness measurement on a real photo (ai-listings-orp).
+  rawBuffer = Buffer.from(await sharp(rawBuffer).rotate().toBuffer())
 
   const { data: listing, error: listingError } = await supabase
     .from('listings')
