@@ -142,7 +142,7 @@ Expected: PASS, all tests in the file green.
 
 - [ ] **Step 5: Update `MeasurementFields.tsx`'s render branch and submit parse gate**
 
-No automated test exists for this file (no `.tsx` test exists anywhere in this repo) — verified manually in Task 6.
+No automated test exists for this file (no `.tsx` test exists anywhere in this repo) — manual verification tracked in Task 6 (Step 7).
 
 Replace `handleSubmit()`, `src/components/workspace/MeasurementFields.tsx:27-44`:
 
@@ -424,13 +424,18 @@ export async function PATCH(
       p_user_id: user.id,
       p_patch: { estimated_shipping_box: box },
     })
-    if (boxError) return Response.json({ error: boxError.message }, { status: 500 })
-    if (mergedWithBox !== null) measurements = mergedWithBox as Measurements
+    if (boxError) {
+      console.error(`measurements route: estimated_shipping_box recompute failed for listing ${id} — ${boxError.message}`)
+    } else if (mergedWithBox !== null) {
+      measurements = mergedWithBox as Measurements
+    }
   }
 
   return Response.json({ ok: true, measurements })
 }
 ```
+
+(Revised during code-quality review, `09b0743`→`3a9a9a8`: the box-recompute failure is non-fatal — the first call's already-committed patch is still a valid response even if this follow-up errors, matching the design spec's stated intent. The block above reflects what actually shipped, not the pre-review-fix version.)
 
 No automated test exists for API routes in this repo — verified manually in Task 6 against the real k8s Supabase (two sequential PATCHes on the same listing, non-owner PATCH returns 404).
 
@@ -537,7 +542,7 @@ ai-listings-0wd"
 
 - [ ] **Step 7: Wire the gender_gate block into the text-intake pipeline**
 
-No automated test exists for Inngest step functions in this repo (`intake-pipeline.ts` itself has no test file) — verified manually in Task 6.
+No automated test exists for Inngest step functions in this repo (`intake-pipeline.ts` itself has no test file) — manual verification tracked in Task 6 (Step 5).
 
 Replace the import block at the top of `src/lib/inngest/functions/text-intake-pipeline.ts` (lines 1-10):
 
@@ -749,7 +754,7 @@ Replace `handleMeasurementsSubmit`, `src/components/workspace/AgentChat.tsx:155-
   }
 ```
 
-No automated test exists for this file (no `.tsx` test exists anywhere in this repo) — verified manually in Task 6 against a live `gender_gate` listing.
+No automated test exists for this file (no `.tsx` test exists anywhere in this repo) — manual verification tracked in Task 6 (Step 6).
 
 **Out of scope for this task:** a broader audit of other confirm-style actions with the same missing-echo gap (e.g. `suggestion.confirmPhotos` in `handleSuggestionSelect`, `AgentChat.tsx:224-226`, which has no echo of any kind and no `return`) — noted per the spec as a candidate for future work, not fixed here.
 
