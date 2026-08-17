@@ -158,7 +158,11 @@ export async function GET(req: Request) {
     } else {
       return Response.redirect(`${settingsUrl}?error=not_implemented`)
     }
-  } catch {
+  } catch (err) {
+    // Previously silent -- any unexpected throw during the token exchange (network failure,
+    // malformed provider response, etc.) redirected to a generic error with no trace of what
+    // actually happened, indistinguishable later from every other failure mode above.
+    console.error(`[oauth/${platform}] unexpected error during token exchange:`, err instanceof Error ? err.message : err)
     return Response.redirect(`${settingsUrl}?error=unexpected`)
   }
 
