@@ -13,3 +13,19 @@ test('ringDiameterMmToUsSize: single narrowest-point reading (16.5mm) undershoot
 test('ringDiameterMmToUsSize: averaged reading (17.4mm) lands close to the true US 7.5', () => {
   assert.ok(Math.abs(ringDiameterMmToUsSize(17.4) - 7.1) < 0.1)
 })
+
+test('ringDiameterMmToUsSize: throws when diameter is below the plausible floor (~12mm)', () => {
+  assert.throws(() => ringDiameterMmToUsSize(11.9), /implausible ring diameter/i)
+})
+
+test('ringDiameterMmToUsSize: throws when diameter is above the plausible ceiling (~24mm)', () => {
+  assert.throws(() => ringDiameterMmToUsSize(24.1), /implausible ring diameter/i)
+})
+
+test('ringDiameterMmToUsSize: accepts a diameter just inside the floor boundary (12mm)', () => {
+  assert.doesNotThrow(() => ringDiameterMmToUsSize(12))
+})
+
+test('ringDiameterMmToUsSize: accepts a diameter just inside the ceiling boundary (24mm)', () => {
+  assert.doesNotThrow(() => ringDiameterMmToUsSize(24))
+})
