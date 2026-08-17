@@ -110,8 +110,8 @@ export async function GET(request: NextRequest) {
     // Previously uncaught: any unexpected throw here (a network error reaching Supabase,
     // a malformed cookie, etc.) fell through to Next.js's default error handling with no
     // auth-specific log line, indistinguishable later from any other route crash.
-    authLog.error('callback_unexpected_error', { error: errorInfo(err) })
     const origin = process.env.APP_URL ?? new URL(request.url).origin
+    authLog.error('callback_unexpected_error', { origin, error: errorInfo(err) })
     return NextResponse.redirect(new URL('/auth/error?reason=unexpected', origin))
   }
 }
