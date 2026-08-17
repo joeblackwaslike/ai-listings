@@ -29,3 +29,7 @@ test('ringDiameterMmToUsSize: accepts a diameter just inside the floor boundary 
 test('ringDiameterMmToUsSize: accepts a diameter just inside the ceiling boundary (24mm)', () => {
   assert.doesNotThrow(() => ringDiameterMmToUsSize(24))
 })
+
+test('ringDiameterMmToUsSize: throws on NaN instead of silently returning NaN', () => {
+  assert.throws(() => ringDiameterMmToUsSize(NaN), /implausible ring diameter/i)
+})
