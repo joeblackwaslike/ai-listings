@@ -36,11 +36,17 @@ export async function POST() {
     (photos ?? []).map((p: { listing_id: string; raw_url: string }) => [p.listing_id, p.raw_url])
   )
 
-  // Clear blocked state before re-firing so onFailure doesn't double-write
-  await admin
+  // Clear blocked state before re-firing so onFailure doesn't double-write. status is left
+  // alone -- 'processing' isn't a value listings_status_check allows, so setting it here
+  // always failed the whole UPDATE (agent_blocked included) with no error surfaced, meaning
+  // a restart never actually cleared the blocked UI state even when the re-fired pipeline
+  // run succeeded (ai-listings-0d6). The pipeline's own steps set status as they progress.
+  const { error: clearError } = await admin
     .from('listings')
-    .update({ agent_blocked: false, agent_blocked_reason: null, status: 'processing' })
+    .update({ agent_blocked: false, agent_blocked_reason: null })
     .in('id', listingIds)
+
+  if (clearError) return Response.json({ error: clearError.message }, { status: 500 })
 
   const events = listingIds
     .filter((id: string) => photoByListing[id])
