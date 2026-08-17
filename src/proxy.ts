@@ -24,6 +24,35 @@ function isPublicPath(pathname: string): boolean {
   )
 }
 
+// AuthRetryableFetchError means the fetch to Supabase Auth itself failed (network/DNS/
+// timeout) -- it says nothing about whether the session is valid, unlike
+// AuthSessionMissingError or an invalid/expired-JWT AuthApiError. Retrying once separates
+// a transient in-cluster network blip from a genuinely dead session, instead of kicking a
+// user with a perfectly valid cookie straight to /login on a single failed fetch (confirmed
+// live 2026-08-17 -- see ai-listings-di1). @supabase/supabase-js doesn't re-export the
+// AuthRetryableFetchError class for an instanceof check, so this checks the error name --
+// the same field already captured by proxy_check's structured logging below.
+const RETRYABLE_AUTH_ERROR_NAME = 'AuthRetryableFetchError'
+const GET_USER_RETRY_DELAY_MS = 150
+
+async function getUserWithRetry(
+  supabase: ReturnType<typeof createServerClient>,
+  path: string
+): Promise<Awaited<ReturnType<typeof supabase.auth.getUser>>> {
+  const first = await supabase.auth.getUser()
+  if (first.error?.name !== RETRYABLE_AUTH_ERROR_NAME) return first
+
+  authLog.warn('proxy_getUser_retry', { path, error: errorInfo(first.error) })
+  await new Promise((resolve) => setTimeout(resolve, GET_USER_RETRY_DELAY_MS))
+  const second = await supabase.auth.getUser()
+  authLog.info('proxy_getUser_retry_result', {
+    path,
+    recovered: !second.error,
+    error: second.error ? errorInfo(second.error) : null,
+  })
+  return second
+}
+
 async function checkAuth(request: NextRequest): Promise<NextResponse> {
   let supabaseResponse = NextResponse.next({ request })
   let refreshedCookies: { name: string; length: number }[] | null = null
@@ -50,8 +79,8 @@ async function checkAuth(request: NextRequest): Promise<NextResponse> {
     }
   )
 
-  const { data: { user }, error: getUserError } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
+  const { data: { user }, error: getUserError } = await getUserWithRetry(supabase, pathname)
 
   const agentToken = process.env.AGENT_BYPASS_TOKEN
   const hasAgentToken = Boolean(agentToken && request.headers.get('x-agent-token') === agentToken)
