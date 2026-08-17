@@ -773,50 +773,40 @@ ai-listings-9ch"
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the full test suite**
+- [x] **Step 1: Run the full test suite**
 
 Run: `npm test`
 Expected: 155 tests, 155 pass (142 baseline + 4 ring-size + 1 utils + 4 shipping-box + 4 gate-messages), 0 fail.
+**Result:** 155/155 pass, confirmed independently by the final holistic reviewer as well as each task's own verification.
 
-- [ ] **Step 2: Type-check the whole project**
+- [x] **Step 2: Type-check the whole project**
 
 Run: `npx tsc --noEmit`
 Expected: only the one pre-existing, unrelated error in `oauth-backend.ts`; no new errors.
+**Result:** clean, exit 0 — the anticipated pre-existing `oauth-backend.ts` error no longer reproduces (unrelated to this batch; a net improvement, not a regression this batch caused).
 
-- [ ] **Step 3: Lint the changed files**
+- [x] **Step 3: Lint the whole project**
 
-Run: `npx eslint src/lib/sizing/ring-size.ts src/types/listings.ts src/lib/utils.ts src/components/workspace/MeasurementFields.tsx src/lib/sizing/shipping-box.ts "src/app/api/listings/[id]/measurements/route.ts" src/lib/pipeline/gate-messages.ts src/lib/inngest/functions/text-intake-pipeline.ts src/components/workspace/AgentChat.tsx`
-Expected: no errors.
+Run: `npx eslint .`
+Expected: no errors introduced by this batch.
+**Result:** 1 error + 55 warnings, all confirmed pre-existing and in files this batch never touched (verified against `origin/main`) — the one warning inside a touched file (`text-intake-pipeline.ts:215`, unused `imageUrl`) is on a line the diff didn't modify.
 
-- [ ] **Step 4: Manual smoke — `ai-listings-0en` (two-PATCH no-clobber)**
+- [x] **Step 4: Manual smoke — `ai-listings-0en` (two-PATCH no-clobber)**
 
-Against a real test listing (`<id>`), run two sequential PATCHes:
-```bash
-curl -X PATCH https://ai-listings.napoleon-catfish.ts.net/api/listings/<id>/measurements \
-  -H 'Content-Type: application/json' -H 'Cookie: <session cookie>' \
-  -d '{"box_length_in": 12, "box_width_in": 8, "box_height_in": 4}'
-curl -X PATCH https://ai-listings.napoleon-catfish.ts.net/api/listings/<id>/measurements \
-  -H 'Content-Type: application/json' -H 'Cookie: <session cookie>' \
-  -d '{"weight_oz": 16}'
-```
-Then confirm both landed:
-```bash
-kubectl exec -n sup-ai-listings ai-listings-supabase-db-0 -- psql -U postgres -t -c "SELECT measurements FROM listings WHERE id = '<id>';"
-```
-Expected: the row contains `box_length_in: 12, box_width_in: 8, box_height_in: 4, weight_oz: 16, estimated_shipping_box: {...}` all together — neither PATCH clobbered the other.
+Performed during Task 3's implementation and independently re-verified during its code-quality review: functional checks run directly against real production rows via `kubectl exec ... psql`, wrapped in `BEGIN; ... ROLLBACK;` (no data mutated) — correct-owner merge onto a row with existing measurements (old keys preserved, new key added), merge onto `measurements = NULL` (coalesce path), and a wrong-owner call (confirmed returns no row / NULL). The live RPC's `pg_get_functiondef` output was diffed against the migration file and matches verbatim; `prosecdef = f` confirmed (not security-definer, so RLS's `owner_access` policy is the real backstop, as designed).
+**Not performed:** an actual two-sequential-PATCH-over-HTTP run against a live session cookie (the curl commands as originally written) — this requires a real browser-authenticated session, which was not available in this session (see Steps 5-7 below). The rollback-wrapped SQL-level verification above exercises the same atomic-merge code path the route calls, so it's strong evidence, but it doesn't exercise the Next.js route handler itself end-to-end.
 
-- [ ] **Step 5: Manual smoke — `ai-listings-0wd` (text-intake gender_gate parity)**
+- [ ] **Step 5: Manual smoke — `ai-listings-0wd` (text-intake gender_gate parity)** — **NOT COMPLETED, needs Joe**
 
-Submit a text-intake listing (`/intake-text` or the equivalent API call), confirm it reaches `status = 'gender_gate'`, send a `pipeline/gender-confirmed` event (via the normal `AgentChat` measurements form, same as photo-intake), and confirm the listing's `measurements.estimated_shipping_box` is populated afterward.
+Attempted via browser automation against `http://localhost:3000` with a real `gender_gate` listing already in the database. Blocked: no Supabase login session available to this session. The app's `x-agent-token`/`AGENT_BYPASS_TOKEN` proxy bypass (`src/proxy.ts:56-57`) was tried and confirmed to only skip the middleware's redirect-to-login — it does not (and by design should not) bypass `auth.getUser()`/RLS inside the actual page/route, so the listing page correctly 404s with no real session. This is the same class of gap already tracked for `ai-listings-kni`. Needs a live click-through by Joe (or a real session cookie handed to the agent) to actually submit a text-intake listing, watch it reach `gender_gate`, resolve it, and confirm `estimated_shipping_box` lands in `measurements`.
 
-- [ ] **Step 6: Manual smoke — `ai-listings-9ch` (chat echo)**
+- [ ] **Step 6: Manual smoke — `ai-listings-9ch` (chat echo)** — **NOT COMPLETED, needs Joe**
 
-Run: `npm run dev`
-Open a listing at `gender_gate` with measurement fields, submit the `MeasurementFields` form, and confirm a `user`-role chat bubble appears showing the submitted gender/measurements, immediately followed by the existing assistant acknowledgment.
+Same blocker as Step 5 — no authenticated session available. Code-level verification (spec compliance + code quality review, both independently reading the actual diff) confirms the echo logic is correct and ordered properly, and confirmed the previously-flagged "empty echo" edge case does not render visibly due to an existing `{msg.content && ...}` guard — but no live click-through was performed.
 
-- [ ] **Step 7: Manual smoke — `ai-listings-5iy` (ring_inscribed_size text input)**
+- [ ] **Step 7: Manual smoke — `ai-listings-5iy` (ring_inscribed_size text input)** — **NOT COMPLETED, needs Joe**
 
-In the same dev session, open a `gender_gate` listing categorized as jewelry/ring, confirm the "Inscribed Size" field accepts free text (e.g. `"6 1/4"`) and submits it verbatim.
+Same blocker as Step 5. Code-level verification (spec compliance + code quality review) confirms the render branch and submit-parse gate are correct, but no live click-through confirming the actual rendered `<input type="text">` accepts `"6 1/4"` was performed.
 
 ---
 
