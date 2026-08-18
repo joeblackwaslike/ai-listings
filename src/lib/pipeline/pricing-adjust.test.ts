@@ -112,3 +112,60 @@ test('inclusionPremiumCents: matching is case-insensitive', () => {
   )
   assert.equal(cents, 400)
 })
+
+import { authenticityPremiumCents } from './pricing-adjust'
+
+test('authenticityPremiumCents: original docSource below threshold applies premium', () => {
+  const cents = authenticityPremiumCents(
+    'jewelry', null,
+    [inclusion('Authenticity card', { docSource: 'original' })],
+    10_000 // low tier, below jewelry's $500 threshold
+  )
+  assert.equal(cents, 500) // original, low tier
+})
+
+test('authenticityPremiumCents: at or above the category threshold, premium is $0', () => {
+  const cents = authenticityPremiumCents(
+    'jewelry', null,
+    [inclusion('Authenticity card', { docSource: 'original' })],
+    50_000 // exactly at jewelry's $500 threshold
+  )
+  assert.equal(cents, 0)
+})
+
+test('authenticityPremiumCents: category with no documented threshold always applies', () => {
+  const cents = authenticityPremiumCents(
+    'watches', null,
+    [inclusion('Authenticity card', { docSource: 'reseller' })],
+    200_000 // very high price — watches has no threshold entry
+  )
+  assert.equal(cents, 2500) // reseller, high tier
+})
+
+test('authenticityPremiumCents: no confirmed authenticity card returns $0', () => {
+  const cents = authenticityPremiumCents('jewelry', null, [], 10_000)
+  assert.equal(cents, 0)
+})
+
+test('authenticityPremiumCents: confirmed card with no docSource returns $0', () => {
+  const cents = authenticityPremiumCents(
+    'jewelry', null, [inclusion('Authenticity card')], 10_000
+  )
+  assert.equal(cents, 0)
+})
+
+test('authenticityPremiumCents: unconfirmed authenticity card returns $0', () => {
+  const cents = authenticityPremiumCents(
+    'jewelry', null,
+    [inclusion('Authenticity card', { docSource: 'original', confirmed: false })],
+    10_000
+  )
+  assert.equal(cents, 0)
+})
+
+test('authenticityPremiumCents: third_party docSource scales by tier', () => {
+  const low = authenticityPremiumCents('sneakers', null, [inclusion('Authenticity card', { docSource: 'third_party' })], 5_000)
+  const mid = authenticityPremiumCents('watches', null, [inclusion('Authenticity card', { docSource: 'third_party' })], 30_000)
+  assert.equal(low, 200)
+  assert.equal(mid, 600)
+})

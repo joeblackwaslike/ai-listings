@@ -1,4 +1,4 @@
-import type { ClothingSubType, Inclusion, JewelrySubType, ListingCategory } from '@/types/listings'
+import type { AuthCardSource, ClothingSubType, Inclusion, JewelrySubType, ListingCategory } from '@/types/listings'
 import { getInclusionChecklist } from '@/lib/inclusions'
 
 export function conditionDelta(
@@ -127,4 +127,48 @@ export function inclusionPremiumCents(
       const premium = entry.isTag && item.tagState === 'severed' ? Math.round(table[tier] / 2) : table[tier]
       return sum + premium
     }, 0)
+}
+
+const AUTH_THRESHOLD_CENTS: Partial<Record<ListingCategory, number>> = {
+  jewelry: 50_000,
+  sneakers: 7_500,
+  collectibles: 20_000,
+  handbag: 50_000,
+  small_leather_goods: 50_000,
+}
+
+const AUTHENTICITY_PREMIUM_CENTS: Record<AuthCardSource, Record<PriceTier, number>> = {
+  original: { low: 500, mid: 2000, high: 5000 },
+  reseller: { low: 300, mid: 1000, high: 2500 },
+  third_party: { low: 200, mid: 600, high: 1500 },
+}
+
+/**
+ * Below the category's mandatory-authentication threshold (eBay Authenticity Guarantee /
+ * Poshmark Posh Authenticate — see the design doc for sourced figures), the seller's own
+ * authenticity documentation is the only signal a buyer has, so it adds value. At/above
+ * threshold the platform authenticates independently regardless of docSource, so the premium
+ * drops to $0 (hard cutoff, not a taper). Categories with no documented threshold always apply
+ * the premium.
+ */
+export function authenticityPremiumCents(
+  category: ListingCategory | null,
+  subType: ClothingSubType | JewelrySubType | null,
+  inclusions: Inclusion[],
+  basePriceCents: number
+): number {
+  const cat = category ?? 'other'
+  const checklist = getInclusionChecklist(cat, subType)
+  const authCardEntry = checklist.find((c) => c.isAuthCard)
+  if (!authCardEntry) return 0
+
+  const card = inclusions.find(
+    (i) => i.confirmed && i.item.trim().toLowerCase() === authCardEntry.item.trim().toLowerCase()
+  )
+  if (!card?.docSource) return 0
+
+  const threshold = AUTH_THRESHOLD_CENTS[cat]
+  if (threshold != null && basePriceCents >= threshold) return 0
+
+  return AUTHENTICITY_PREMIUM_CENTS[card.docSource][priceTierOf(basePriceCents)]
 }
