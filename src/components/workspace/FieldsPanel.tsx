@@ -184,6 +184,11 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   // Only "provisional" when we're actually displaying computeAdjustedPricing's gated result --
   // an explicit final_price_cents override is definitive regardless of gate state.
   const isProvisional = listing.final_price_cents == null && !gateUnlocked
+  // pricing.priceToMoveCents is always derived from the comps-based estimate, not from an
+  // override -- showing it next to a final_price_cents override headline produces a
+  // contradictory "$X to move" above an already-lower resolved price. Suppress it whenever an
+  // override is in effect rather than deriving a second discount off the override.
+  const showPriceToMove = listing.final_price_cents == null
   // The stored condition_delta/adjusted_price_cents columns on each comp reflect the listing's
   // condition at step3 gather-time -- recompute against the current condition here too, or the
   // drawer shows adjustment labels/prices that no longer support resolvedPriceCents above (e.g.
@@ -282,7 +287,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
                 <span className="text-xs text-gray-500">{listing.confidence_score}% confidence</span>
               )}
             </div>
-            {pricing.priceToMoveCents != null && (
+            {showPriceToMove && pricing.priceToMoveCents != null && (
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-amber-400 font-medium">{formatPrice(pricing.priceToMoveCents)}</span>
                 <span className="text-xs text-gray-500">
@@ -667,7 +672,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
         comps={currentComps}
         suggestedPriceCents={resolvedPriceCents}
         confidenceScore={listing.confidence_score}
-        priceToMoveCents={pricing.priceToMoveCents}
+        priceToMoveCents={showPriceToMove ? pricing.priceToMoveCents : null}
         priceToMoveDiscountPct={listing.price_to_move_discount_pct}
         retailPriceCents={listing.retail_price_cents}
         retailPriceSource={listing.retail_price_source}

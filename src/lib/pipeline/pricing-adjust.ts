@@ -182,7 +182,10 @@ export interface AdjustedPricing {
   compCount: number
 }
 
-export type PricingListing = Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'>
+export type PricingListing = Pick<
+  Listing,
+  'condition' | 'category' | 'sub_type' | 'inclusions' | 'suggested_price_cents'
+>
 
 /**
  * The single source of truth for "what does this listing cost" — used for FieldsPanel display,
@@ -192,7 +195,10 @@ export type PricingListing = Pick<Listing, 'condition' | 'category' | 'sub_type'
  * back to false post-intake — see condition-reassessment.ts. `includePremiums: false`
  * reproduces step3's original comps+condition-only estimate; `includePremiums: true` layers on
  * inclusion + authenticity premiums, both computed off the pre-premium base price so they can't
- * create a circular price-tier lookup.
+ * create a circular price-tier lookup. When there are no sold comps, the pre-premium base falls
+ * back to `suggested_price_cents` (step4a's model estimate) whenever premiums are being included
+ * -- otherwise a confirmed box/tag/authenticity card would silently earn no premium at all just
+ * because step3 found zero comps.
  */
 export function computeAdjustedPricing(
   listing: PricingListing,
@@ -205,12 +211,15 @@ export function computeAdjustedPricing(
     .sort((a, b) => a - b)
 
   const mid = Math.floor(adjustedCompPrices.length / 2)
-  const basePriceCents =
+  const compBasePriceCents =
     adjustedCompPrices.length === 0
       ? null
       : adjustedCompPrices.length % 2 === 0
         ? Math.round((adjustedCompPrices[mid - 1] + adjustedCompPrices[mid]) / 2)
         : adjustedCompPrices[mid]
+
+  const basePriceCents =
+    compBasePriceCents ?? (opts.includePremiums ? listing.suggested_price_cents ?? null : null)
 
   const inclusionPremium =
     opts.includePremiums && basePriceCents != null
