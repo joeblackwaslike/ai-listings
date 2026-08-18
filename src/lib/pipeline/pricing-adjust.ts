@@ -123,8 +123,11 @@ export function inclusionPremiumCents(
       const table = INCLUSION_PREMIUM_CENTS[cat]?.[entry.item] ?? BASE_ITEM_PREMIUMS[entry.item]
       if (!table) return sum
 
-      // tagState is 'attached' | 'severed' | undefined; anything other than 'severed' gets full premium
-      const premium = entry.isTag && item.tagState === 'severed' ? Math.round(table[tier] / 2) : table[tier]
+      // tagState is 'attached' | 'severed' | undefined. Full premium requires an explicit
+      // 'attached' -- manually adding a tag via the checklist "+" action has no control to set
+      // tagState at all, so undefined must NOT default to full premium, or a manually entered
+      // severed tag (undetected by step2) silently inflates the price.
+      const premium = entry.isTag && item.tagState !== 'attached' ? Math.round(table[tier] / 2) : table[tier]
       return sum + premium
     }, 0)
 }

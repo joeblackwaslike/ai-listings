@@ -94,6 +94,13 @@ test('inclusionPremiumCents: severed brand tag is halved vs. attached', () => {
   assert.equal(severed, 250)
 })
 
+test('inclusionPremiumCents: brand tag with no tagState (e.g. added manually, no UI control sets it) gets the halved premium, not full', () => {
+  const cents = inclusionPremiumCents(
+    'sneakers', null, [inclusion('Brand tag')], 10_000
+  )
+  assert.equal(cents, 250) // full premium requires an explicit 'attached', not just "not severed"
+})
+
 test('inclusionPremiumCents: the authenticity card itself contributes $0 here (handled separately)', () => {
   const cents = inclusionPremiumCents(
     'jewelry', null, [inclusion('Authenticity card', { docSource: 'original' })], 10_000
