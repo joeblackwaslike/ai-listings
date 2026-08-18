@@ -11,7 +11,7 @@ import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { getInclusionChecklist } from '@/lib/inclusions'
-import { computeAdjustedPricing } from '@/lib/pipeline/pricing-adjust'
+import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
@@ -171,7 +171,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const checklistCandidates = getInclusionChecklist(listing.category ?? '', listing.sub_type)
     .filter((c) => !inclusions.some((i) => i.item.trim().toLowerCase() === c.item.trim().toLowerCase()))
 
-  const gateUnlocked = listing.condition_confirmed && inclusions.every((i) => i.confirmed)
+  const gateUnlocked = isPricingGateUnlocked({ condition_confirmed: listing.condition_confirmed, inclusions })
   const pricing = computeAdjustedPricing(listing, comps, { includePremiums: gateUnlocked })
 
   async function saveAuthPlan(updated: AuthStep[]) {

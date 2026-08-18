@@ -235,3 +235,15 @@ export function computeAdjustedPricing(
     compCount: soldComps.length,
   }
 }
+
+/**
+ * The pricing gate: true once condition and every inclusion are confirmed, meaning
+ * computeAdjustedPricing can safely be called with includePremiums: true. Shared by
+ * FieldsPanel display, the finalize-route gate, the eBay publish price, and the
+ * auto-discount cron — do not re-derive this boolean inline at new call sites.
+ */
+export function isPricingGateUnlocked(
+  listing: Pick<Listing, 'condition_confirmed' | 'inclusions'>
+): boolean {
+  return listing.condition_confirmed && listing.inclusions.every((i) => i.confirmed)
+}

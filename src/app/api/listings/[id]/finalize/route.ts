@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
 import type { Inclusion } from '@/types/listings'
 
 export async function PATCH(
@@ -28,7 +29,7 @@ export async function PATCH(
   // pricing-adjust.ts. Finalizing before either is confirmed would lock in a price that hasn't
   // accounted for them.
   const inclusions = (listing.inclusions ?? []) as unknown as Inclusion[]
-  if (!listing.condition_confirmed || inclusions.some((i) => !i.confirmed)) {
+  if (!isPricingGateUnlocked({ condition_confirmed: listing.condition_confirmed, inclusions })) {
     return Response.json(
       { error: 'Confirm condition and all inclusions before finalizing.' },
       { status: 400 }
