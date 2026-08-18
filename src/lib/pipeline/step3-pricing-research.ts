@@ -628,14 +628,13 @@ export async function runStep3PricingResearch(
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
 
-  // Clear any pricing_comps from a prior run before inserting fresh results -- step3 can be
-  // retried (see retry-step.ts), and computeAdjustedPricing (pricing-adjust.ts) treats every
-  // stored row for the listing as current, sold-comp evidence. Without this, a retry would
-  // blend stale and current comps into the median instead of replacing it.
-  const { error: deleteError } = await supabase.from('pricing_comps').delete().eq('listing_id', listingId)
-  if (deleteError) {
-    throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
-  }
+  // step3 can be retried (see retry-step.ts), and computeAdjustedPricing (pricing-adjust.ts)
+  // treats every stored pricing_comps row for the listing as current, sold-comp evidence -- a
+  // retry that only inserted its fresh results would blend stale and current comps into the
+  // median. Replace the prior run's rows, but insert-then-delete (not delete-then-insert): if
+  // the insert below fails, the earlier delete would otherwise leave the listing with zero
+  // comps even though the prior run's evidence was still valid.
+  const researchStartedAt = new Date().toISOString()
 
   // Insert all: filtered sold comps + active market context
   const toInsert = [...filteredComps, ...activeRows]
@@ -644,6 +643,17 @@ export async function runStep3PricingResearch(
     if (error) {
       throw new Error(`step3: pricing_comps insert failed — ${error.message}`)
     }
+  }
+
+  // Only now that the fresh comps are safely stored, clear anything from a prior run --
+  // the cutoff excludes the rows just inserted above.
+  const { error: deleteError } = await supabase
+    .from('pricing_comps')
+    .delete()
+    .eq('listing_id', listingId)
+    .lt('created_at', researchStartedAt)
+  if (deleteError) {
+    throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
   }
 
   const confidenceScore = calcConfidenceScore(filteredComps.length)

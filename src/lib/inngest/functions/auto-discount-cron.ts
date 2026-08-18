@@ -94,10 +94,17 @@ export const autoDiscountCron = inngest.createFunction(
 
           let currentPrice = listing.final_price_cents as number | null
           if (currentPrice == null) {
-            const { data: compRows } = await supabase
+            const { data: compRows, error: compsError } = await supabase
               .from('pricing_comps')
               .select('*')
               .eq('listing_id', listing.id)
+            // A failed comps fetch must not silently fall through to the unadjusted
+            // suggested_price_cents -- that would discount off (and permanently persist) a
+            // lower, premium-free price. Skip this listing and retry on the next run instead.
+            if (compsError) {
+              console.error(`auto-discount: pricing_comps fetch failed for listing ${listing.id as string}:`, compsError)
+              continue
+            }
             const comps = (compRows ?? []) as unknown as PricingComp[]
             const inclusions = (listing.inclusions as Inclusion[] | null) ?? []
             const pricingListing: PricingListing = {
