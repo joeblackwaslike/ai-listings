@@ -1,3 +1,6 @@
+import type { ClothingSubType, Inclusion, JewelrySubType, ListingCategory } from '@/types/listings'
+import { getInclusionChecklist } from '@/lib/inclusions'
+
 export function conditionDelta(
   listingCondition: string,
   compCondition: string
@@ -51,9 +54,6 @@ export function priceTierOf(priceCents: number): PriceTier {
   if (priceCents < 75_000) return 'mid'
   return 'high'
 }
-
-import type { ClothingSubType, Inclusion, JewelrySubType, ListingCategory } from '@/types/listings'
-import { getInclusionChecklist } from '@/lib/inclusions'
 
 const BASE_ITEM_PREMIUMS: Record<string, Record<PriceTier, number>> = {
   'Original box': { low: 400, mid: 1000, high: 2500 },
@@ -123,6 +123,7 @@ export function inclusionPremiumCents(
       const table = INCLUSION_PREMIUM_CENTS[cat]?.[entry.item] ?? BASE_ITEM_PREMIUMS[entry.item]
       if (!table) return sum
 
+      // tagState is 'attached' | 'severed' | undefined; anything other than 'severed' gets full premium
       const premium = entry.isTag && item.tagState === 'severed' ? Math.round(table[tier] / 2) : table[tier]
       return sum + premium
     }, 0)
