@@ -76,6 +76,12 @@ test('mergeDetectedInclusions: with no new items, returns existing list unchange
   assert.deepEqual(merged, existing)
 })
 
+test('mergeDetectedInclusions: dedupes case-insensitive duplicates within the same detected batch', () => {
+  const merged = mergeDetectedInclusions([], [detected('Brand tag'), detected('brand tag'), detected('Receipt')])
+  assert.equal(merged.length, 2)
+  assert.deepEqual(merged.map((i) => i.item), ['Brand tag', 'Receipt'])
+})
+
 test('mergeDetectedInclusions: preserves tagState and docSource on newly detected items', () => {
   const merged = mergeDetectedInclusions([], [
     { item: 'Brand tag', notes: null, tagState: 'attached' },

@@ -33,9 +33,14 @@ export function mergeDetectedInclusions(
   existing: Inclusion[],
   detected: Omit<Inclusion, 'source' | 'confirmed'>[]
 ): Inclusion[] {
-  const existingNames = new Set(existing.map((i) => i.item.trim().toLowerCase()))
+  const seenNames = new Set(existing.map((i) => i.item.trim().toLowerCase()))
   const fresh: Inclusion[] = detected
-    .filter((d) => !existingNames.has(d.item.trim().toLowerCase()))
+    .filter((d) => {
+      const name = d.item.trim().toLowerCase()
+      if (seenNames.has(name)) return false
+      seenNames.add(name)
+      return true
+    })
     .map((d) => ({ ...d, source: 'detected' as InclusionSource, confirmed: false }))
   return [...existing, ...fresh]
 }
