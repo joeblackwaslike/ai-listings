@@ -228,14 +228,21 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   }
 
   async function saveInclusions(updated: Inclusion[]) {
+    const previous = inclusions
     savingInclusionsRef.current = true
     setInclusions(updated)
     try {
-      await fetch(`/api/listings/${listing.id}/inclusions`, {
+      const res = await fetch(`/api/listings/${listing.id}/inclusions`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ inclusions: updated }),
       })
+      // The gate (isPricingGateUnlocked) and the premium-adjusted price both read this
+      // optimistic state directly -- on a failed save, roll back rather than leaving an
+      // unlocked gate / premium price displayed for inclusions that were never persisted.
+      if (!res.ok) setInclusions(previous)
+    } catch {
+      setInclusions(previous)
     } finally {
       savingInclusionsRef.current = false
     }
