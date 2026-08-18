@@ -16,6 +16,12 @@ import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pr
  * `mapConditionToEbay`/`mapConditionIdToEbay`, both of which expect the internal enum; passing
  * `condition_id` straight through here would double-map an already-mapped value and silently
  * fall back to eBay's "GOOD"/2500 default for almost every listing.
+ *
+ * Throws if no price can be derived at all -- i.e. `final_price_cents` is unset AND
+ * `computeAdjustedPricing` has no comps to work from (it returns `priceCents: null` when
+ * `comps` is empty). This is a real, reachable state (zero sold comps is a normal pricing-
+ * research outcome), and the alternative -- silently falling back to `price: 0` -- would
+ * publish a live eBay listing at $0.00 with no error or warning.
  */
 export async function buildUnifiedListingForEbay(
   listing: Listing,
@@ -46,7 +52,12 @@ export async function buildUnifiedListingForEbay(
   // reach 'finalizing'/publish without passing that gate, but this is computed defensively
   // rather than assumed).
   const adjusted = computeAdjustedPricing(listing, comps, { includePremiums: isPricingGateUnlocked(listing) });
-  const priceCents = listing.final_price_cents ?? adjusted.priceCents ?? 0;
+  const priceCents = listing.final_price_cents ?? adjusted.priceCents;
+  if (priceCents == null) {
+    throw new Error(
+      'buildUnifiedListingForEbay: no price available -- final_price_cents is unset and computeAdjustedPricing found no comps to derive a price from',
+    );
+  }
 
   return {
     internalId: listing.sku,

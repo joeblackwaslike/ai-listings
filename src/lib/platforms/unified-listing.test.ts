@@ -87,7 +87,7 @@ function fixtureComp(overrides: Partial<PricingComp> = {}): PricingComp {
 }
 
 test('buildUnifiedListingForEbay maps title/description/item_specifics from platform_fields.ebay', async () => {
-  const result = await buildUnifiedListingForEbay(fixtureListing(), [], [])
+  const result = await buildUnifiedListingForEbay(fixtureListing(), [], [fixtureComp()])
   assert.equal(result.title, 'Coach Handbag — Like New')
   assert.equal(result.description, 'eBay-optimized description')
   assert.deepEqual(result.platformFields, {
@@ -97,7 +97,7 @@ test('buildUnifiedListingForEbay maps title/description/item_specifics from plat
 })
 
 test('buildUnifiedListingForEbay uses the top-level internal condition enum, not platform_fields.ebay.condition_id', async () => {
-  const result = await buildUnifiedListingForEbay(fixtureListing(), [], [])
+  const result = await buildUnifiedListingForEbay(fixtureListing(), [], [fixtureComp()])
   // listing.condition is 'like_new' (internal ConditionValue enum) — platform_fields.ebay.condition_id
   // ('1500') is eBay's own numeric condition ID and must NOT leak into UnifiedListing.condition,
   // since EbayAdapter re-derives the numeric ID from the internal enum via mapConditionToEbay/
@@ -106,7 +106,7 @@ test('buildUnifiedListingForEbay uses the top-level internal condition enum, not
 })
 
 test('buildUnifiedListingForEbay uses internalId from sku', async () => {
-  const result = await buildUnifiedListingForEbay(fixtureListing(), [], [])
+  const result = await buildUnifiedListingForEbay(fixtureListing(), [], [fixtureComp()])
   assert.equal(result.internalId, 'HB-0001')
 })
 
@@ -165,7 +165,7 @@ test('buildUnifiedListingForEbay filters to studio photos only, sorted by displa
     fixturePhoto({ id: 'p-intake', type: 'intake', display_order: -1, processed_url: null }),
     fixturePhoto({ id: 'p1', type: 'studio', display_order: 1, processed_url: null, raw_url: 'https://x/p1-raw.jpg' }),
   ]
-  const result = await buildUnifiedListingForEbay(fixtureListing(), photos, [])
+  const result = await buildUnifiedListingForEbay(fixtureListing(), photos, [fixtureComp()])
   assert.deepEqual(result.imageUrls, [
     'https://x/p0-processed.jpg',
     'https://x/p1-raw.jpg',
@@ -184,5 +184,12 @@ test('buildUnifiedListingForEbay throws when sku is not yet assigned', async () 
   await assert.rejects(
     () => buildUnifiedListingForEbay(fixtureListing({ sku: null }), [], []),
     /sku/,
+  )
+})
+
+test('buildUnifiedListingForEbay throws when no price can be derived (no final_price_cents override and no comps)', async () => {
+  await assert.rejects(
+    () => buildUnifiedListingForEbay(fixtureListing(), [], []),
+    /no price available/,
   )
 })

@@ -70,7 +70,7 @@ export async function POST(
     )
   }
 
-  const [{ data: photoRows }, { data: compRows }] = await Promise.all([
+  const [{ data: photoRows }, { data: compRows, error: compsError }] = await Promise.all([
     supabase
       .from('photos')
       .select('*')
@@ -81,6 +81,9 @@ export async function POST(
       .select('*')
       .eq('listing_id', id),
   ])
+  if (compsError) {
+    return Response.json({ error: `Failed to load pricing data: ${compsError.message}` }, { status: 500 })
+  }
   const photos = (photoRows ?? []) as unknown as Photo[]
   const comps = (compRows ?? []) as unknown as PricingComp[]
 
