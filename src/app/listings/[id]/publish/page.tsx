@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { SeoAudit } from '@/components/publish/SeoAudit'
 import { PlatformTabs } from '@/components/publish/PlatformTabs'
-import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
+import { computeAdjustedPricing, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, PricingComp } from '@/types/listings'
 
 export default async function PublishPage({
@@ -26,6 +26,13 @@ export default async function PublishPage({
   const comps = (compRows ?? []) as unknown as PricingComp[]
   const gateUnlocked = isPricingGateUnlocked(listing)
   const pricing = computeAdjustedPricing(listing, comps, { includePremiums: gateUnlocked })
+  // The exact number buildUnifiedListingForEbay will publish -- not just computeAdjustedPricing's
+  // raw result, which misses both a final_price_cents override and the suggested_price_cents
+  // fallback for the zero-comps case.
+  const resolvedPriceCents = resolveFinalPriceCents(listing, pricing)
+  // Only "provisional" when we're actually displaying computeAdjustedPricing's gated result --
+  // an explicit final_price_cents override is definitive regardless of gate state.
+  const isProvisional = listing.final_price_cents == null && !gateUnlocked
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -43,10 +50,10 @@ export default async function PublishPage({
           <h1 className="text-lg font-semibold text-gray-100">
             {listing.title ?? listing.brand ?? 'Untitled'}
           </h1>
-          {pricing.priceCents != null && (
+          {resolvedPriceCents != null && (
             <p className="text-sm text-emerald-400 font-semibold mt-0.5">
-              ${(pricing.priceCents / 100).toFixed(0)} suggested
-              {!gateUnlocked && (
+              ${(resolvedPriceCents / 100).toFixed(0)} suggested
+              {isProvisional && (
                 <span className="text-xs text-amber-500/80 font-normal"> — provisional, refines once condition and inclusions are confirmed</span>
               )}
             </p>

@@ -247,3 +247,19 @@ export function isPricingGateUnlocked(
 ): boolean {
   return listing.condition_confirmed && listing.inclusions.every((i) => i.confirmed)
 }
+
+/**
+ * The actual price a listing will publish/display at: an explicit final_price_cents override
+ * always wins; otherwise computeAdjustedPricing's result; otherwise suggested_price_cents
+ * (step4a's model-estimated fallback for the zero-comps case). Shared by the eBay publish path
+ * and the Publish Export page display -- do not re-derive this chain inline at new call sites,
+ * or the displayed price can silently diverge from what actually gets published (found via
+ * code review on PR #49: the Export page originally showed only computeAdjustedPricing's raw
+ * result, missing both the final_price_cents override and the suggested_price_cents fallback).
+ */
+export function resolveFinalPriceCents(
+  listing: Pick<Listing, 'final_price_cents' | 'suggested_price_cents'>,
+  adjusted: Pick<AdjustedPricing, 'priceCents'>
+): number | null {
+  return listing.final_price_cents ?? adjusted.priceCents ?? listing.suggested_price_cents
+}

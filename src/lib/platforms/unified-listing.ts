@@ -1,7 +1,7 @@
 import type { Listing, Photo, PricingComp } from '@/types/listings';
 import type { UnifiedListing } from './types';
 import { toPublicUrl } from '@/lib/pipeline/to-public-url';
-import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust';
+import { computeAdjustedPricing, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust';
 
 /**
  * Builds the platform-agnostic {@link UnifiedListing} the eBay adapter's `createListing`
@@ -55,7 +55,7 @@ export async function buildUnifiedListingForEbay(
   // rather than assumed). If there are no sold comps to compute from, fall back to step4a's
   // model-estimated suggested_price_cents rather than treating the listing as unpriceable.
   const adjusted = computeAdjustedPricing(listing, comps, { includePremiums: isPricingGateUnlocked(listing) });
-  const priceCents = listing.final_price_cents ?? adjusted.priceCents ?? listing.suggested_price_cents;
+  const priceCents = resolveFinalPriceCents(listing, adjusted);
   if (priceCents == null || priceCents <= 0) {
     throw new Error(
       'buildUnifiedListingForEbay: no valid price available -- final_price_cents, computeAdjustedPricing, and suggested_price_cents all produced no usable price',

@@ -11,7 +11,7 @@ import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { getInclusionChecklist } from '@/lib/inclusions'
-import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
+import { computeAdjustedPricing, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
@@ -177,6 +177,13 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   // gateUnlocked immediately but the displayed price keeps using the old inclusion set until
   // the next poll (which is disabled entirely for published/archived listings).
   const pricing = computeAdjustedPricing({ ...listing, inclusions }, comps, { includePremiums: gateUnlocked })
+  // The exact number buildUnifiedListingForEbay will publish -- not just computeAdjustedPricing's
+  // raw result, which misses both a final_price_cents override and the suggested_price_cents
+  // fallback for the zero-comps case.
+  const resolvedPriceCents = resolveFinalPriceCents(listing, pricing)
+  // Only "provisional" when we're actually displaying computeAdjustedPricing's gated result --
+  // an explicit final_price_cents override is definitive regardless of gate state.
+  const isProvisional = listing.final_price_cents == null && !gateUnlocked
 
   async function saveAuthPlan(updated: AuthStep[]) {
     setSaving(true)
@@ -257,11 +264,11 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
           )}
         </div>
 
-        {pricing.priceCents != null && (
+        {resolvedPriceCents != null && (
           <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 space-y-2">
             <div className="flex items-baseline justify-between">
               <span className="text-xl font-bold text-emerald-400">
-                {formatPrice(pricing.priceCents)}
+                {formatPrice(resolvedPriceCents)}
               </span>
               {listing.confidence_score != null && (
                 <span className="text-xs text-gray-500">{listing.confidence_score}% confidence</span>
@@ -275,7 +282,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
                 </span>
               </div>
             )}
-            {!gateUnlocked && (
+            {isProvisional && (
               <p className="text-[10px] text-amber-500/80">
                 Provisional — will be refined once condition and inclusions are confirmed.
               </p>
@@ -650,7 +657,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
         open={evidenceOpen}
         onClose={() => setEvidenceOpen(false)}
         comps={comps}
-        suggestedPriceCents={pricing.priceCents}
+        suggestedPriceCents={resolvedPriceCents}
         confidenceScore={listing.confidence_score}
         priceToMoveCents={pricing.priceToMoveCents}
         priceToMoveDiscountPct={listing.price_to_move_discount_pct}
