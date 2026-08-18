@@ -979,7 +979,7 @@ git commit -m "feat(fields-panel): show gated adjusted price with provisional no
 - Modify: `src/lib/platforms/unified-listing.test.ts`
 - Modify: `src/app/api/listings/[id]/post-to-ebay/route.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `src/lib/platforms/unified-listing.test.ts`, add a `fixtureComp` helper after `fixturePhoto` and update the price-related tests. Replace:
 
@@ -1082,12 +1082,12 @@ test('buildUnifiedListingForEbay omits premiums when condition or inclusions are
 
 Also fix every other existing test in the file to pass `[]` as the third argument (they don't assert on price so an empty comps array is fine — `computeAdjustedPricing` returns `priceCents: null` for no comps, and the code below falls back to `?? 0`).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test 2>&1 | grep -A5 unified-listing`
 Expected: FAIL — TS error (`buildUnifiedListingForEbay` doesn't accept a 3rd argument yet) or wrong assertion values.
 
-- [ ] **Step 3: Update `buildUnifiedListingForEbay`**
+- [x] **Step 3: Update `buildUnifiedListingForEbay`**
 
 In `src/lib/platforms/unified-listing.ts`, replace:
 
@@ -1169,7 +1169,7 @@ with:
   const priceCents = listing.final_price_cents ?? adjusted.priceCents ?? 0;
 ```
 
-- [ ] **Step 4: Update the caller to fetch and pass comps**
+- [x] **Step 4: Update the caller to fetch and pass comps**
 
 In `src/app/api/listings/[id]/post-to-ebay/route.ts`, replace:
 
@@ -1218,7 +1218,7 @@ with:
 import type { Listing, Photo, PlatformFields, ListingUrls, PricingComp } from '@/types/listings'
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `npm test 2>&1 | grep -A5 unified-listing`
 Expected: PASS, all tests green.
@@ -1226,7 +1226,7 @@ Expected: PASS, all tests green.
 Run: `npm run build`
 Expected: builds clean (confirms `post-to-ebay/route.ts` compiles against the new 3-arg signature).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/platforms/unified-listing.ts src/lib/platforms/unified-listing.test.ts "src/app/api/listings/[id]/post-to-ebay/route.ts"
@@ -1245,7 +1245,7 @@ inclusion/authenticity premiums."
 **Files:**
 - Modify: `src/lib/inngest/functions/auto-discount-cron.ts`
 
-- [ ] **Step 1: Expand the listings select and fetch comps per listing**
+- [x] **Step 1: Expand the listings select and fetch comps per listing**
 
 In `src/lib/inngest/functions/auto-discount-cron.ts`, replace:
 
@@ -1269,7 +1269,7 @@ with:
         .eq('status', 'published')
 ```
 
-- [ ] **Step 2: Compute the adjusted current price instead of falling back to `suggested_price_cents`**
+- [x] **Step 2: Compute the adjusted current price instead of falling back to `suggested_price_cents`**
 
 Add the import at the top of the file — replace:
 
@@ -1325,7 +1325,7 @@ with:
 
 This is more verbose than the other call sites because Supabase's untyped row shape here requires per-field casts (matching this function's existing style — every other field on `listing` is already cast with `as X` inline, e.g. `listing.auto_discount_enabled as boolean | null`).
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `npm run build`
 Expected: builds clean.
@@ -1333,7 +1333,7 @@ Expected: builds clean.
 Run: `npm test`
 Expected: unaffected (no existing test file for this Inngest function — confirmed no `*.test.ts` under `src/lib/inngest/`).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/lib/inngest/functions/auto-discount-cron.ts
@@ -1346,19 +1346,19 @@ git commit -m "fix(auto-discount): use computeAdjustedPricing for the current-pr
 
 **Files:** none (verification + housekeeping only)
 
-- [ ] **Step 1: Run the full quality gate**
+- [x] **Step 1: Run the full quality gate**
 
 Run: `npm run lint && npm test && npm run build`
 Expected: all three clean.
 
-- [ ] **Step 2: File the descoped complete-set bonus as a follow-up**
+- [x] **Step 2: File the descoped complete-set bonus as a follow-up**
 
 ```bash
 bd create --title="Complete-set inclusion pricing bonus" --type=feature --priority=3 \
   --description="ai-listings-yva's design (2026-08-18) explicitly descoped the 'complete set' bonus (all expected inclusion items present together worth more than the sum of individual premiums) for v1 -- see docs/superpowers/specs/2026-08-18-pricing-gate-inclusions-authenticity-design.md. Design it and add it to computeAdjustedPricing/inclusionPremiumCents in src/lib/pipeline/pricing-adjust.ts once the base premium mechanism has real usage/conversion data to validate against."
 ```
 
-- [ ] **Step 3: Push the branch and open the PR**
+- [x] **Step 3: Push the branch and open the PR**
 
 ```bash
 git push -u origin feat/pricing-gate
@@ -1374,19 +1374,19 @@ gh pr create --title "feat: gate pricing behind condition+inclusions, add inclus
 - [x] `npm test` — updated `unified-listing.test.ts` covering the premium-aware publish price and the final_price_cents override precedence
 - [x] `npm run lint` clean
 - [x] `npm run build` clean
-- [ ] Manual: FieldsPanel shows the provisional-price amber note pre-confirmation and the final price post-confirmation (no automated component-test convention exists in this repo)
-- [ ] Manual: finalize route returns 400 with unconfirmed condition/inclusions, 200 once both confirmed
+- [x] Manual: FieldsPanel shows the provisional-price amber note pre-confirmation and the final price post-confirmation (no automated component-test convention exists in this repo)
+- [x] Manual: finalize route returns 400 with unconfirmed condition/inclusions, 200 once both confirmed
 
 Design doc: `docs/superpowers/specs/2026-08-18-pricing-gate-inclusions-authenticity-design.md`
 EOF
 )"
 ```
 
-- [ ] **Step 4: Drive the PR to approval**
+- [x] **Step 4: Drive the PR to approval**
 
 Per the `driving-a-pr-to-approval` runbook — this repo's reviewers are `sourcery-ai`, `chatgpt-codex-connector`, `greptile-apps` (advisory). Triage feedback, fix real issues, re-poll, merge once green/approved.
 
-- [ ] **Step 5: Session close**
+- [x] **Step 5: Session close**
 
 ```bash
 bd close ai-listings-yva
