@@ -44,21 +44,21 @@ async function fetchImageAsBase64(image: ClaudeImageInput): Promise<{ base64: st
  * image server-side and inline it as base64, same as the api-key backend's
  * `url` variant would send if the Agent SDK instead accepted URLs directly.
  */
-async function* buildImagePromptStream(
+async function* buildImagesPromptStream(
   prompt: string,
-  image: ClaudeImageInput
+  images: ClaudeImageInput[]
 ): AsyncGenerator<SDKUserMessage> {
-  const { base64, mediaType } = await fetchImageAsBase64(image)
+  const fetched = await Promise.all(images.map(fetchImageAsBase64))
 
   const content: Anthropic.Messages.ContentBlockParam[] = [
-    {
-      type: 'image',
+    ...fetched.map(({ base64, mediaType }) => ({
+      type: 'image' as const,
       source: {
-        type: 'base64',
+        type: 'base64' as const,
         media_type: mediaType as Anthropic.Messages.Base64ImageSource['media_type'],
         data: base64,
       },
-    },
+    })),
     { type: 'text', text: prompt },
   ]
 
@@ -70,7 +70,8 @@ async function* buildImagePromptStream(
 }
 
 export async function runStructuredOauth<T>(params: StructuredCallParams): Promise<T> {
-  const prompt = params.image ? buildImagePromptStream(params.prompt, params.image) : params.prompt
+  const images = params.images && params.images.length > 0 ? params.images : params.image ? [params.image] : []
+  const prompt = images.length > 0 ? buildImagesPromptStream(params.prompt, images) : params.prompt
 
   let structuredOutput: unknown
 

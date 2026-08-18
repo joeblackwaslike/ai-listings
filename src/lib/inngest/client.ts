@@ -47,6 +47,18 @@ export interface StudioUploadedEvent {
     listingId: string
     photoId: string
     photoUrl: string
+    replacesPhotoId?: string
+  }
+}
+
+// Namespaced `listing/` rather than `pipeline/` because this event doesn't
+// originate from a pipeline step — it's fired directly from an API route
+// (confirm-photos/route.ts, a later task) when a user confirms processed
+// studio photos, not from within the Inngest pipeline chain itself.
+export interface ListingPhotosConfirmedEvent {
+  name: 'listing/photos-confirmed'
+  data: {
+    listingId: string
   }
 }
 

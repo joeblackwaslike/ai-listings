@@ -256,6 +256,7 @@ export interface Listing {
 
   photos_confirmed: boolean;
   skip_background_removal: boolean;
+  condition_confirmed: boolean;
   is_luxury: boolean;
   intake_meta: Record<string, unknown> | null;
 

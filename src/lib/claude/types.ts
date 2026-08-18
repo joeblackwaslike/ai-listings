@@ -15,6 +15,8 @@ export interface StructuredCallParams {
   /** JSON-schema-shaped object describing the desired structured output. */
   jsonSchema: Record<string, unknown>
   image?: ClaudeImageInput
+  /** Multiple images in one call — used when a single judgment needs to see every photo at once. Mutually exclusive with `image`: a caller should set one or the other, not both. */
+  images?: ClaudeImageInput[]
   /**
    * Per-user/per-request API key. Ignored by the oauth backend. When
    * omitted, the api-key backend falls back to `process.env.ANTHROPIC_API_KEY`
