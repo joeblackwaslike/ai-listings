@@ -13,13 +13,20 @@ export default async function PublishPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data, error }, { data: compRows }] = await Promise.all([
+  const [{ data, error }, { data: compRows, error: compsError }] = await Promise.all([
     supabase.from('listings').select('*').eq('id', id).single(),
     supabase.from('pricing_comps').select('*').eq('listing_id', id),
   ])
 
   if (error || !data) {
     notFound()
+  }
+  if (compsError) {
+    // A failed comps fetch must not silently degrade to "no comps" -- that would display the
+    // unpremiumed suggested_price_cents fallback while the independent post-to-ebay query
+    // (which re-fetches comps itself) could still resolve the real comp/premium-adjusted price
+    // moments later, so a seller could approve publishing at a different amount than shown here.
+    throw new Error(`publish page: pricing_comps fetch failed — ${compsError.message}`)
   }
 
   const listing = data as unknown as Listing
