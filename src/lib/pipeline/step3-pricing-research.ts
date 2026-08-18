@@ -634,24 +634,27 @@ export async function runStep3PricingResearch(
   // median. Replace the prior run's rows, but insert-then-delete (not delete-then-insert): if
   // the insert below fails, the earlier delete would otherwise leave the listing with zero
   // comps even though the prior run's evidence was still valid.
-  const researchStartedAt = new Date().toISOString()
-
-  // Insert all: filtered sold comps + active market context
+  //
+  // The delete excludes by the newly inserted rows' own ids, not a timestamp cutoff -- a
+  // client-clock timestamp compared against pricing_comps.created_at (the database's own clock)
+  // is vulnerable to ordinary clock skew between the app node and Postgres, which could delete
+  // the batch just inserted above and leave the listing with zero comps.
   const toInsert = [...filteredComps, ...activeRows]
+  const insertedIds: string[] = []
   if (toInsert.length > 0) {
-    const { error } = await supabase.from('pricing_comps').insert(toInsert)
+    const { data: inserted, error } = await supabase.from('pricing_comps').insert(toInsert).select('id')
     if (error) {
       throw new Error(`step3: pricing_comps insert failed — ${error.message}`)
     }
+    insertedIds.push(...(inserted ?? []).map((row) => row.id as string))
   }
 
-  // Only now that the fresh comps are safely stored, clear anything from a prior run --
-  // the cutoff excludes the rows just inserted above.
-  const { error: deleteError } = await supabase
-    .from('pricing_comps')
-    .delete()
-    .eq('listing_id', listingId)
-    .lt('created_at', researchStartedAt)
+  // Only now that the fresh comps are safely stored, clear anything from a prior run.
+  let deleteQuery = supabase.from('pricing_comps').delete().eq('listing_id', listingId)
+  if (insertedIds.length > 0) {
+    deleteQuery = deleteQuery.not('id', 'in', `(${insertedIds.join(',')})`)
+  }
+  const { error: deleteError } = await deleteQuery
   if (deleteError) {
     throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
   }
