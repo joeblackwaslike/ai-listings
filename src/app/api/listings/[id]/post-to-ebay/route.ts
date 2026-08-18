@@ -4,6 +4,7 @@ import { getEbayCreds } from '@/lib/platforms/credentials'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
 import { buildUnifiedListingForEbay } from '@/lib/platforms/unified-listing'
 import { mapPostToEbayError } from '@/lib/platforms/post-to-ebay-error'
+import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PlatformFields, ListingUrls, PricingComp } from '@/types/listings'
 
 export async function POST(
@@ -34,6 +35,18 @@ export async function POST(
   // do this today, which is a real pre-existing gap; this new route must not repeat it.
   if (listing.user_id !== user.id) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  // The finalize route (finalize/route.ts) gates the status transition on this same check, but
+  // this route is independently reachable from the Export/publish page without ever going
+  // through finalize -- without checking it here too, a listing could publish at the
+  // provisional (premium-free) price with condition/inclusions still unconfirmed, bypassing the
+  // pricing gate entirely.
+  if (!isPricingGateUnlocked(listing)) {
+    return Response.json(
+      { error: 'Confirm condition and all inclusions before publishing.' },
+      { status: 400 }
+    )
   }
 
   if (!listing.platform_fields?.ebay) {
