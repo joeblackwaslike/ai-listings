@@ -169,3 +169,87 @@ test('authenticityPremiumCents: third_party docSource scales by tier', () => {
   assert.equal(low, 200)
   assert.equal(mid, 600)
 })
+
+import { computeAdjustedPricing } from './pricing-adjust'
+import type { PricingComp } from '@/types/listings'
+
+function comp(overrides: Partial<PricingComp> = {}): PricingComp {
+  return {
+    id: 'comp-1', listing_id: 'listing-1', source: 'ebay', title: 'Test comp',
+    sale_price_cents: 10_000, condition: 'Not specified', sold_at: '2026-01-01T00:00:00Z',
+    listing_url: 'https://example.com', condition_delta: 'same', adjusted_price_cents: 10_000,
+    color: null, relevance_score: null, created_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+test('computeAdjustedPricing: median of 3 sold comps, includePremiums false matches comps-only estimate', () => {
+  const listing = { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
+  const comps = [
+    comp({ sale_price_cents: 10_000 }),
+    comp({ sale_price_cents: 12_000 }),
+    comp({ sale_price_cents: 14_000 }),
+  ]
+  const result = computeAdjustedPricing(listing, comps, { includePremiums: false })
+  assert.equal(result.basePriceCents, 12_000)
+  assert.equal(result.priceCents, 12_000)
+  assert.equal(result.priceToMoveCents, 10_200) // jewelry: 12000 * (1 - 0.15)
+  assert.equal(result.inclusionPremiumCents, 0)
+  assert.equal(result.authenticityPremiumCents, 0)
+})
+
+test('computeAdjustedPricing: includePremiums true layers inclusion + authenticity premiums onto the base', () => {
+  const listing = {
+    condition: 'good', category: 'jewelry' as const, sub_type: null,
+    inclusions: [
+      inclusion('Original box'),
+      inclusion('Authenticity card', { docSource: 'original' }),
+    ],
+  }
+  const comps = [comp({ sale_price_cents: 12_000 })]
+  const result = computeAdjustedPricing(listing, comps, { includePremiums: true })
+  // base 12000 (low tier), + box premium 400 (base table) + auth premium 500 (original, low, below $500 threshold)
+  assert.equal(result.basePriceCents, 12_000)
+  assert.equal(result.inclusionPremiumCents, 400)
+  assert.equal(result.authenticityPremiumCents, 500)
+  assert.equal(result.priceCents, 12_900)
+  assert.equal(result.priceToMoveCents, 10_965) // 12900 * 0.85, rounded
+})
+
+test('computeAdjustedPricing: active-market comps are excluded from the sold-price median', () => {
+  const listing = { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
+  const comps = [
+    comp({ sale_price_cents: 12_000, source: 'ebay' }),
+    comp({ sale_price_cents: 1, source: 'ebay_active' }), // would wreck the median if included
+  ]
+  const result = computeAdjustedPricing(listing, comps, { includePremiums: false })
+  assert.equal(result.basePriceCents, 12_000)
+  assert.equal(result.compCount, 1)
+})
+
+test('computeAdjustedPricing: recomputes against the listing\'s CURRENT condition, not any cached comp delta (staleness fix)', () => {
+  const comps = [comp({ sale_price_cents: 10_000, condition: 'Like new', condition_delta: 'better', adjusted_price_cents: 99_999 })]
+
+  const worse = computeAdjustedPricing(
+    { condition: 'very_good', category: 'jewelry' as const, sub_type: null, inclusions: [] },
+    comps, { includePremiums: false }
+  )
+  const better = computeAdjustedPricing(
+    { condition: 'new_with_tags', category: 'jewelry' as const, sub_type: null, inclusions: [] },
+    comps, { includePremiums: false }
+  )
+
+  // Same comp row (including its stale adjusted_price_cents: 99999), different current
+  // condition on the listing — the stored adjusted_price_cents/condition_delta columns are
+  // ignored entirely; only listing.condition and the comp's raw condition text are used.
+  assert.equal(worse.priceCents, 8_500) // very_good (rank 5) < Like new (rank 6) → worse → 10000 * 0.85
+  assert.equal(better.priceCents, 11_500) // new_with_tags (rank 8) > Like new (rank 6) → better → 10000 * 1.15
+})
+
+test('computeAdjustedPricing: no sold comps returns null price', () => {
+  const listing = { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
+  const result = computeAdjustedPricing(listing, [], { includePremiums: false })
+  assert.equal(result.basePriceCents, null)
+  assert.equal(result.priceCents, null)
+  assert.equal(result.priceToMoveCents, null)
+})

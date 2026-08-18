@@ -1,4 +1,4 @@
-import type { AuthCardSource, ClothingSubType, Inclusion, JewelrySubType, ListingCategory } from '@/types/listings'
+import type { AuthCardSource, ClothingSubType, Inclusion, JewelrySubType, Listing, ListingCategory, PricingComp } from '@/types/listings'
 import { getInclusionChecklist } from '@/lib/inclusions'
 
 export function conditionDelta(
@@ -171,4 +171,67 @@ export function authenticityPremiumCents(
   if (threshold != null && basePriceCents >= threshold) return 0
 
   return AUTHENTICITY_PREMIUM_CENTS[card.docSource][priceTierOf(basePriceCents)]
+}
+
+export interface AdjustedPricing {
+  priceCents: number | null
+  priceToMoveCents: number | null
+  basePriceCents: number | null
+  inclusionPremiumCents: number
+  authenticityPremiumCents: number
+  compCount: number
+}
+
+type PricingListing = Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'>
+
+/**
+ * The single source of truth for "what does this listing cost" — used for FieldsPanel display,
+ * the eBay publish price, and the auto-discount cron's current-price fallback. Always
+ * recomputed fresh from the listing's *current* condition/inclusions, never from data cached at
+ * step3 gather-time, so it self-heals when condition-reassessment flips condition_confirmed
+ * back to false post-intake — see condition-reassessment.ts. `includePremiums: false`
+ * reproduces step3's original comps+condition-only estimate; `includePremiums: true` layers on
+ * inclusion + authenticity premiums, both computed off the pre-premium base price so they can't
+ * create a circular price-tier lookup.
+ */
+export function computeAdjustedPricing(
+  listing: PricingListing,
+  comps: PricingComp[],
+  opts: { includePremiums: boolean }
+): AdjustedPricing {
+  const soldComps = comps.filter((c) => !c.source.endsWith('_active'))
+  const adjustedCompPrices = soldComps
+    .map((c) => adjustForCondition(c.sale_price_cents, conditionDelta(listing.condition ?? '', c.condition)))
+    .sort((a, b) => a - b)
+
+  const mid = Math.floor(adjustedCompPrices.length / 2)
+  const basePriceCents =
+    adjustedCompPrices.length === 0
+      ? null
+      : adjustedCompPrices.length % 2 === 0
+        ? Math.round((adjustedCompPrices[mid - 1] + adjustedCompPrices[mid]) / 2)
+        : adjustedCompPrices[mid]
+
+  const inclusionPremium =
+    opts.includePremiums && basePriceCents != null
+      ? inclusionPremiumCents(listing.category, listing.sub_type, listing.inclusions, basePriceCents)
+      : 0
+  const authPremium =
+    opts.includePremiums && basePriceCents != null
+      ? authenticityPremiumCents(listing.category, listing.sub_type, listing.inclusions, basePriceCents)
+      : 0
+
+  const priceCents = basePriceCents == null ? null : basePriceCents + inclusionPremium + authPremium
+
+  const discountPct = CATEGORY_DISCOUNT[listing.category?.toLowerCase() ?? ''] ?? 0.18
+  const priceToMoveCents = priceCents == null ? null : Math.round(priceCents * (1 - discountPct))
+
+  return {
+    priceCents,
+    priceToMoveCents,
+    basePriceCents,
+    inclusionPremiumCents: inclusionPremium,
+    authenticityPremiumCents: authPremium,
+    compCount: soldComps.length,
+  }
 }
