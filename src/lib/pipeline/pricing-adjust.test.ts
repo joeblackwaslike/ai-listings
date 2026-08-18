@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { conditionDelta, adjustForCondition, priceTierOf, CATEGORY_DISCOUNT } from './pricing-adjust'
+import { conditionDelta, adjustForCondition, priceTierOf, CATEGORY_DISCOUNT, type PricingListing } from './pricing-adjust'
 
 test('conditionDelta: listing better than comp condition', () => {
   assert.equal(conditionDelta('like_new', 'Good'), 'better')
@@ -45,7 +45,7 @@ test('priceTierOf: boundaries', () => {
 })
 
 import { inclusionPremiumCents } from './pricing-adjust'
-import type { Inclusion, Listing } from '@/types/listings'
+import type { Inclusion } from '@/types/listings'
 
 function inclusion(item: string, overrides: Partial<Inclusion> = {}): Inclusion {
   return { item, source: 'detected', confirmed: true, notes: null, ...overrides }
@@ -184,7 +184,7 @@ function comp(overrides: Partial<PricingComp> = {}): PricingComp {
 }
 
 test('computeAdjustedPricing: median of 3 sold comps, includePremiums false matches comps-only estimate', () => {
-  const listing: Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'> =
+  const listing: PricingListing =
     { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
   const comps = [
     comp({ sale_price_cents: 10_000 }),
@@ -200,7 +200,7 @@ test('computeAdjustedPricing: median of 3 sold comps, includePremiums false matc
 })
 
 test('computeAdjustedPricing: includePremiums true layers inclusion + authenticity premiums onto the base', () => {
-  const listing: Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'> = {
+  const listing: PricingListing = {
     condition: 'good', category: 'jewelry' as const, sub_type: null,
     inclusions: [
       inclusion('Original box'),
@@ -218,7 +218,7 @@ test('computeAdjustedPricing: includePremiums true layers inclusion + authentici
 })
 
 test('computeAdjustedPricing: active-market comps are excluded from the sold-price median', () => {
-  const listing: Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'> =
+  const listing: PricingListing =
     { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
   const comps = [
     comp({ sale_price_cents: 12_000, source: 'ebay' }),
@@ -249,7 +249,7 @@ test('computeAdjustedPricing: recomputes against the listing\'s CURRENT conditio
 })
 
 test('computeAdjustedPricing: no sold comps returns null price', () => {
-  const listing: Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'> =
+  const listing: PricingListing =
     { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
   const result = computeAdjustedPricing(listing, [], { includePremiums: false })
   assert.equal(result.basePriceCents, null)

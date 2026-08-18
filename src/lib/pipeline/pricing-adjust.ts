@@ -182,7 +182,7 @@ export interface AdjustedPricing {
   compCount: number
 }
 
-type PricingListing = Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'>
+export type PricingListing = Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'>
 
 /**
  * The single source of truth for "what does this listing cost" — used for FieldsPanel display,

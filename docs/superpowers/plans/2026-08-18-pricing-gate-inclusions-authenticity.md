@@ -20,7 +20,7 @@
 
 This task ports `conditionDelta`/`adjustForCondition`/`CATEGORY_DISCOUNT` out of `step3-pricing-research.ts:413-445,684-694` unchanged, and adds `priceTierOf`. Task 2 will remove the originals from step3 and import from here instead.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `src/lib/pipeline/pricing-adjust.test.ts`:
 
@@ -72,12 +72,12 @@ test('priceTierOf: boundaries', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test 2>&1 | grep -A3 pricing-adjust`
 Expected: FAIL — `Cannot find module './pricing-adjust'` (file doesn't exist yet).
 
-- [ ] **Step 3: Write the module (condition delta + tiers only for now)**
+- [x] **Step 3: Write the module (condition delta + tiers only for now)**
 
 Create `src/lib/pipeline/pricing-adjust.ts`:
 
@@ -137,12 +137,12 @@ export function priceTierOf(priceCents: number): PriceTier {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test 2>&1 | grep -A3 pricing-adjust`
 Expected: PASS, all 9 tests green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/pipeline/pricing-adjust.ts src/lib/pipeline/pricing-adjust.test.ts
@@ -159,7 +159,7 @@ git commit -m "feat(pricing-adjust): condition delta, category discount, price t
 
 Uses `getInclusionChecklist` from `src/lib/inclusions.ts` (already reviewed — checklist items: `'Original box'`, `'Dust bag/cover'`, `'Authenticity card'` (`isAuthCard: true`), `'Receipt'` for all categories, plus category-specific additions for `sneakers`/`watches`/`handbag`/`small_leather_goods`; `'Brand tag'` is `isTag: true` where present).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `src/lib/pipeline/pricing-adjust.test.ts`:
 
@@ -234,12 +234,12 @@ test('inclusionPremiumCents: matching is case-insensitive', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test 2>&1 | grep -A3 pricing-adjust`
 Expected: FAIL — `inclusionPremiumCents is not a function` / TS error (not exported yet).
 
-- [ ] **Step 3: Implement `inclusionPremiumCents`**
+- [x] **Step 3: Implement `inclusionPremiumCents`**
 
 Add to `src/lib/pipeline/pricing-adjust.ts` (after the `priceTierOf` block from Task 1):
 
@@ -321,12 +321,12 @@ export function inclusionPremiumCents(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test 2>&1 | grep -A3 pricing-adjust`
 Expected: PASS, all tests green (16 total so far).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/pipeline/pricing-adjust.ts src/lib/pipeline/pricing-adjust.test.ts
@@ -341,7 +341,7 @@ git commit -m "feat(pricing-adjust): inclusion dollar premiums by category/tier"
 - Modify: `src/lib/pipeline/pricing-adjust.ts`
 - Modify: `src/lib/pipeline/pricing-adjust.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `src/lib/pipeline/pricing-adjust.test.ts`:
 
@@ -404,12 +404,12 @@ test('authenticityPremiumCents: third_party docSource scales by tier', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test 2>&1 | grep -A3 pricing-adjust`
 Expected: FAIL — `authenticityPremiumCents is not a function`.
 
-- [ ] **Step 3: Implement `authenticityPremiumCents`**
+- [x] **Step 3: Implement `authenticityPremiumCents`**
 
 Add to `src/lib/pipeline/pricing-adjust.ts` (after `inclusionPremiumCents`):
 
@@ -461,12 +461,12 @@ export function authenticityPremiumCents(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test 2>&1 | grep -A3 pricing-adjust`
 Expected: PASS, all tests green (23 total so far).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/pipeline/pricing-adjust.ts src/lib/pipeline/pricing-adjust.test.ts
