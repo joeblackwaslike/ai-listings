@@ -1,5 +1,7 @@
 import { inngest } from '@/lib/inngest/client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { computeAdjustedPricing, isPricingGateUnlocked, type PricingListing } from '@/lib/pipeline/pricing-adjust'
+import type { Inclusion, PricingComp } from '@/types/listings'
 
 export const autoDiscountCron = inngest.createFunction(
   {
@@ -15,7 +17,7 @@ export const autoDiscountCron = inngest.createFunction(
       const { data: listings } = await supabase
         .from('listings')
         .select(
-          'id, user_id, final_price_cents, suggested_price_cents, auto_discount_enabled, auto_discount_pct, auto_discount_interval_days'
+          'id, user_id, final_price_cents, suggested_price_cents, condition, condition_confirmed, category, sub_type, inclusions, auto_discount_enabled, auto_discount_pct, auto_discount_interval_days'
         )
         .eq('status', 'published')
 
@@ -89,7 +91,32 @@ export const autoDiscountCron = inngest.createFunction(
 
           const initialPrice = (initialEvent?.price_cents as number | null) ?? (listing.suggested_price_cents as number | null) ?? 0
           if (initialPrice <= 0) continue
-          const currentPrice = (listing.final_price_cents as number | null) ?? (listing.suggested_price_cents as number | null) ?? 0
+
+          let currentPrice = listing.final_price_cents as number | null
+          if (currentPrice == null) {
+            const { data: compRows, error: compsError } = await supabase
+              .from('pricing_comps')
+              .select('*')
+              .eq('listing_id', listing.id)
+            // A failed comps fetch must not silently fall through to the unadjusted
+            // suggested_price_cents -- that would discount off (and permanently persist) a
+            // lower, premium-free price. Skip this listing and retry on the next run instead.
+            if (compsError) {
+              console.error(`auto-discount: pricing_comps fetch failed for listing ${listing.id as string}:`, compsError)
+              continue
+            }
+            const comps = (compRows ?? []) as unknown as PricingComp[]
+            const inclusions = (listing.inclusions as Inclusion[] | null) ?? []
+            const pricingListing: PricingListing = {
+              condition: listing.condition,
+              category: listing.category,
+              sub_type: listing.sub_type,
+              inclusions,
+            }
+            const gateUnlocked = isPricingGateUnlocked({ condition_confirmed: listing.condition_confirmed as boolean, inclusions })
+            const adjusted = computeAdjustedPricing(pricingListing, comps, { includePremiums: gateUnlocked })
+            currentPrice = adjusted.priceCents ?? (listing.suggested_price_cents as number | null) ?? 0
+          }
           if (currentPrice <= 0) continue
 
           const newPrice = Math.round(currentPrice * (1 - pct / 100))

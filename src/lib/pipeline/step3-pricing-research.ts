@@ -3,6 +3,7 @@ import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { searchEbayActive } from './comps/ebay-browse'
+import { conditionDelta, adjustForCondition, CATEGORY_DISCOUNT } from './pricing-adjust'
 
 interface SerpShoppingResult {
   title: string
@@ -410,40 +411,6 @@ function removeOutlierComps<T extends { adjusted_price_cents: number }>(comps: T
   return comps.filter((c) => c.adjusted_price_cents >= lo && c.adjusted_price_cents <= hi)
 }
 
-function conditionDelta(
-  listingCondition: string,
-  compCondition: string
-): 'same' | 'better' | 'worse' {
-  const conditionRank: Record<string, number> = {
-    new_with_tags: 8,
-    new_without_tags: 7,
-    like_new: 6,
-    very_good: 5,
-    good: 4,
-    fair: 3,
-    poor: 2,
-    for_parts: 1,
-  }
-  const listingRank = conditionRank[listingCondition] ?? 4
-  const compRank = compCondition.toLowerCase().includes('like new')
-    ? 6
-    : compCondition.toLowerCase().includes('good')
-      ? 4
-      : compCondition.toLowerCase().includes('new')
-        ? 7
-        : 4
-
-  if (listingRank > compRank) return 'better'
-  if (listingRank < compRank) return 'worse'
-  return 'same'
-}
-
-function adjustForCondition(priceCents: number, delta: 'same' | 'better' | 'worse'): number {
-  if (delta === 'better') return Math.round(priceCents * 1.15)
-  if (delta === 'worse') return Math.round(priceCents * 0.85)
-  return priceCents
-}
-
 function calcConfidenceScore(compCount: number): number {
   if (compCount >= 10) return 90
   if (compCount >= 6) return 75
@@ -661,13 +628,35 @@ export async function runStep3PricingResearch(
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
 
-  // Insert all: filtered sold comps + active market context
+  // step3 can be retried (see retry-step.ts), and computeAdjustedPricing (pricing-adjust.ts)
+  // treats every stored pricing_comps row for the listing as current, sold-comp evidence -- a
+  // retry that only inserted its fresh results would blend stale and current comps into the
+  // median. Replace the prior run's rows, but insert-then-delete (not delete-then-insert): if
+  // the insert below fails, the earlier delete would otherwise leave the listing with zero
+  // comps even though the prior run's evidence was still valid.
+  //
+  // The delete excludes by the newly inserted rows' own ids, not a timestamp cutoff -- a
+  // client-clock timestamp compared against pricing_comps.created_at (the database's own clock)
+  // is vulnerable to ordinary clock skew between the app node and Postgres, which could delete
+  // the batch just inserted above and leave the listing with zero comps.
   const toInsert = [...filteredComps, ...activeRows]
+  const insertedIds: string[] = []
   if (toInsert.length > 0) {
-    const { error } = await supabase.from('pricing_comps').insert(toInsert)
+    const { data: inserted, error } = await supabase.from('pricing_comps').insert(toInsert).select('id')
     if (error) {
       throw new Error(`step3: pricing_comps insert failed — ${error.message}`)
     }
+    insertedIds.push(...(inserted ?? []).map((row) => row.id as string))
+  }
+
+  // Only now that the fresh comps are safely stored, clear anything from a prior run.
+  let deleteQuery = supabase.from('pricing_comps').delete().eq('listing_id', listingId)
+  if (insertedIds.length > 0) {
+    deleteQuery = deleteQuery.not('id', 'in', `(${insertedIds.join(',')})`)
+  }
+  const { error: deleteError } = await deleteQuery
+  if (deleteError) {
+    throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
   }
 
   const confidenceScore = calcConfidenceScore(filteredComps.length)
@@ -681,17 +670,6 @@ export async function runStep3PricingResearch(
         ? Math.round((prices[mid - 1] + prices[mid]) / 2)
         : prices[mid]
 
-  const CATEGORY_DISCOUNT: Record<string, number> = {
-    handbag: 0.15,
-    watches: 0.12,
-    electronics: 0.20,
-    clothing: 0.25,
-    sneakers: 0.20,
-    jewelry: 0.15,
-    small_leather_goods: 0.18,
-    keyboards: 0.15,
-    collectibles: 0.15,
-  }
   const discountPct = CATEGORY_DISCOUNT[step2.category?.toLowerCase() ?? ''] ?? 0.18
   const priceToMoveCents = suggestedPriceCents != null
     ? Math.round(suggestedPriceCents * (1 - discountPct))

@@ -4,7 +4,8 @@ import { getEbayCreds } from '@/lib/platforms/credentials'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
 import { buildUnifiedListingForEbay } from '@/lib/platforms/unified-listing'
 import { mapPostToEbayError } from '@/lib/platforms/post-to-ebay-error'
-import type { Listing, Photo, PlatformFields, ListingUrls } from '@/types/listings'
+import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
+import type { Listing, Photo, PlatformFields, ListingUrls, PricingComp } from '@/types/listings'
 
 export async function POST(
   _req: Request,
@@ -34,6 +35,18 @@ export async function POST(
   // do this today, which is a real pre-existing gap; this new route must not repeat it.
   if (listing.user_id !== user.id) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  // The finalize route (finalize/route.ts) gates the status transition on this same check, but
+  // this route is independently reachable from the Export/publish page without ever going
+  // through finalize -- without checking it here too, a listing could publish at the
+  // provisional (premium-free) price with condition/inclusions still unconfirmed, bypassing the
+  // pricing gate entirely.
+  if (!isPricingGateUnlocked(listing)) {
+    return Response.json(
+      { error: 'Confirm condition and all inclusions before publishing.' },
+      { status: 400 }
+    )
   }
 
   if (!listing.platform_fields?.ebay) {
@@ -70,15 +83,25 @@ export async function POST(
     )
   }
 
-  const { data: photoRows } = await supabase
-    .from('photos')
-    .select('*')
-    .eq('listing_id', id)
-    .order('display_order', { ascending: true })
+  const [{ data: photoRows }, { data: compRows, error: compsError }] = await Promise.all([
+    supabase
+      .from('photos')
+      .select('*')
+      .eq('listing_id', id)
+      .order('display_order', { ascending: true }),
+    supabase
+      .from('pricing_comps')
+      .select('*')
+      .eq('listing_id', id),
+  ])
+  if (compsError) {
+    return Response.json({ error: `Failed to load pricing data: ${compsError.message}` }, { status: 500 })
+  }
   const photos = (photoRows ?? []) as unknown as Photo[]
+  const comps = (compRows ?? []) as unknown as PricingComp[]
 
   try {
-    const unifiedListing = await buildUnifiedListingForEbay(listing, photos)
+    const unifiedListing = await buildUnifiedListingForEbay(listing, photos, comps)
     const result = await new EbayAdapter(creds).createListing(unifiedListing)
 
     const currentPlatformFields = listing.platform_fields as PlatformFields

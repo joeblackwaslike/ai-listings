@@ -11,6 +11,7 @@ import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { getInclusionChecklist } from '@/lib/inclusions'
+import { adjustForCondition, computeAdjustedPricing, conditionDelta, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
@@ -82,11 +83,13 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const [authSteps, setAuthSteps] = useState<AuthStep[]>(listing.auth_plan ?? [])
   const [saving, setSaving] = useState(false)
   const [inclusions, setInclusions] = useState<Inclusion[]>(listing.inclusions ?? [])
+  const [conditionConfirmed, setConditionConfirmed] = useState(listing.condition_confirmed)
   const [addInput, setAddInput] = useState('')
   const addInputRef = useRef<HTMLInputElement>(null)
   const retakeTargetPhotoId = useRef<string | null>(null)
   const retakeFileInputRef = useRef<HTMLInputElement>(null)
   const savingInclusionsRef = useRef(false)
+  const savingConditionRef = useRef(false)
 
   function startRetake(photoId: string) {
     retakeTargetPhotoId.current = photoId
@@ -119,6 +122,11 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
     if (savingInclusionsRef.current) return
     setInclusions(listing.inclusions ?? [])
   }, [listing.inclusions])
+
+  useEffect(() => {
+    if (savingConditionRef.current) return
+    setConditionConfirmed(listing.condition_confirmed)
+  }, [listing.condition_confirmed])
 
   // Auto-discount per-listing override state
   const [adOverride, setAdOverride] = useState(
@@ -170,6 +178,38 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const checklistCandidates = getInclusionChecklist(listing.category ?? '', listing.sub_type)
     .filter((c) => !inclusions.some((i) => i.item.trim().toLowerCase() === c.item.trim().toLowerCase()))
 
+  const gateUnlocked = isPricingGateUnlocked({ condition_confirmed: conditionConfirmed, inclusions })
+  // Price off the local optimistic `inclusions` state, not `listing.inclusions` (the stale
+  // server-rendered prop) -- otherwise a just-confirmed/added/removed inclusion changes
+  // gateUnlocked immediately but the displayed price keeps using the old inclusion set until
+  // the next poll (which is disabled entirely for published/archived listings).
+  const pricing = computeAdjustedPricing({ ...listing, inclusions }, comps, { includePremiums: gateUnlocked })
+  // The exact number buildUnifiedListingForEbay will publish -- not just computeAdjustedPricing's
+  // raw result, which misses both a final_price_cents override and the suggested_price_cents
+  // fallback for the zero-comps case.
+  const resolvedPriceCents = resolveFinalPriceCents(listing, pricing)
+  // Only "provisional" when we're actually displaying computeAdjustedPricing's gated result --
+  // an explicit final_price_cents override is definitive regardless of gate state.
+  const isProvisional = listing.final_price_cents == null && !gateUnlocked
+  // pricing.priceToMoveCents is always derived from the comps-based estimate, not from an
+  // override -- showing it next to a final_price_cents override headline produces a
+  // contradictory "$X to move" above an already-lower resolved price. Suppress it whenever an
+  // override is in effect rather than deriving a second discount off the override.
+  const showPriceToMove = listing.final_price_cents == null
+  // The stored condition_delta/adjusted_price_cents columns on each sold comp reflect the
+  // listing's condition at step3 gather-time -- recompute against the current condition here
+  // too, or the drawer shows adjustment labels/prices that no longer support resolvedPriceCents
+  // above (e.g. after a condition re-assessment flips condition_confirmed back to false).
+  // _active-suffixed comps are excluded: they're live asking prices, not sold prices,
+  // deliberately stored with condition_delta 'same' and adjusted_price_cents == sale_price_cents
+  // verbatim (computeAdjustedPricing excludes them from the median entirely) -- condition-
+  // adjusting them here would show a price that was never actually asked.
+  const currentComps = comps.map((c) => {
+    if (c.source.endsWith('_active')) return c
+    const delta = conditionDelta(listing.condition ?? '', c.condition)
+    return { ...c, condition_delta: delta, adjusted_price_cents: adjustForCondition(c.sale_price_cents, delta) }
+  })
+
   async function saveAuthPlan(updated: AuthStep[]) {
     setSaving(true)
     await fetch(`/api/listings/${listing.id}/auth-plan`, {
@@ -195,14 +235,21 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   }
 
   async function saveInclusions(updated: Inclusion[]) {
+    const previous = inclusions
     savingInclusionsRef.current = true
     setInclusions(updated)
     try {
-      await fetch(`/api/listings/${listing.id}/inclusions`, {
+      const res = await fetch(`/api/listings/${listing.id}/inclusions`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ inclusions: updated }),
       })
+      // The gate (isPricingGateUnlocked) and the premium-adjusted price both read this
+      // optimistic state directly -- on a failed save, roll back rather than leaving an
+      // unlocked gate / premium price displayed for inclusions that were never persisted.
+      if (!res.ok) setInclusions(previous)
+    } catch {
+      setInclusions(previous)
     } finally {
       savingInclusionsRef.current = false
     }
@@ -217,7 +264,17 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   }
 
   async function approveCondition() {
-    await fetch(`/api/listings/${listing.id}/condition`, { method: 'PATCH' })
+    savingConditionRef.current = true
+    try {
+      // isPricingGateUnlocked and the premium-adjusted price both read conditionConfirmed
+      // directly -- without updating it here, a successful approval leaves the price
+      // premium-free/provisional until the next 30s poll, even though the finalize route
+      // already considers the gate unlocked server-side.
+      const res = await fetch(`/api/listings/${listing.id}/condition`, { method: 'PATCH' })
+      if (res.ok) setConditionConfirmed(true)
+    } finally {
+      savingConditionRef.current = false
+    }
   }
 
   function addInclusion(name?: string) {
@@ -249,23 +306,28 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
           )}
         </div>
 
-        {listing.suggested_price_cents != null && (
+        {resolvedPriceCents != null && (
           <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 space-y-2">
             <div className="flex items-baseline justify-between">
               <span className="text-xl font-bold text-emerald-400">
-                {formatPrice(listing.suggested_price_cents)}
+                {formatPrice(resolvedPriceCents)}
               </span>
               {listing.confidence_score != null && (
                 <span className="text-xs text-gray-500">{listing.confidence_score}% confidence</span>
               )}
             </div>
-            {listing.price_to_move_cents != null && (
+            {showPriceToMove && pricing.priceToMoveCents != null && (
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-amber-400 font-medium">{formatPrice(listing.price_to_move_cents)}</span>
+                <span className="text-xs text-amber-400 font-medium">{formatPrice(pricing.priceToMoveCents)}</span>
                 <span className="text-xs text-gray-500">
                   to move{listing.price_to_move_discount_pct != null && <> · {Math.round(listing.price_to_move_discount_pct)}% off moves faster</>}
                 </span>
               </div>
+            )}
+            {isProvisional && (
+              <p className="text-[10px] text-amber-500/80">
+                Provisional — will be refined once condition and inclusions are confirmed.
+              </p>
             )}
             {comps.length > 0 ? (
               <button
@@ -288,13 +350,13 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
               <dd className="text-gray-300 capitalize">{listing.category}</dd>
             </div>
           )}
-          {listing.condition && listing.condition_confirmed && (
+          {listing.condition && conditionConfirmed && (
             <div className="flex justify-between text-xs">
               <dt className="text-gray-600">Condition</dt>
               <dd className="text-gray-300">{CONDITION_LABELS[listing.condition] ?? listing.condition}</dd>
             </div>
           )}
-          {listing.condition_notes && listing.condition_confirmed && (
+          {listing.condition_notes && conditionConfirmed && (
             <div className="flex justify-between text-xs">
               <dt className="text-gray-600">Notes</dt>
               <dd className="text-gray-300 text-right max-w-[60%] leading-snug">{listing.condition_notes}</dd>
@@ -302,7 +364,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
           )}
         </dl>
 
-        {listing.condition && !listing.condition_confirmed && (
+        {listing.condition && !conditionConfirmed && (
           <section>
             <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Condition
@@ -636,10 +698,10 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
       <EvidenceDrawer
         open={evidenceOpen}
         onClose={() => setEvidenceOpen(false)}
-        comps={comps}
-        suggestedPriceCents={listing.suggested_price_cents}
+        comps={currentComps}
+        suggestedPriceCents={resolvedPriceCents}
         confidenceScore={listing.confidence_score}
-        priceToMoveCents={listing.price_to_move_cents}
+        priceToMoveCents={showPriceToMove ? pricing.priceToMoveCents : null}
         priceToMoveDiscountPct={listing.price_to_move_discount_pct}
         retailPriceCents={listing.retail_price_cents}
         retailPriceSource={listing.retail_price_source}

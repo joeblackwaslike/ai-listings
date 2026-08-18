@@ -1,10 +1,11 @@
-import type { Listing, Photo } from '@/types/listings';
+import type { Listing, Photo, PricingComp } from '@/types/listings';
 import type { UnifiedListing } from './types';
 import { toPublicUrl } from '@/lib/pipeline/to-public-url';
+import { computeAdjustedPricing, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust';
 
 /**
  * Builds the platform-agnostic {@link UnifiedListing} the eBay adapter's `createListing`
- * expects, from a real `Listing` row + its `photos`.
+ * expects, from a real `Listing` row + its `photos` + its `pricing_comps` rows.
  *
  * Title/description/item-specifics/category_id are pulled from `listing.platform_fields.ebay`
  * (the eBay-optimized copy produced by pipeline step 4a) rather than the listing's generic
@@ -15,10 +16,19 @@ import { toPublicUrl } from '@/lib/pipeline/to-public-url';
  * `mapConditionToEbay`/`mapConditionIdToEbay`, both of which expect the internal enum; passing
  * `condition_id` straight through here would double-map an already-mapped value and silently
  * fall back to eBay's "GOOD"/2500 default for almost every listing.
+ *
+ * Price resolution order: `final_price_cents` (explicit seller override) wins when set;
+ * otherwise `computeAdjustedPricing`'s result; otherwise `listing.suggested_price_cents`, the
+ * model-estimated price step4a always persists (a required field in its structured output,
+ * even when step3 found zero comps) -- so a listing with no sold comps still has a legitimate
+ * fallback price rather than being unpublishable. Throws only if none of the three yields a
+ * positive price, since the alternative -- silently falling back to `price: 0` -- would publish
+ * a live eBay listing at $0.00 with no error or warning.
  */
 export async function buildUnifiedListingForEbay(
   listing: Listing,
   photos: Photo[],
+  comps: PricingComp[],
 ): Promise<UnifiedListing> {
   const ebayFields = listing.platform_fields?.ebay;
   if (!ebayFields) {
@@ -38,12 +48,19 @@ export async function buildUnifiedListingForEbay(
       .map((url) => toPublicUrl(url)),
   );
 
-  // Open question for Joe (not settled): nothing in the pipeline currently sets
-  // final_price_cents before publish, so this falls back to suggested_price_cents (the AI
-  // pricing-research estimate). Confirm whether posting to eBay should instead *require*
-  // final_price_cents to be explicitly set first (e.g. after Joe reviews/adjusts the price)
-  // rather than silently publishing at the AI-suggested price.
-  const priceCents = listing.final_price_cents ?? listing.suggested_price_cents ?? 0;
+  // final_price_cents (an explicit seller override, e.g. from auto-discount) always wins when
+  // set. Otherwise, computeAdjustedPricing is the source of truth -- includePremiums only when
+  // the pricing gate is unlocked, matching the finalize-route gate exactly (a listing can't
+  // reach 'finalizing'/publish without passing that gate, but this is computed defensively
+  // rather than assumed). If there are no sold comps to compute from, fall back to step4a's
+  // model-estimated suggested_price_cents rather than treating the listing as unpriceable.
+  const adjusted = computeAdjustedPricing(listing, comps, { includePremiums: isPricingGateUnlocked(listing) });
+  const priceCents = resolveFinalPriceCents(listing, adjusted);
+  if (priceCents == null || priceCents <= 0) {
+    throw new Error(
+      'buildUnifiedListingForEbay: no valid price available -- final_price_cents, computeAdjustedPricing, and suggested_price_cents all produced no usable price',
+    );
+  }
 
   return {
     internalId: listing.sku,

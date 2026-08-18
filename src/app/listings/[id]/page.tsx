@@ -202,6 +202,12 @@ export default async function WorkspacePage({
   if (listingResult.error || !listingResult.data) {
     notFound()
   }
+  if (compsResult.error) {
+    // A failed comps fetch must not silently degrade to "no comps" -- FieldsPanel's price
+    // display is comp-dependent (premiums, gate-aware pricing), so an empty comp set here would
+    // show a different, unpremiumed price than a later publish could actually resolve.
+    throw new Error(`workspace page: pricing_comps fetch failed — ${compsResult.error.message}`)
+  }
 
   const listing = listingResult.data as unknown as Listing
   const photos = (photosResult.data ?? []) as unknown as Photo[]
