@@ -27,7 +27,7 @@ export async function PATCH(
   // reflects condition + inclusions once both are confirmed -- see computeAdjustedPricing in
   // pricing-adjust.ts. Finalizing before either is confirmed would lock in a price that hasn't
   // accounted for them.
-  const inclusions = (listing.inclusions ?? []) as Inclusion[]
+  const inclusions = (listing.inclusions ?? []) as unknown as Inclusion[]
   if (!listing.condition_confirmed || inclusions.some((i) => !i.confirmed)) {
     return Response.json(
       { error: 'Confirm condition and all inclusions before finalizing.' },
