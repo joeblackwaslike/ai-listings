@@ -4,7 +4,7 @@ import { getEbayCreds } from '@/lib/platforms/credentials'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
 import { buildUnifiedListingForEbay } from '@/lib/platforms/unified-listing'
 import { mapPostToEbayError } from '@/lib/platforms/post-to-ebay-error'
-import type { Listing, Photo, PlatformFields, ListingUrls } from '@/types/listings'
+import type { Listing, Photo, PlatformFields, ListingUrls, PricingComp } from '@/types/listings'
 
 export async function POST(
   _req: Request,
@@ -70,15 +70,22 @@ export async function POST(
     )
   }
 
-  const { data: photoRows } = await supabase
-    .from('photos')
-    .select('*')
-    .eq('listing_id', id)
-    .order('display_order', { ascending: true })
+  const [{ data: photoRows }, { data: compRows }] = await Promise.all([
+    supabase
+      .from('photos')
+      .select('*')
+      .eq('listing_id', id)
+      .order('display_order', { ascending: true }),
+    supabase
+      .from('pricing_comps')
+      .select('*')
+      .eq('listing_id', id),
+  ])
   const photos = (photoRows ?? []) as unknown as Photo[]
+  const comps = (compRows ?? []) as unknown as PricingComp[]
 
   try {
-    const unifiedListing = await buildUnifiedListingForEbay(listing, photos)
+    const unifiedListing = await buildUnifiedListingForEbay(listing, photos, comps)
     const result = await new EbayAdapter(creds).createListing(unifiedListing)
 
     const currentPlatformFields = listing.platform_fields as PlatformFields

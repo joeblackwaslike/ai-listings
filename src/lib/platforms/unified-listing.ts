@@ -1,10 +1,11 @@
-import type { Listing, Photo } from '@/types/listings';
+import type { Listing, Photo, PricingComp } from '@/types/listings';
 import type { UnifiedListing } from './types';
 import { toPublicUrl } from '@/lib/pipeline/to-public-url';
+import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust';
 
 /**
  * Builds the platform-agnostic {@link UnifiedListing} the eBay adapter's `createListing`
- * expects, from a real `Listing` row + its `photos`.
+ * expects, from a real `Listing` row + its `photos` + its `pricing_comps` rows.
  *
  * Title/description/item-specifics/category_id are pulled from `listing.platform_fields.ebay`
  * (the eBay-optimized copy produced by pipeline step 4a) rather than the listing's generic
@@ -19,6 +20,7 @@ import { toPublicUrl } from '@/lib/pipeline/to-public-url';
 export async function buildUnifiedListingForEbay(
   listing: Listing,
   photos: Photo[],
+  comps: PricingComp[],
 ): Promise<UnifiedListing> {
   const ebayFields = listing.platform_fields?.ebay;
   if (!ebayFields) {
@@ -38,12 +40,13 @@ export async function buildUnifiedListingForEbay(
       .map((url) => toPublicUrl(url)),
   );
 
-  // Open question for Joe (not settled): nothing in the pipeline currently sets
-  // final_price_cents before publish, so this falls back to suggested_price_cents (the AI
-  // pricing-research estimate). Confirm whether posting to eBay should instead *require*
-  // final_price_cents to be explicitly set first (e.g. after Joe reviews/adjusts the price)
-  // rather than silently publishing at the AI-suggested price.
-  const priceCents = listing.final_price_cents ?? listing.suggested_price_cents ?? 0;
+  // final_price_cents (an explicit seller override, e.g. from auto-discount) always wins when
+  // set. Otherwise, computeAdjustedPricing is the source of truth -- includePremiums only when
+  // the pricing gate is unlocked, matching the finalize-route gate exactly (a listing can't
+  // reach 'finalizing'/publish without passing that gate, but this is computed defensively
+  // rather than assumed).
+  const adjusted = computeAdjustedPricing(listing, comps, { includePremiums: isPricingGateUnlocked(listing) });
+  const priceCents = listing.final_price_cents ?? adjusted.priceCents ?? 0;
 
   return {
     internalId: listing.sku,
