@@ -34,9 +34,10 @@ export async function POST(request: Request) {
       .eq('id', replacesPhotoId)
       .eq('listing_id', listingId)
       .eq('type', 'studio')
+      .eq('photoroom_meta->>quality_failed', 'true')
       .maybeSingle()
     if (!replacedPhoto) {
-      return NextResponse.json({ error: 'replacesPhotoId does not reference a studio photo on this listing' }, { status: 400 })
+      return NextResponse.json({ error: 'replacesPhotoId does not reference a studio photo on this listing that failed quality review' }, { status: 400 })
     }
   }
 

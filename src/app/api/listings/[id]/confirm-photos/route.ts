@@ -40,7 +40,17 @@ export async function PATCH(
   // photos_confirmed already true doesn't re-trigger an expensive Claude call or create a
   // duplicate reassessment run that could race an in-flight one.
   if (updated && !wasAlreadyConfirmed) {
-    await inngest.send({ name: 'listing/photos-confirmed', data: { listingId: id } })
+    try {
+      await inngest.send({ name: 'listing/photos-confirmed', data: { listingId: id } })
+    } catch (err) {
+      // Compensate so a retry can re-attempt dispatch -- without this, a transient failure to
+      // enqueue leaves the listing at photos_confirmed=true forever, and the next PATCH sees
+      // wasAlreadyConfirmed=true and never re-fires the event, permanently stranding condition
+      // re-assessment (and the Finalize gate that depends on it) with no recovery path.
+      console.error(`confirm-photos: inngest.send failed for listing ${id}, reverting photos_confirmed for retry:`, err)
+      await supabase.from('listings').update({ photos_confirmed: false }).eq('id', id).eq('user_id', user.id)
+      return Response.json({ error: 'Failed to schedule condition re-assessment. Please try again.' }, { status: 500 })
+    }
   }
 
   return Response.json({ ok: true })
