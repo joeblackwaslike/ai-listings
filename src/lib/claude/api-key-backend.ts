@@ -22,12 +22,14 @@ function buildImageBlock(image: ClaudeImageInput): Anthropic.Messages.ImageBlock
 
 function buildUserContent(
   prompt: string,
-  image: ClaudeImageInput | undefined
+  image: ClaudeImageInput | undefined,
+  images: ClaudeImageInput[] | undefined
 ): string | Anthropic.Messages.ContentBlockParam[] {
-  if (!image) return prompt
-  // Image block first, then text — matches every pre-facade image call site
+  const inputs = images && images.length > 0 ? images : image ? [image] : []
+  if (inputs.length === 0) return prompt
+  // Image blocks first, then text — matches every pre-facade image call site
   // (step2-vision-analysis.ts, photo-quality-gate.ts).
-  return [buildImageBlock(image), { type: 'text', text: prompt }]
+  return [...inputs.map(buildImageBlock), { type: 'text', text: prompt }]
 }
 
 /**
@@ -55,7 +57,7 @@ export async function runStructuredApiKey<T>(params: StructuredCallParams): Prom
       },
     ],
     tool_choice: { type: 'tool', name: toolName },
-    messages: [{ role: 'user', content: buildUserContent(params.prompt, params.image) }],
+    messages: [{ role: 'user', content: buildUserContent(params.prompt, params.image, params.images) }],
   })
 
   const toolUse = response.content.find((b) => b.type === 'tool_use')
