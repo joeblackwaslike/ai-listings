@@ -83,11 +83,13 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const [authSteps, setAuthSteps] = useState<AuthStep[]>(listing.auth_plan ?? [])
   const [saving, setSaving] = useState(false)
   const [inclusions, setInclusions] = useState<Inclusion[]>(listing.inclusions ?? [])
+  const [conditionConfirmed, setConditionConfirmed] = useState(listing.condition_confirmed)
   const [addInput, setAddInput] = useState('')
   const addInputRef = useRef<HTMLInputElement>(null)
   const retakeTargetPhotoId = useRef<string | null>(null)
   const retakeFileInputRef = useRef<HTMLInputElement>(null)
   const savingInclusionsRef = useRef(false)
+  const savingConditionRef = useRef(false)
 
   function startRetake(photoId: string) {
     retakeTargetPhotoId.current = photoId
@@ -120,6 +122,11 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
     if (savingInclusionsRef.current) return
     setInclusions(listing.inclusions ?? [])
   }, [listing.inclusions])
+
+  useEffect(() => {
+    if (savingConditionRef.current) return
+    setConditionConfirmed(listing.condition_confirmed)
+  }, [listing.condition_confirmed])
 
   // Auto-discount per-listing override state
   const [adOverride, setAdOverride] = useState(
@@ -171,7 +178,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const checklistCandidates = getInclusionChecklist(listing.category ?? '', listing.sub_type)
     .filter((c) => !inclusions.some((i) => i.item.trim().toLowerCase() === c.item.trim().toLowerCase()))
 
-  const gateUnlocked = isPricingGateUnlocked({ condition_confirmed: listing.condition_confirmed, inclusions })
+  const gateUnlocked = isPricingGateUnlocked({ condition_confirmed: conditionConfirmed, inclusions })
   // Price off the local optimistic `inclusions` state, not `listing.inclusions` (the stale
   // server-rendered prop) -- otherwise a just-confirmed/added/removed inclusion changes
   // gateUnlocked immediately but the displayed price keeps using the old inclusion set until
@@ -257,7 +264,17 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   }
 
   async function approveCondition() {
-    await fetch(`/api/listings/${listing.id}/condition`, { method: 'PATCH' })
+    savingConditionRef.current = true
+    try {
+      // isPricingGateUnlocked and the premium-adjusted price both read conditionConfirmed
+      // directly -- without updating it here, a successful approval leaves the price
+      // premium-free/provisional until the next 30s poll, even though the finalize route
+      // already considers the gate unlocked server-side.
+      const res = await fetch(`/api/listings/${listing.id}/condition`, { method: 'PATCH' })
+      if (res.ok) setConditionConfirmed(true)
+    } finally {
+      savingConditionRef.current = false
+    }
   }
 
   function addInclusion(name?: string) {
@@ -333,13 +350,13 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
               <dd className="text-gray-300 capitalize">{listing.category}</dd>
             </div>
           )}
-          {listing.condition && listing.condition_confirmed && (
+          {listing.condition && conditionConfirmed && (
             <div className="flex justify-between text-xs">
               <dt className="text-gray-600">Condition</dt>
               <dd className="text-gray-300">{CONDITION_LABELS[listing.condition] ?? listing.condition}</dd>
             </div>
           )}
-          {listing.condition_notes && listing.condition_confirmed && (
+          {listing.condition_notes && conditionConfirmed && (
             <div className="flex justify-between text-xs">
               <dt className="text-gray-600">Notes</dt>
               <dd className="text-gray-300 text-right max-w-[60%] leading-snug">{listing.condition_notes}</dd>
@@ -347,7 +364,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
           )}
         </dl>
 
-        {listing.condition && !listing.condition_confirmed && (
+        {listing.condition && !conditionConfirmed && (
           <section>
             <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Condition
