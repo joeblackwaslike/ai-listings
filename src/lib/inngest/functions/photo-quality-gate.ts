@@ -63,15 +63,43 @@ A photo passes if it is sharp, properly exposed, the subject is fully visible, a
   }
 }
 
+async function supersedeReplacedPhoto(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  replacesPhotoId: string | undefined
+): Promise<void> {
+  if (!replacesPhotoId) return
+  await supabase.from('photos').delete().eq('id', replacesPhotoId)
+}
+
+async function reconcileQualityEscalation(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  listingId: string
+): Promise<void> {
+  const { count, error } = await supabase
+    .from('photos')
+    .select('id', { count: 'exact', head: true })
+    .eq('listing_id', listingId)
+    .eq('type', 'studio')
+    .eq('photoroom_meta->>quality_failed', 'true')
+
+  if (!error && count === 0) {
+    await supabase
+      .from('listings')
+      .update({ agent_blocked: false, agent_blocked_reason: null })
+      .eq('id', listingId)
+  }
+}
+
 export const photoQualityGate = inngest.createFunction(
   {
     id: 'photo-quality-gate',
     name: 'Photo Quality Gate',
     triggers: [{ event: 'studio/uploaded' }],
     retries: 1,
+    concurrency: { limit: 1, key: 'event.data.listingId' },
   },
   async ({ event, step }) => {
-    const { listingId, photoId, photoUrl } = (
+    const { listingId, photoId, photoUrl, replacesPhotoId } = (
       event as unknown as StudioUploadedEvent
     ).data
 
@@ -90,6 +118,24 @@ export const photoQualityGate = inngest.createFunction(
           },
         })
         .eq('id', photoId)
+
+      const { count, error: countError } = await supabase
+        .from('photos')
+        .select('id', { count: 'exact', head: true })
+        .eq('listing_id', listingId)
+        .eq('type', 'studio')
+        .eq('photoroom_meta->>quality_failed', 'true')
+
+      const outstandingCount = !countError && count !== null ? count : 1
+      await supabase
+        .from('listings')
+        .update({
+          agent_blocked: true,
+          agent_blocked_reason: `${outstandingCount} studio photo${outstandingCount === 1 ? '' : 's'} need${outstandingCount === 1 ? 's' : ''} attention — see the checklist below.`,
+        })
+        .eq('id', listingId)
+
+      await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, replacesPhotoId))
 
       return { ok: false, listingId, photoId, issues: quality.issues }
     }
@@ -126,6 +172,9 @@ export const photoQualityGate = inngest.createFunction(
       .single()
 
     if (listingRow?.skip_background_removal) {
+      await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, replacesPhotoId))
+      await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
+
       return { ok: true, listingId, photoId, skipped: true }
     }
 
@@ -142,6 +191,9 @@ export const photoQualityGate = inngest.createFunction(
     const apiKeys = await getUserApiKeys(listingRow?.user_id ?? null)
     const storagePath = `studio/${listingId}/processed-${photoId}.png`
     await removeBackground(photoId, photoRow.raw_url as string, storagePath, apiKeys)
+
+    await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, replacesPhotoId))
+    await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
 
     return { ok: true, listingId, photoId }
   }
