@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import Image from 'next/image'
 import { ChevronRight, Check, CheckCircle2, Circle, AlertCircle, Plus, SkipForward, X, Pencil } from 'lucide-react'
 import { formatPrice, getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
@@ -42,6 +43,40 @@ function AuthStepIcon({ status }: Readonly<{ status: AuthStep['status'] }>) {
   return <Circle className="w-3.5 h-3.5 text-gray-700 hover:text-gray-400 transition-colors" />
 }
 
+interface QaChecklistRowProps {
+  photo: Photo
+  onRetake: (photoId: string) => void
+  onUseAsIs: (photoId: string) => Promise<void>
+}
+
+function QaChecklistRow({ photo, onRetake, onUseAsIs }: Readonly<QaChecklistRowProps>) {
+  const meta = photo.photoroom_meta as { quality_verdict?: string } | null
+  return (
+    <div className="rounded bg-black/20 p-2 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-none w-10 h-10 rounded border border-red-700 overflow-hidden bg-gray-800">
+          {photo.raw_url && <Image src={photo.raw_url} alt="" fill className="object-cover" />}
+        </div>
+        <p className="flex-1 min-w-0 text-[11px] text-orange-300">{meta?.quality_verdict ?? 'Quality issue'}</p>
+      </div>
+      <div className="flex gap-1.5 pl-12">
+        <button
+          onClick={() => onRetake(photo.id)}
+          className="text-[10px] px-2 py-1 rounded bg-orange-900/50 text-orange-300 hover:bg-orange-900/70 transition-colors"
+        >
+          Retake
+        </button>
+        <button
+          onClick={() => void onUseAsIs(photo.id)}
+          className="text-[10px] px-2 py-1 rounded bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
+        >
+          Use as-is
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<FieldsPanelProps>) {
   const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [authSteps, setAuthSteps] = useState<AuthStep[]>(listing.auth_plan ?? [])
@@ -49,7 +84,31 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const [inclusions, setInclusions] = useState<Inclusion[]>(listing.inclusions ?? [])
   const [addInput, setAddInput] = useState('')
   const addInputRef = useRef<HTMLInputElement>(null)
+  const retakeTargetPhotoId = useRef<string | null>(null)
+  const retakeFileInputRef = useRef<HTMLInputElement>(null)
   const savingInclusionsRef = useRef(false)
+
+  function startRetake(photoId: string) {
+    retakeTargetPhotoId.current = photoId
+    retakeFileInputRef.current?.click()
+  }
+
+  async function handleRetakeFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    const replacesPhotoId = retakeTargetPhotoId.current
+    e.target.value = ''
+    if (!file || !replacesPhotoId) return
+
+    const formData = new FormData()
+    formData.append('photo', file)
+    formData.append('listingId', listing.id)
+    formData.append('replacesPhotoId', replacesPhotoId)
+    await fetch('/api/studio-upload', { method: 'POST', body: formData })
+  }
+
+  async function handleUseAsIs(photoId: string) {
+    await fetch(`/api/photos/${photoId}/quality-override`, { method: 'PATCH' })
+  }
 
   // AutoRefresh polls via router.refresh(), which re-renders this client component with a new
   // `listing` prop but does not re-run useState's initializer -- without this, inclusions
@@ -157,6 +216,10 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
     void saveInclusions(inclusions.map((item, idx) => idx === i ? { ...item, confirmed: true } : item))
   }
 
+  async function approveCondition() {
+    await fetch(`/api/listings/${listing.id}/condition`, { method: 'PATCH' })
+  }
+
   function addInclusion(name?: string) {
     const item = (name ?? addInput).trim()
     if (!item) return
@@ -225,19 +288,43 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
               <dd className="text-gray-300 capitalize">{listing.category}</dd>
             </div>
           )}
-          {listing.condition && (
+          {listing.condition && listing.condition_confirmed && (
             <div className="flex justify-between text-xs">
               <dt className="text-gray-600">Condition</dt>
               <dd className="text-gray-300">{CONDITION_LABELS[listing.condition] ?? listing.condition}</dd>
             </div>
           )}
-          {listing.condition_notes && (
+          {listing.condition_notes && listing.condition_confirmed && (
             <div className="flex justify-between text-xs">
               <dt className="text-gray-600">Notes</dt>
               <dd className="text-gray-300 text-right max-w-[60%] leading-snug">{listing.condition_notes}</dd>
             </div>
           )}
         </dl>
+
+        {listing.condition && !listing.condition_confirmed && (
+          <section>
+            <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Condition
+            </h3>
+            <div className="flex items-start gap-2 px-2 py-2 rounded bg-amber-950/40 border-l-2 border-amber-600">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-amber-300 font-medium">
+                  {CONDITION_LABELS[listing.condition] ?? listing.condition}
+                  <span className="text-amber-600/70 font-normal"> — recalculated from studio photos</span>
+                </p>
+                {listing.condition_notes && (
+                  <p className="text-[10px] text-amber-600/80 mt-0.5 leading-snug">{listing.condition_notes}</p>
+                )}
+              </div>
+              <div className="flex-none flex gap-1.5 pt-0.5">
+                <button onClick={() => void approveCondition()} className="text-emerald-500 hover:text-emerald-400" title="Approve">
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
         {populatedMeasurements.length > 0 && (
           <section>
@@ -511,12 +598,39 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
           )}
         </section>
 
-        {listing.agent_blocked && listing.agent_blocked_reason && (
-          <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5">
-            <p className="text-xs font-medium text-orange-400 mb-0.5">Agent waiting</p>
-            <p className="text-xs text-orange-300/80">{listing.agent_blocked_reason}</p>
-          </div>
-        )}
+        {(() => {
+          const flaggedPhotos = photos.filter(
+            (p) => p.type === 'studio' && (p.photoroom_meta as { quality_failed?: boolean } | null)?.quality_failed
+          )
+          if (listing.agent_blocked && flaggedPhotos.length > 0) {
+            return (
+              <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5 space-y-3">
+                <p className="text-xs font-medium text-orange-400">
+                  Agent waiting — {flaggedPhotos.length} photo{flaggedPhotos.length === 1 ? '' : 's'} need{flaggedPhotos.length === 1 ? 's' : ''} attention
+                </p>
+                {flaggedPhotos.map((photo) => (
+                  <QaChecklistRow key={photo.id} photo={photo} onRetake={startRetake} onUseAsIs={handleUseAsIs} />
+                ))}
+                <input
+                  ref={retakeFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => void handleRetakeFileSelected(e)}
+                />
+              </div>
+            )
+          }
+          if (listing.agent_blocked && listing.agent_blocked_reason) {
+            return (
+              <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5">
+                <p className="text-xs font-medium text-orange-400 mb-0.5">Agent waiting</p>
+                <p className="text-xs text-orange-300/80">{listing.agent_blocked_reason}</p>
+              </div>
+            )
+          }
+          return null
+        })()}
       </div>
 
       <EvidenceDrawer
