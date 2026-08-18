@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   const formData = await request.formData()
   const file = formData.get('photo') as File | null
   const listingId = formData.get('listingId') as string | null
+  const replacesPhotoId = formData.get('replacesPhotoId') as string | null
 
   if (!file || !listingId) {
     return NextResponse.json({ error: 'photo and listingId required' }, { status: 400 })
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
       listingId,
       photoId: photoRow.id as string,
       photoUrl,
+      ...(replacesPhotoId ? { replacesPhotoId } : {}),
     },
   })
 
