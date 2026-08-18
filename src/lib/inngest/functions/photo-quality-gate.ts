@@ -5,6 +5,9 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { toPublicUrl } from '@/lib/pipeline/to-public-url'
 import { removeBackground } from '@/lib/pipeline/remove-background'
 import { getUserApiKeys } from '@/lib/user-api-keys'
+import { getInclusionChecklist, mergeDetectedInclusions } from '@/lib/inclusions'
+import { detectInclusionsFromPhoto } from '@/lib/pipeline/step2-vision-analysis'
+import type { Inclusion } from '@/types/listings'
 
 interface QualityOutput {
   passed: boolean
@@ -89,6 +92,31 @@ export const photoQualityGate = inngest.createFunction(
         .eq('id', photoId)
 
       return { ok: false, listingId, photoId, issues: quality.issues }
+    }
+
+    // Independent of skip_background_removal below -- inclusion detection should run whether
+    // or not background removal itself is skipped. Self-contained (own select, own apiKeys
+    // fetch) rather than threading state from the later branch, matching how Inngest steps in
+    // this codebase are already independent (e.g. intake-pipeline.ts's store-gender step
+    // re-reads what it needs rather than relying on an earlier step's return value). Best-effort:
+    // a failure here must not block background removal below.
+    try {
+      await step.run('detect-inclusions', async () => {
+        const { data: incRow } = await supabase
+          .from('listings')
+          .select('user_id, category, sub_type, inclusions')
+          .eq('id', listingId)
+          .single()
+        if (!incRow) return
+
+        const apiKeys = await getUserApiKeys(incRow.user_id)
+        const checklist = getInclusionChecklist(incRow.category ?? '', incRow.sub_type)
+        const detected = await detectInclusionsFromPhoto(photoUrl, checklist, apiKeys)
+        const merged = mergeDetectedInclusions((incRow.inclusions as Inclusion[]) ?? [], detected)
+        await supabase.from('listings').update({ inclusions: merged }).eq('id', listingId)
+      })
+    } catch (err) {
+      console.error(`detect-inclusions failed for listing ${listingId}, photo ${photoId}:`, err)
     }
 
     const { data: listingRow } = await supabase
