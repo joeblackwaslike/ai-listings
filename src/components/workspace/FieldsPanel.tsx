@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { ChevronRight, Check, CheckCircle2, Circle, AlertCircle, Plus, SkipForward, X } from 'lucide-react'
+import { ChevronRight, Check, CheckCircle2, Circle, AlertCircle, Plus, SkipForward, X, Pencil } from 'lucide-react'
 import { formatPrice, getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
 import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
@@ -9,6 +9,7 @@ import { EvidenceDrawer } from './EvidenceDrawer'
 import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
+import { getInclusionChecklist } from '@/lib/inclusions'
 import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
@@ -96,6 +97,9 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
       })
     : []
 
+  const checklistCandidates = getInclusionChecklist(listing.category ?? '', listing.sub_type)
+    .filter((c) => !inclusions.some((i) => i.item.trim().toLowerCase() === c.item.trim().toLowerCase()))
+
   async function saveAuthPlan(updated: AuthStep[]) {
     setSaving(true)
     await fetch(`/api/listings/${listing.id}/auth-plan`, {
@@ -133,11 +137,20 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
     void saveInclusions(inclusions.filter((_, idx) => idx !== i))
   }
 
-  function addInclusion() {
-    const name = addInput.trim()
-    if (!name) return
-    void saveInclusions([...inclusions, { item: name, included: true, notes: null }])
-    setAddInput('')
+  function confirmInclusion(i: number) {
+    void saveInclusions(inclusions.map((item, idx) => idx === i ? { ...item, confirmed: true } : item))
+  }
+
+  function addInclusion(name?: string) {
+    const item = (name ?? addInput).trim()
+    if (!item) return
+    const alreadyExists = inclusions.some((i) => i.item.trim().toLowerCase() === item.trim().toLowerCase())
+    if (alreadyExists) {
+      if (!name) setAddInput('')
+      return
+    }
+    void saveInclusions([...inclusions, { item, source: 'manual', confirmed: true, notes: null }])
+    if (!name) setAddInput('')
     addInputRef.current?.focus()
   }
 
@@ -271,28 +284,81 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
           <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
             Inclusions
           </h3>
-          <ul className="space-y-1">
-            {inclusions.map((item, i) => (
-              <li key={item.item} className="flex items-center gap-2 group">
-                {item.included ? (
-                  <Check className="w-3.5 h-3.5 flex-none text-emerald-500 shrink-0" />
-                ) : (
-                  <X className="w-3.5 h-3.5 flex-none text-gray-700 shrink-0" />
-                )}
-                <span className={`text-xs flex-1 min-w-0 truncate ${item.included ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {item.item}
-                  {item.notes && <span className="text-gray-600"> ({item.notes})</span>}
-                </span>
-                <button
-                  onClick={() => removeInclusion(i)}
-                  className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-gray-700 hover:text-red-400"
-                  title="Remove"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </li>
-            ))}
+          <ul className="space-y-1.5">
+            {inclusions.map((item, i) => {
+              const suffix = item.tagState
+                ? item.tagState === 'attached' ? '— still attached' : '— severed'
+                : item.docSource === 'original' ? '— original (brand-issued)'
+                : item.docSource === 'reseller' ? '— reseller-issued'
+                : item.docSource === 'third_party' ? '— third-party verified'
+                : item.source === 'manual' ? '— added by you'
+                : null
+
+              if (item.source === 'detected' && !item.confirmed) {
+                return (
+                  <li key={item.item} className="flex items-center gap-2 px-2 py-1.5 rounded bg-amber-950/40 border-l-2 border-amber-600">
+                    <span className="text-xs flex-1 min-w-0 truncate text-amber-300">
+                      {item.item}
+                      {suffix && <span className="text-amber-600/70"> {suffix}</span>}
+                    </span>
+                    <button
+                      onClick={() => confirmInclusion(i)}
+                      className="flex-none text-emerald-500 hover:text-emerald-400"
+                      title="Confirm"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => removeInclusion(i)}
+                      className="flex-none text-gray-600 hover:text-red-400"
+                      title="Remove"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                )
+              }
+
+              return (
+                <li key={item.item} className="flex items-center gap-2 px-2 py-1.5 rounded group">
+                  <Check className={`w-3.5 h-3.5 flex-none ${item.source === 'manual' ? 'text-blue-400' : 'text-emerald-500'}`} />
+                  <span className="text-xs flex-1 min-w-0 truncate text-gray-300">
+                    {item.item}
+                    {suffix && <span className={item.source === 'manual' ? 'text-blue-500/70' : 'text-gray-600'}> {suffix}</span>}
+                    {item.notes && <span className="text-gray-600"> ({item.notes})</span>}
+                  </span>
+                  <button
+                    className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-gray-700 hover:text-gray-400"
+                    title="Edit"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => removeInclusion(i)}
+                    className="flex-none opacity-0 group-hover:opacity-100 transition-opacity text-gray-700 hover:text-red-400"
+                    title="Remove"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </li>
+              )
+            })}
           </ul>
+
+          {checklistCandidates.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3 mb-2">
+              {checklistCandidates.map((c) => (
+                <button
+                  key={c.item}
+                  onClick={() => addInclusion(c.item)}
+                  className="text-[10px] px-2 py-1 rounded-full border border-gray-800 text-gray-500 hover:border-gray-600 hover:text-gray-300 transition-colors"
+                >
+                  + {c.item}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center gap-1.5 mt-2">
             <input
               ref={addInputRef}
@@ -303,7 +369,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
               className="flex-1 bg-transparent text-xs text-gray-300 placeholder-gray-700 outline-none border-b border-gray-800 focus:border-gray-600 pb-0.5 transition-colors"
             />
             <button
-              onClick={addInclusion}
+              onClick={() => addInclusion()}
               disabled={!addInput.trim()}
               className="flex-none text-gray-700 hover:text-emerald-400 disabled:opacity-30 transition-colors"
             >
