@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import type { Inclusion } from '@/types/listings'
 
 export async function PATCH(
   _req: Request,
@@ -15,19 +16,23 @@ export async function PATCH(
 
   const { data: listing } = await supabase
     .from('listings')
-    .select('user_id, condition_confirmed')
+    .select('user_id, condition_confirmed, inclusions')
     .eq('id', id)
     .single()
   if (!listing || listing.user_id !== user.id) {
     return Response.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // INTERIM: blocks Finalize on condition_confirmed until ai-listings-yva's real
-  // pricing-gate design lands. ai-listings-yva's acceptance criteria include
-  // reconciling (keep/replace/remove) this exact check -- see that ticket
-  // before removing or duplicating this gate.
-  if (!listing.condition_confirmed) {
-    return Response.json({ error: 'Condition must be approved before finalizing.' }, { status: 400 })
+  // Real pricing gate (ai-listings-yva): pricing (comp premiums + authenticity premium) only
+  // reflects condition + inclusions once both are confirmed -- see computeAdjustedPricing in
+  // pricing-adjust.ts. Finalizing before either is confirmed would lock in a price that hasn't
+  // accounted for them.
+  const inclusions = (listing.inclusions ?? []) as Inclusion[]
+  if (!listing.condition_confirmed || inclusions.some((i) => !i.confirmed)) {
+    return Response.json(
+      { error: 'Confirm condition and all inclusions before finalizing.' },
+      { status: 400 }
+    )
   }
 
   // Only a listing actively in the loop can be finalized -- this no-ops (still 200) if it's
