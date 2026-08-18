@@ -11,7 +11,7 @@ import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { getInclusionChecklist } from '@/lib/inclusions'
-import { computeAdjustedPricing, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
+import { adjustForCondition, computeAdjustedPricing, conditionDelta, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
@@ -184,6 +184,14 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   // Only "provisional" when we're actually displaying computeAdjustedPricing's gated result --
   // an explicit final_price_cents override is definitive regardless of gate state.
   const isProvisional = listing.final_price_cents == null && !gateUnlocked
+  // The stored condition_delta/adjusted_price_cents columns on each comp reflect the listing's
+  // condition at step3 gather-time -- recompute against the current condition here too, or the
+  // drawer shows adjustment labels/prices that no longer support resolvedPriceCents above (e.g.
+  // after a condition re-assessment flips condition_confirmed back to false).
+  const currentComps = comps.map((c) => {
+    const delta = conditionDelta(listing.condition ?? '', c.condition)
+    return { ...c, condition_delta: delta, adjusted_price_cents: adjustForCondition(c.sale_price_cents, delta) }
+  })
 
   async function saveAuthPlan(updated: AuthStep[]) {
     setSaving(true)
@@ -656,7 +664,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
       <EvidenceDrawer
         open={evidenceOpen}
         onClose={() => setEvidenceOpen(false)}
-        comps={comps}
+        comps={currentComps}
         suggestedPriceCents={resolvedPriceCents}
         confidenceScore={listing.confidence_score}
         priceToMoveCents={pricing.priceToMoveCents}
