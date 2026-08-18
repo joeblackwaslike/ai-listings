@@ -15,11 +15,19 @@ export async function PATCH(
 
   const { data: listing } = await supabase
     .from('listings')
-    .select('user_id')
+    .select('user_id, condition_confirmed')
     .eq('id', id)
     .single()
   if (!listing || listing.user_id !== user.id) {
     return Response.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  // INTERIM: blocks Finalize on condition_confirmed until ai-listings-yva's real
+  // pricing-gate design lands. ai-listings-yva's acceptance criteria include
+  // reconciling (keep/replace/remove) this exact check -- see that ticket
+  // before removing or duplicating this gate.
+  if (!listing.condition_confirmed) {
+    return Response.json({ error: 'Condition must be approved before finalizing.' }, { status: 400 })
   }
 
   // Only a listing actively in the loop can be finalized -- this no-ops (still 200) if it's
