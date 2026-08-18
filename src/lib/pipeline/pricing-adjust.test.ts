@@ -36,11 +36,13 @@ test('CATEGORY_DISCOUNT: has an entry for every known category', () => {
 })
 
 test('priceTierOf: boundaries', () => {
+  // Design spec: LOW is < $150, MID is $150-$750 inclusive, HIGH is > $750.
   assert.equal(priceTierOf(0), 'low')
   assert.equal(priceTierOf(14_999), 'low')
   assert.equal(priceTierOf(15_000), 'mid')
   assert.equal(priceTierOf(74_999), 'mid')
-  assert.equal(priceTierOf(75_000), 'high')
+  assert.equal(priceTierOf(75_000), 'mid')
+  assert.equal(priceTierOf(75_001), 'high')
   assert.equal(priceTierOf(1_000_000), 'high')
 })
 

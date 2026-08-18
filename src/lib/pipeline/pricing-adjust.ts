@@ -51,7 +51,7 @@ export type PriceTier = 'low' | 'mid' | 'high'
 
 export function priceTierOf(priceCents: number): PriceTier {
   if (priceCents < 15_000) return 'low'
-  if (priceCents < 75_000) return 'mid'
+  if (priceCents <= 75_000) return 'mid'
   return 'high'
 }
 
