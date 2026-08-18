@@ -1,5 +1,7 @@
 import { inngest } from '@/lib/inngest/client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
+import type { Inclusion, Listing, PricingComp } from '@/types/listings'
 
 export const autoDiscountCron = inngest.createFunction(
   {
@@ -15,7 +17,7 @@ export const autoDiscountCron = inngest.createFunction(
       const { data: listings } = await supabase
         .from('listings')
         .select(
-          'id, user_id, final_price_cents, suggested_price_cents, auto_discount_enabled, auto_discount_pct, auto_discount_interval_days'
+          'id, user_id, final_price_cents, suggested_price_cents, condition, condition_confirmed, category, sub_type, inclusions, auto_discount_enabled, auto_discount_pct, auto_discount_interval_days'
         )
         .eq('status', 'published')
 
@@ -89,7 +91,22 @@ export const autoDiscountCron = inngest.createFunction(
 
           const initialPrice = (initialEvent?.price_cents as number | null) ?? (listing.suggested_price_cents as number | null) ?? 0
           if (initialPrice <= 0) continue
-          const currentPrice = (listing.final_price_cents as number | null) ?? (listing.suggested_price_cents as number | null) ?? 0
+
+          const { data: compRows } = await supabase
+            .from('pricing_comps')
+            .select('*')
+            .eq('listing_id', listing.id)
+          const comps = (compRows ?? []) as unknown as PricingComp[]
+          const inclusions = (listing.inclusions as Inclusion[] | null) ?? []
+          const pricingListing = {
+            condition: listing.condition as Listing['condition'],
+            category: listing.category as Listing['category'],
+            sub_type: listing.sub_type as Listing['sub_type'],
+            inclusions,
+          }
+          const gateUnlocked = isPricingGateUnlocked({ condition_confirmed: listing.condition_confirmed as boolean, inclusions })
+          const adjusted = computeAdjustedPricing(pricingListing, comps, { includePremiums: gateUnlocked })
+          const currentPrice = (listing.final_price_cents as number | null) ?? adjusted.priceCents ?? (listing.suggested_price_cents as number | null) ?? 0
           if (currentPrice <= 0) continue
 
           const newPrice = Math.round(currentPrice * (1 - pct / 100))
