@@ -628,6 +628,15 @@ export async function runStep3PricingResearch(
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
 
+  // Clear any pricing_comps from a prior run before inserting fresh results -- step3 can be
+  // retried (see retry-step.ts), and computeAdjustedPricing (pricing-adjust.ts) treats every
+  // stored row for the listing as current, sold-comp evidence. Without this, a retry would
+  // blend stale and current comps into the median instead of replacing it.
+  const { error: deleteError } = await supabase.from('pricing_comps').delete().eq('listing_id', listingId)
+  if (deleteError) {
+    throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
+  }
+
   // Insert all: filtered sold comps + active market context
   const toInsert = [...filteredComps, ...activeRows]
   if (toInsert.length > 0) {

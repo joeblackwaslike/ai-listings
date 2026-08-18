@@ -172,7 +172,11 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
     .filter((c) => !inclusions.some((i) => i.item.trim().toLowerCase() === c.item.trim().toLowerCase()))
 
   const gateUnlocked = isPricingGateUnlocked({ condition_confirmed: listing.condition_confirmed, inclusions })
-  const pricing = computeAdjustedPricing(listing, comps, { includePremiums: gateUnlocked })
+  // Price off the local optimistic `inclusions` state, not `listing.inclusions` (the stale
+  // server-rendered prop) -- otherwise a just-confirmed/added/removed inclusion changes
+  // gateUnlocked immediately but the displayed price keeps using the old inclusion set until
+  // the next poll (which is disabled entirely for published/archived listings).
+  const pricing = computeAdjustedPricing({ ...listing, inclusions }, comps, { includePremiums: gateUnlocked })
 
   async function saveAuthPlan(updated: AuthStep[]) {
     setSaving(true)
