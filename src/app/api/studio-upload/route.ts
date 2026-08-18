@@ -27,6 +27,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  if (replacesPhotoId) {
+    const { data: replacedPhoto } = await sessionClient
+      .from('photos')
+      .select('id')
+      .eq('id', replacesPhotoId)
+      .eq('listing_id', listingId)
+      .eq('type', 'studio')
+      .maybeSingle()
+    if (!replacedPhoto) {
+      return NextResponse.json({ error: 'replacesPhotoId does not reference a studio photo on this listing' }, { status: 400 })
+    }
+  }
+
   const supabase = getSupabaseAdmin()
   const timestamp = Date.now()
   const ext = file.name.split('.').pop() ?? 'jpg'

@@ -13,9 +13,19 @@ export async function PATCH(
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const supabase = getSupabaseAdmin()
+
+  const { data: existing } = await supabase
+    .from('listings')
+    .select('photos_confirmed')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  const wasAlreadyConfirmed = existing?.photos_confirmed === true
+
   const { data: updated, error } = await supabase
     .from('listings')
-    .update({ photos_confirmed: true })
+    .update({ photos_confirmed: true, condition_confirmed: false })
     .eq('id', id)
     .eq('user_id', user.id)
     .select('id')
@@ -25,8 +35,11 @@ export async function PATCH(
 
   // Only fire the downstream event once we've confirmed the update actually matched a row
   // this caller owns -- condition-reassessment.ts trusts listingId completely once it
-  // receives this event (same class of gap PR #35 fixed for confirm-id/confirm-gender).
-  if (updated) {
+  // receives this event (same class of gap PR #35 fixed for confirm-id/confirm-gender) --
+  // AND only on a genuine false->true transition, so a retry/double-click that finds
+  // photos_confirmed already true doesn't re-trigger an expensive Claude call or create a
+  // duplicate reassessment run that could race an in-flight one.
+  if (updated && !wasAlreadyConfirmed) {
     await inngest.send({ name: 'listing/photos-confirmed', data: { listingId: id } })
   }
 

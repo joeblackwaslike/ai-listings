@@ -67,10 +67,12 @@ export async function PATCH(
     })
     .eq('id', id)
 
-  if (updateError) {
-    return Response.json({ error: 'Failed to update photo' }, { status: 500 })
-  }
-
+  // Reconcile agent_blocked regardless of whether the metadata update above succeeded --
+  // removeBackground already wiped this photo's quality_failed flag as a side effect the
+  // moment it ran, so the listing's true outstanding-issues count may already be zero even
+  // if the follow-up update below fails. Skipping this on that failure could strand the
+  // listing agent_blocked forever with no photo left in the checklist to explain why.
+  //
   // Guard against a failed count query (count is null on error) the same way
   // reconcileQualityEscalation does in photo-quality-gate.ts -- otherwise a transient
   // failure here reads identically to "confirmed zero outstanding issues" and would
@@ -87,6 +89,10 @@ export async function PATCH(
       .from('listings')
       .update({ agent_blocked: false, agent_blocked_reason: null })
       .eq('id', photoRow.listing_id)
+  }
+
+  if (updateError) {
+    return Response.json({ error: 'Failed to update photo' }, { status: 500 })
   }
 
   return Response.json({ ok: true })

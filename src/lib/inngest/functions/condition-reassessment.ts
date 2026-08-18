@@ -52,24 +52,32 @@ Use the generate_listing condition scale: new_with_tags, new_without_tags, like_
 }
 
 export const conditionReassessment = inngest.createFunction(
-  { id: 'condition-reassessment', name: 'Condition Re-assessment', triggers: [{ event: 'listing/photos-confirmed' }], retries: 1 },
+  {
+    id: 'condition-reassessment',
+    name: 'Condition Re-assessment',
+    triggers: [{ event: 'listing/photos-confirmed' }],
+    retries: 1,
+    concurrency: { limit: 1, key: 'event.data.listingId' },
+  },
   async ({ event, step }) => {
     const { listingId } = (event as unknown as ListingPhotosConfirmedEvent).data
     const supabase = getSupabaseAdmin()
 
     const result = await step.run('reassess-condition', async () => {
-      const { data: listingRow } = await supabase
+      const { data: listingRow, error: listingError } = await supabase
         .from('listings')
         .select('user_id, skip_background_removal')
         .eq('id', listingId)
         .single()
+      if (listingError) throw new Error(`condition-reassessment: failed to load listing ${listingId} -- ${listingError.message}`)
       if (!listingRow) return null
 
-      const { data: photos } = await supabase
+      const { data: photos, error: photosError } = await supabase
         .from('photos')
         .select('processed_url, raw_url')
         .eq('listing_id', listingId)
         .eq('type', 'studio')
+      if (photosError) throw new Error(`condition-reassessment: failed to load photos for listing ${listingId} -- ${photosError.message}`)
 
       const urls = (photos ?? [])
         .map((p) => (listingRow.skip_background_removal ? p.raw_url : p.processed_url ?? p.raw_url) as string)
@@ -83,10 +91,14 @@ export const conditionReassessment = inngest.createFunction(
 
     if (!result) return { ok: false, listingId, reason: 'no studio photos or listing not found' }
 
-    await supabase
+    const { error: updateError } = await supabase
       .from('listings')
       .update({ condition: result.condition, condition_notes: result.condition_notes, condition_confirmed: false })
       .eq('id', listingId)
+
+    if (updateError) {
+      console.error(`condition-reassessment: failed to write condition for listing ${listingId}:`, updateError)
+    }
 
     return { ok: true, listingId }
   }
