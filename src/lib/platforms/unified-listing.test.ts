@@ -190,6 +190,13 @@ test('buildUnifiedListingForEbay throws when sku is not yet assigned', async () 
 test('buildUnifiedListingForEbay throws when no price can be derived (no final_price_cents override and no comps)', async () => {
   await assert.rejects(
     () => buildUnifiedListingForEbay(fixtureListing(), [], []),
-    /no price available/,
+    /no valid price available/,
+  )
+})
+
+test('buildUnifiedListingForEbay throws when final_price_cents is explicitly zero', async () => {
+  await assert.rejects(
+    () => buildUnifiedListingForEbay(fixtureListing({ final_price_cents: 0 }), [], [fixtureComp()]),
+    /no valid price available/,
   )
 })

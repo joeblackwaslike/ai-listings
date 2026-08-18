@@ -481,7 +481,7 @@ git commit -m "feat(pricing-adjust): authenticity-threshold-aware pricing premiu
 - Modify: `src/lib/pipeline/pricing-adjust.ts`
 - Modify: `src/lib/pipeline/pricing-adjust.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `src/lib/pipeline/pricing-adjust.test.ts`:
 
@@ -571,12 +571,12 @@ test('computeAdjustedPricing: no sold comps returns null price', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test 2>&1 | grep -A3 pricing-adjust`
 Expected: FAIL — `computeAdjustedPricing is not a function`.
 
-- [ ] **Step 3: Implement `computeAdjustedPricing`**
+- [x] **Step 3: Implement `computeAdjustedPricing`**
 
 Add to `src/lib/pipeline/pricing-adjust.ts` (after `authenticityPremiumCents`):
 
@@ -647,17 +647,17 @@ export function computeAdjustedPricing(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test 2>&1 | grep -A3 pricing-adjust`
 Expected: PASS, all tests green (28 total).
 
-- [ ] **Step 5: Run the full test suite and lint to confirm nothing else broke**
+- [x] **Step 5: Run the full test suite and lint to confirm nothing else broke**
 
 Run: `npm test && npm run lint`
 Expected: all green, no lint errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/pipeline/pricing-adjust.ts src/lib/pipeline/pricing-adjust.test.ts
@@ -673,7 +673,7 @@ git commit -m "feat(pricing-adjust): computeAdjustedPricing — single source of
 
 No behavior change — this removes the now-duplicated `conditionDelta`/`adjustForCondition`/`CATEGORY_DISCOUNT` definitions and imports them from `pricing-adjust.ts` instead, so step3's provisional (comps-only) estimate and the new gated final price share one implementation.
 
-- [ ] **Step 1: Add the import**
+- [x] **Step 1: Add the import**
 
 In `src/lib/pipeline/step3-pricing-research.ts`, after the existing imports (after line 5, `import { searchEbayActive } from './comps/ebay-browse'`), add:
 
@@ -681,11 +681,11 @@ In `src/lib/pipeline/step3-pricing-research.ts`, after the existing imports (aft
 import { conditionDelta, adjustForCondition, CATEGORY_DISCOUNT } from './pricing-adjust'
 ```
 
-- [ ] **Step 2: Remove the duplicated `conditionDelta` and `adjustForCondition` functions**
+- [x] **Step 2: Remove the duplicated `conditionDelta` and `adjustForCondition` functions**
 
 Delete lines 413-445 (the full `function conditionDelta(...)` and `function adjustForCondition(...)` definitions) — they're now imported.
 
-- [ ] **Step 3: Remove the duplicated `CATEGORY_DISCOUNT` constant**
+- [x] **Step 3: Remove the duplicated `CATEGORY_DISCOUNT` constant**
 
 Find this block (originally around line 684-694):
 
@@ -712,7 +712,7 @@ Replace with just:
 
 (the `CATEGORY_DISCOUNT` object literal is deleted; the lookup line stays, now using the imported constant.)
 
-- [ ] **Step 4: Verify the file still compiles and existing behavior is unchanged**
+- [x] **Step 4: Verify the file still compiles and existing behavior is unchanged**
 
 Run: `npm run build 2>&1 | tail -40`
 Expected: build succeeds with no type errors in `step3-pricing-research.ts`.
@@ -720,7 +720,7 @@ Expected: build succeeds with no type errors in `step3-pricing-research.ts`.
 Run: `npm test`
 Expected: all tests still pass (step3 has no dedicated test file today, so this just confirms nothing else broke).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/pipeline/step3-pricing-research.ts
@@ -736,7 +736,7 @@ git commit -m "refactor(step3): import condition-delta/discount logic from prici
 
 Replaces the INTERIM `condition_confirmed`-only check (lines 25-31) with the combined gate — this *is* the real pricing gate the ticket asked for, not a second layer on top of the interim one.
 
-- [ ] **Step 1: Update the select and the gate check**
+- [x] **Step 1: Update the select and the gate check**
 
 In `src/app/api/listings/[id]/finalize/route.ts`, replace:
 
@@ -799,14 +799,14 @@ with:
   }
 ```
 
-- [ ] **Step 2: Manual verification (no existing route-test convention in this codebase — see `src/app/api/listings/` for confirmation no `*.test.ts` files exist there)**
+- [x] **Step 2: Manual verification (no existing route-test convention in this codebase — see `src/app/api/listings/` for confirmation no `*.test.ts` files exist there)**
 
 Run: `npm run build`
 Expected: builds clean.
 
 Start the dev server (`npm run dev`) and, for a listing with `condition_confirmed: false` or an unconfirmed inclusion, `PATCH /api/listings/<id>/finalize` and confirm a 400 with the new combined error message. Confirm both fields together allow a 200.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add "src/app/api/listings/[id]/finalize/route.ts"
@@ -820,7 +820,7 @@ git commit -m "feat(finalize): gate on condition + inclusions confirmation, repl
 **Files:**
 - Modify: `src/components/workspace/FieldsPanel.tsx:1-14,252-282,636-649`
 
-- [ ] **Step 1: Add the import**
+- [x] **Step 1: Add the import**
 
 In `src/components/workspace/FieldsPanel.tsx`, after the existing `import { getInclusionChecklist } from '@/lib/inclusions'` line (line 13), add:
 
@@ -828,7 +828,7 @@ In `src/components/workspace/FieldsPanel.tsx`, after the existing `import { getI
 import { computeAdjustedPricing } from '@/lib/pipeline/pricing-adjust'
 ```
 
-- [ ] **Step 2: Compute the gated pricing**
+- [x] **Step 2: Compute the gated pricing**
 
 Inside `FieldsPanel`, immediately after the existing `checklistCandidates` computation (after line 171, before `async function saveAuthPlan`), add:
 
@@ -837,7 +837,7 @@ Inside `FieldsPanel`, immediately after the existing `checklistCandidates` compu
   const pricing = computeAdjustedPricing(listing, comps, { includePremiums: gateUnlocked })
 ```
 
-- [ ] **Step 3: Replace the price display block**
+- [x] **Step 3: Replace the price display block**
 
 Replace the existing block (lines 252-282):
 
@@ -916,7 +916,7 @@ with:
         )}
 ```
 
-- [ ] **Step 4: Keep the EvidenceDrawer in sync with the same computed numbers**
+- [x] **Step 4: Keep the EvidenceDrawer in sync with the same computed numbers**
 
 Replace (lines 636-649):
 
@@ -956,14 +956,14 @@ with:
       />
 ```
 
-- [ ] **Step 5: Manual smoke test (no component-test convention exists in this codebase — confirmed zero `*.test.tsx` files)**
+- [x] **Step 5: Manual smoke test (no component-test convention exists in this codebase — confirmed zero `*.test.tsx` files)**
 
 Run: `npm run lint && npm run build`
 Expected: both clean.
 
 Run `npm run dev`, open a listing that has comps but unconfirmed condition or an unconfirmed inclusion — confirm the price shows with the amber "Provisional — will be refined..." note. Confirm condition and every inclusion, refresh, and confirm the note disappears and the number may change (reflecting inclusion/authenticity premiums).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/components/workspace/FieldsPanel.tsx

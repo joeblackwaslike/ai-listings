@@ -53,9 +53,9 @@ export async function buildUnifiedListingForEbay(
   // rather than assumed).
   const adjusted = computeAdjustedPricing(listing, comps, { includePremiums: isPricingGateUnlocked(listing) });
   const priceCents = listing.final_price_cents ?? adjusted.priceCents;
-  if (priceCents == null) {
+  if (priceCents == null || priceCents <= 0) {
     throw new Error(
-      'buildUnifiedListingForEbay: no price available -- final_price_cents is unset and computeAdjustedPricing found no comps to derive a price from',
+      'buildUnifiedListingForEbay: no valid price available -- final_price_cents is unset (or zero/negative) and computeAdjustedPricing found no comps to derive a price from',
     );
   }
 
