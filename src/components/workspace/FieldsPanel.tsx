@@ -11,6 +11,7 @@ import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { getInclusionChecklist } from '@/lib/inclusions'
+import { computeAdjustedPricing } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
@@ -170,6 +171,9 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const checklistCandidates = getInclusionChecklist(listing.category ?? '', listing.sub_type)
     .filter((c) => !inclusions.some((i) => i.item.trim().toLowerCase() === c.item.trim().toLowerCase()))
 
+  const gateUnlocked = listing.condition_confirmed && inclusions.every((i) => i.confirmed)
+  const pricing = computeAdjustedPricing(listing, comps, { includePremiums: gateUnlocked })
+
   async function saveAuthPlan(updated: AuthStep[]) {
     setSaving(true)
     await fetch(`/api/listings/${listing.id}/auth-plan`, {
@@ -249,23 +253,28 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
           )}
         </div>
 
-        {listing.suggested_price_cents != null && (
+        {pricing.priceCents != null && (
           <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 space-y-2">
             <div className="flex items-baseline justify-between">
               <span className="text-xl font-bold text-emerald-400">
-                {formatPrice(listing.suggested_price_cents)}
+                {formatPrice(pricing.priceCents)}
               </span>
               {listing.confidence_score != null && (
                 <span className="text-xs text-gray-500">{listing.confidence_score}% confidence</span>
               )}
             </div>
-            {listing.price_to_move_cents != null && (
+            {pricing.priceToMoveCents != null && (
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-amber-400 font-medium">{formatPrice(listing.price_to_move_cents)}</span>
+                <span className="text-xs text-amber-400 font-medium">{formatPrice(pricing.priceToMoveCents)}</span>
                 <span className="text-xs text-gray-500">
                   to move{listing.price_to_move_discount_pct != null && <> · {Math.round(listing.price_to_move_discount_pct)}% off moves faster</>}
                 </span>
               </div>
+            )}
+            {!gateUnlocked && (
+              <p className="text-[10px] text-amber-500/80">
+                Provisional — will be refined once condition and inclusions are confirmed.
+              </p>
             )}
             {comps.length > 0 ? (
               <button
@@ -637,9 +646,9 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
         open={evidenceOpen}
         onClose={() => setEvidenceOpen(false)}
         comps={comps}
-        suggestedPriceCents={listing.suggested_price_cents}
+        suggestedPriceCents={pricing.priceCents}
         confidenceScore={listing.confidence_score}
-        priceToMoveCents={listing.price_to_move_cents}
+        priceToMoveCents={pricing.priceToMoveCents}
         priceToMoveDiscountPct={listing.price_to_move_discount_pct}
         retailPriceCents={listing.retail_price_cents}
         retailPriceSource={listing.retail_price_source}
