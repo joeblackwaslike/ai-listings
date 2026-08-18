@@ -43,3 +43,72 @@ test('priceTierOf: boundaries', () => {
   assert.equal(priceTierOf(75_000), 'high')
   assert.equal(priceTierOf(1_000_000), 'high')
 })
+
+import { inclusionPremiumCents } from './pricing-adjust'
+import type { Inclusion } from '@/types/listings'
+
+function inclusion(item: string, overrides: Partial<Inclusion> = {}): Inclusion {
+  return { item, source: 'detected', confirmed: true, notes: null, ...overrides }
+}
+
+test('inclusionPremiumCents: sums confirmed matched items at the mid tier for handbag', () => {
+  const cents = inclusionPremiumCents(
+    'handbag',
+    null,
+    [inclusion('Original box'), inclusion('Dust bag/cover')],
+    30_000 // mid tier
+  )
+  assert.equal(cents, 2000 + 1500) // handbag mid: box 2000, dust bag 1500
+})
+
+test('inclusionPremiumCents: unconfirmed items contribute nothing', () => {
+  const cents = inclusionPremiumCents(
+    'handbag',
+    null,
+    [inclusion('Original box', { confirmed: false })],
+    30_000
+  )
+  assert.equal(cents, 0)
+})
+
+test('inclusionPremiumCents: unmatched free-text manual item contributes $0', () => {
+  const cents = inclusionPremiumCents(
+    'jewelry',
+    null,
+    [inclusion('Custom velvet pouch', { source: 'manual' })],
+    10_000
+  )
+  assert.equal(cents, 0)
+})
+
+test('inclusionPremiumCents: severed brand tag is halved vs. attached', () => {
+  const attached = inclusionPremiumCents(
+    'sneakers', null, [inclusion('Brand tag', { tagState: 'attached' })], 10_000 // low tier
+  )
+  const severed = inclusionPremiumCents(
+    'sneakers', null, [inclusion('Brand tag', { tagState: 'severed' })], 10_000
+  )
+  assert.equal(attached, 500) // sneakers low: brand tag 500
+  assert.equal(severed, 250)
+})
+
+test('inclusionPremiumCents: the authenticity card itself contributes $0 here (handled separately)', () => {
+  const cents = inclusionPremiumCents(
+    'jewelry', null, [inclusion('Authenticity card', { docSource: 'original' })], 10_000
+  )
+  assert.equal(cents, 0)
+})
+
+test('inclusionPremiumCents: categories without a custom table fall back to the base item table', () => {
+  const cents = inclusionPremiumCents(
+    'jewelry', null, [inclusion('Original box')], 10_000 // low tier
+  )
+  assert.equal(cents, 400) // BASE_ITEM_PREMIUMS low
+})
+
+test('inclusionPremiumCents: matching is case-insensitive', () => {
+  const cents = inclusionPremiumCents(
+    'jewelry', null, [inclusion('original BOX')], 10_000
+  )
+  assert.equal(cents, 400)
+})
