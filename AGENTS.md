@@ -37,10 +37,10 @@ To apply a migration or run SQL in production:
 kubectl exec -n sup-ai-listings ai-listings-supabase-db-0 -- psql -U postgres -c "SQL HERE"
 ```
 
-To pipe a migration file:
+To pipe a migration file (`-i` is required — without it, `kubectl exec` doesn't attach stdin, so `psql` reads EOF immediately and silently applies nothing: no error, no output, zero rows affected. Confirmed 2026-08-17 applying migration 0020 — the bare form below ran clean with no error and changed 0 rows; adding `-i` applied it correctly, `UPDATE 117`):
 
 ```bash
-kubectl exec -n sup-ai-listings ai-listings-supabase-db-0 -- psql -U postgres < supabase/migrations/000X_name.sql
+kubectl exec -i -n sup-ai-listings ai-listings-supabase-db-0 -- psql -U postgres < supabase/migrations/000X_name.sql
 ```
 
 To inspect production env vars:
