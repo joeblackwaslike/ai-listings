@@ -120,7 +120,7 @@ Item details:
 - Condition notes: ${step2.conditionNotes}
 - Notable features: ${step2.notableFeatures.join(', ')}
 - Inclusions: ${step2.inclusions
-    .filter((i) => i.included)
+    .filter((i) => i.confirmed)
     .map((i) => i.item)
     .join(', ') || 'None noted'}${measurementsLine}${sizingSection}
 

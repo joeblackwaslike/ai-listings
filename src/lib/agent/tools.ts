@@ -12,6 +12,7 @@ import type {
   AgentToolError,
   ClothingSubType,
   JewelrySubType,
+  Inclusion,
 } from '@/types/listings'
 
 // ─── Tool: research_pricing ───────────────────────────────────────────────────
@@ -152,8 +153,8 @@ async function buildDescription(
       ).join('\n')
     : 'No comps available'
 
-  const inclusions = (listing.inclusions as Array<{ item: string; included: boolean }> ?? [])
-    .filter((i) => i.included).map((i) => i.item).join(', ') || 'None noted'
+  const inclusions = ((listing.inclusions as Inclusion[]) ?? [])
+    .filter((i) => i.confirmed).map((i) => i.item).join(', ') || 'None noted'
 
   const notableFeatures = notableFeaturesOf(
     (listing.intake_meta ?? null) as Record<string, unknown> | null
@@ -252,8 +253,11 @@ Use the generate_listing tool. Rules:
 
 const InclusionSchema = z.object({
   item: z.string(),
-  included: z.boolean(),
+  source: z.enum(['detected', 'manual']),
+  confirmed: z.boolean(),
   notes: z.string().nullable(),
+  tagState: z.enum(['attached', 'severed']).optional(),
+  docSource: z.enum(['original', 'reseller', 'third_party']).optional(),
 })
 
 const AuthStepSchema = z.object({
