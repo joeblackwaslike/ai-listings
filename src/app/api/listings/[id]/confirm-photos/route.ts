@@ -16,12 +16,13 @@ export async function PATCH(
 
   const { data: existing } = await supabase
     .from('listings')
-    .select('photos_confirmed')
+    .select('photos_confirmed, condition_confirmed')
     .eq('id', id)
     .eq('user_id', user.id)
     .maybeSingle()
 
   const wasAlreadyConfirmed = existing?.photos_confirmed === true
+  const priorConditionConfirmed = existing?.condition_confirmed ?? true
 
   const { data: updated, error } = await supabase
     .from('listings')
@@ -47,10 +48,14 @@ export async function PATCH(
       // enqueue leaves the listing at photos_confirmed=true forever, and the next PATCH sees
       // wasAlreadyConfirmed=true and never re-fires the event, permanently stranding condition
       // re-assessment (and the Finalize gate that depends on it) with no recovery path.
-      console.error(`confirm-photos: inngest.send failed for listing ${id}, reverting photos_confirmed for retry:`, err)
+      // Revert BOTH fields this same request set, not just photos_confirmed -- otherwise a
+      // failed dispatch leaves condition_confirmed stuck at a stale false even though no
+      // reassessment ever actually ran, which can surface a meaningless "pending approval" UI
+      // for whatever condition value happened to be on the row from an earlier cycle.
+      console.error(`confirm-photos: inngest.send failed for listing ${id}, reverting for retry:`, err)
       const { error: revertError } = await supabase
         .from('listings')
-        .update({ photos_confirmed: false })
+        .update({ photos_confirmed: false, condition_confirmed: priorConditionConfirmed })
         .eq('id', id)
         .eq('user_id', user.id)
       if (revertError) {

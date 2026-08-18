@@ -69,7 +69,13 @@ async function supersedeReplacedPhoto(
   replacesPhotoId: string | undefined
 ): Promise<void> {
   if (!replacesPhotoId) return
-  await supabase.from('photos').delete().eq('id', replacesPhotoId).eq('listing_id', listingId).eq('type', 'studio')
+  await supabase
+    .from('photos')
+    .delete()
+    .eq('id', replacesPhotoId)
+    .eq('listing_id', listingId)
+    .eq('type', 'studio')
+    .eq('photoroom_meta->>quality_failed', 'true')
 }
 
 async function reconcileQualityEscalation(
