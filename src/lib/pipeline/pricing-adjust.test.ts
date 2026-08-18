@@ -185,7 +185,7 @@ function comp(overrides: Partial<PricingComp> = {}): PricingComp {
 
 test('computeAdjustedPricing: median of 3 sold comps, includePremiums false matches comps-only estimate', () => {
   const listing: PricingListing =
-    { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [], suggested_price_cents: null }
+    { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
   const comps = [
     comp({ sale_price_cents: 10_000 }),
     comp({ sale_price_cents: 12_000 }),
@@ -206,7 +206,6 @@ test('computeAdjustedPricing: includePremiums true layers inclusion + authentici
       inclusion('Original box'),
       inclusion('Authenticity card', { docSource: 'original' }),
     ],
-    suggested_price_cents: null,
   }
   const comps = [comp({ sale_price_cents: 12_000 })]
   const result = computeAdjustedPricing(listing, comps, { includePremiums: true })
@@ -220,7 +219,7 @@ test('computeAdjustedPricing: includePremiums true layers inclusion + authentici
 
 test('computeAdjustedPricing: active-market comps are excluded from the sold-price median', () => {
   const listing: PricingListing =
-    { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [], suggested_price_cents: null }
+    { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
   const comps = [
     comp({ sale_price_cents: 12_000, source: 'ebay' }),
     comp({ sale_price_cents: 1, source: 'ebay_active' }), // would wreck the median if included
@@ -234,11 +233,11 @@ test('computeAdjustedPricing: recomputes against the listing\'s CURRENT conditio
   const comps = [comp({ sale_price_cents: 10_000, condition: 'Like new', condition_delta: 'better', adjusted_price_cents: 99_999 })]
 
   const worse = computeAdjustedPricing(
-    { condition: 'very_good', category: 'jewelry' as const, sub_type: null, inclusions: [], suggested_price_cents: null },
+    { condition: 'very_good', category: 'jewelry' as const, sub_type: null, inclusions: [] },
     comps, { includePremiums: false }
   )
   const better = computeAdjustedPricing(
-    { condition: 'new_with_tags', category: 'jewelry' as const, sub_type: null, inclusions: [], suggested_price_cents: null },
+    { condition: 'new_with_tags', category: 'jewelry' as const, sub_type: null, inclusions: [] },
     comps, { includePremiums: false }
   )
 
@@ -251,37 +250,24 @@ test('computeAdjustedPricing: recomputes against the listing\'s CURRENT conditio
 
 test('computeAdjustedPricing: no sold comps returns null price', () => {
   const listing: PricingListing =
-    { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [], suggested_price_cents: null }
+    { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
   const result = computeAdjustedPricing(listing, [], { includePremiums: false })
   assert.equal(result.basePriceCents, null)
   assert.equal(result.priceCents, null)
   assert.equal(result.priceToMoveCents, null)
 })
 
-test('computeAdjustedPricing: no sold comps but includePremiums true falls back to suggested_price_cents as the premium base', () => {
+test('computeAdjustedPricing: no sold comps returns null price even with includePremiums true (no comp-derived base to layer onto, and step4a\'s suggested_price_cents may already reflect the inclusions)', () => {
   const listing: PricingListing = {
     condition: 'good', category: 'jewelry' as const, sub_type: null,
     inclusions: [
       inclusion('Original box'),
       inclusion('Authenticity card', { docSource: 'original' }),
     ],
-    suggested_price_cents: 12_000,
   }
-  const result = computeAdjustedPricing(listing, [], { includePremiums: true })
-  // No comps to derive a median from -- base falls back to suggested_price_cents (12000, low
-  // tier) so a confirmed box/auth card still earns its premium instead of silently earning $0
-  // just because step3 found zero comps.
-  assert.equal(result.compCount, 0)
-  assert.equal(result.basePriceCents, 12_000)
-  assert.equal(result.inclusionPremiumCents, 400)
-  assert.equal(result.authenticityPremiumCents, 500)
-  assert.equal(result.priceCents, 12_900)
-})
-
-test('computeAdjustedPricing: no sold comps and no suggested_price_cents still returns null even with includePremiums true', () => {
-  const listing: PricingListing =
-    { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [], suggested_price_cents: null }
   const result = computeAdjustedPricing(listing, [], { includePremiums: true })
   assert.equal(result.basePriceCents, null)
   assert.equal(result.priceCents, null)
+  assert.equal(result.inclusionPremiumCents, 0)
+  assert.equal(result.authenticityPremiumCents, 0)
 })

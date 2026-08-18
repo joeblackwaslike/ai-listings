@@ -189,11 +189,16 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   // contradictory "$X to move" above an already-lower resolved price. Suppress it whenever an
   // override is in effect rather than deriving a second discount off the override.
   const showPriceToMove = listing.final_price_cents == null
-  // The stored condition_delta/adjusted_price_cents columns on each comp reflect the listing's
-  // condition at step3 gather-time -- recompute against the current condition here too, or the
-  // drawer shows adjustment labels/prices that no longer support resolvedPriceCents above (e.g.
-  // after a condition re-assessment flips condition_confirmed back to false).
+  // The stored condition_delta/adjusted_price_cents columns on each sold comp reflect the
+  // listing's condition at step3 gather-time -- recompute against the current condition here
+  // too, or the drawer shows adjustment labels/prices that no longer support resolvedPriceCents
+  // above (e.g. after a condition re-assessment flips condition_confirmed back to false).
+  // _active-suffixed comps are excluded: they're live asking prices, not sold prices,
+  // deliberately stored with condition_delta 'same' and adjusted_price_cents == sale_price_cents
+  // verbatim (computeAdjustedPricing excludes them from the median entirely) -- condition-
+  // adjusting them here would show a price that was never actually asked.
   const currentComps = comps.map((c) => {
+    if (c.source.endsWith('_active')) return c
     const delta = conditionDelta(listing.condition ?? '', c.condition)
     return { ...c, condition_delta: delta, adjusted_price_cents: adjustForCondition(c.sale_price_cents, delta) }
   })

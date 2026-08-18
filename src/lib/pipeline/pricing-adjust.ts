@@ -182,10 +182,7 @@ export interface AdjustedPricing {
   compCount: number
 }
 
-export type PricingListing = Pick<
-  Listing,
-  'condition' | 'category' | 'sub_type' | 'inclusions' | 'suggested_price_cents'
->
+export type PricingListing = Pick<Listing, 'condition' | 'category' | 'sub_type' | 'inclusions'>
 
 /**
  * The single source of truth for "what does this listing cost" — used for FieldsPanel display,
@@ -195,10 +192,15 @@ export type PricingListing = Pick<
  * back to false post-intake — see condition-reassessment.ts. `includePremiums: false`
  * reproduces step3's original comps+condition-only estimate; `includePremiums: true` layers on
  * inclusion + authenticity premiums, both computed off the pre-premium base price so they can't
- * create a circular price-tier lookup. When there are no sold comps, the pre-premium base falls
- * back to `suggested_price_cents` (step4a's model estimate) whenever premiums are being included
- * -- otherwise a confirmed box/tag/authenticity card would silently earn no premium at all just
- * because step3 found zero comps.
+ * create a circular price-tier lookup.
+ *
+ * When there are no sold comps, priceCents stays null (no comp-derived base to layer premiums
+ * onto) rather than falling back to step4a's suggested_price_cents as a premium base: step4a's
+ * prompt lists every *detected* inclusion (not just confirmed ones) when asking the model for
+ * that estimate, so the model's price may already reflect them -- adding a fixed premium on top
+ * risks double-counting a confirmed item, or leaving a rejected item's value embedded in the
+ * base with no way to back it out. resolveFinalPriceCents still falls back to the raw
+ * suggested_price_cents (unpremiumed) for display/publish in this case.
  */
 export function computeAdjustedPricing(
   listing: PricingListing,
@@ -211,15 +213,12 @@ export function computeAdjustedPricing(
     .sort((a, b) => a - b)
 
   const mid = Math.floor(adjustedCompPrices.length / 2)
-  const compBasePriceCents =
+  const basePriceCents =
     adjustedCompPrices.length === 0
       ? null
       : adjustedCompPrices.length % 2 === 0
         ? Math.round((adjustedCompPrices[mid - 1] + adjustedCompPrices[mid]) / 2)
         : adjustedCompPrices[mid]
-
-  const basePriceCents =
-    compBasePriceCents ?? (opts.includePremiums ? listing.suggested_price_cents ?? null : null)
 
   const inclusionPremium =
     opts.includePremiums && basePriceCents != null

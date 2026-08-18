@@ -112,7 +112,6 @@ export const autoDiscountCron = inngest.createFunction(
               category: listing.category,
               sub_type: listing.sub_type,
               inclusions,
-              suggested_price_cents: listing.suggested_price_cents as number | null,
             }
             const gateUnlocked = isPricingGateUnlocked({ condition_confirmed: listing.condition_confirmed as boolean, inclusions })
             const adjusted = computeAdjustedPricing(pricingListing, comps, { includePremiums: gateUnlocked })
