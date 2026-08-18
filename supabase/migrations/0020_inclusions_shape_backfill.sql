@@ -13,17 +13,26 @@
 -- (not dropped), so it still surfaces as a pending item to confirm or reject in the redesigned
 -- FieldsPanel rather than silently vanishing.
 --
--- Idempotent: only touches rows that still contain the legacy `included` key and lack the new
--- `confirmed` key, so re-running after this ships is a no-op.
+-- Idempotent and safe to re-run at any time relative to app deployment: transforms only the
+-- individual array elements still in the legacy shape (no `confirmed` key), leaving any element
+-- that already has `confirmed` untouched -- including its tagState/docSource -- rather than
+-- rebuilding the whole array from the legacy formula. A row with a mix of legacy and already
+-- new-shape elements (e.g. one manually confirmed via the app's PATCH route before this
+-- migration ran) previously had its already-confirmed elements silently reset to
+-- confirmed=false and source='detected' by a row-level rebuild; per-element transform closes
+-- that gap (greptile-apps review on PR #47, second pass).
 update listings
 set inclusions = (
   select jsonb_agg(
-    jsonb_build_object(
-      'item', elem->>'item',
-      'source', 'detected',
-      'confirmed', coalesce((elem->>'included')::boolean, false),
-      'notes', elem->'notes'
-    )
+    case
+      when elem ? 'confirmed' then elem
+      else jsonb_build_object(
+        'item', elem->>'item',
+        'source', 'detected',
+        'confirmed', coalesce((elem->>'included')::boolean, false),
+        'notes', elem->'notes'
+      )
+    end
   )
   from jsonb_array_elements(inclusions) as elem
 )
