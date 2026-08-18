@@ -111,6 +111,10 @@ export async function runStep4aDraftListing(
     ? `Suggested price from comps: $${(suggestedPriceCents / 100).toFixed(0)}.`
     : 'No pricing data available — suggest a reasonable price.'
 
+  // Lists every detected inclusion, not just confirmed ones -- this runs immediately after
+  // gender_gate, in the automated pipeline, before the user has had any FieldsPanel
+  // opportunity to confirm or reject a single detected item. Filtering on `confirmed` here
+  // would always evaluate empty (ai-listings-kks final review).
   const prompt = `Generate a complete resale listing for this item.
 
 Item details:
@@ -120,7 +124,6 @@ Item details:
 - Condition notes: ${step2.conditionNotes}
 - Notable features: ${step2.notableFeatures.join(', ')}
 - Inclusions: ${step2.inclusions
-    .filter((i) => i.included)
     .map((i) => i.item)
     .join(', ') || 'None noted'}${measurementsLine}${sizingSection}
 

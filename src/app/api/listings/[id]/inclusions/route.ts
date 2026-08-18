@@ -22,6 +22,7 @@ export async function PATCH(
     .from('listings')
     .update({ inclusions: body.inclusions })
     .eq('id', id)
+    .eq('user_id', user.id)
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

@@ -11,7 +11,7 @@ export const HEAVY_ITEM_CATEGORIES: ReadonlySet<ListingCategory> = new Set([
 ])
 
 export function hasIncludedBox(inclusions: Inclusion[]): boolean {
-  return inclusions.some((i) => i.included && /box/i.test(i.item))
+  return inclusions.some((i) => i.confirmed && /box/i.test(i.item))
 }
 
 export function needsBoxMeasurement(listing: Pick<Listing, 'inclusions' | 'measurements'>): boolean {

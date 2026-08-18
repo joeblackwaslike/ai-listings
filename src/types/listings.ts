@@ -54,10 +54,17 @@ export const CATEGORY_PREFIXES: Record<ListingCategory, string> = {
   other: 'OT',
 };
 
+export type InclusionSource = 'detected' | 'manual';
+export type TagState = 'attached' | 'severed';
+export type AuthCardSource = 'original' | 'reseller' | 'third_party';
+
 export interface Inclusion {
   item: string;
-  included: boolean;
+  source: InclusionSource;
+  confirmed: boolean;
   notes: string | null;
+  tagState?: TagState;
+  docSource?: AuthCardSource;
 }
 
 export interface AuthStep {
