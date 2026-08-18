@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { ChevronRight, Check, CheckCircle2, Circle, AlertCircle, Plus, SkipForward, X, Pencil } from 'lucide-react'
 import { formatPrice, getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
@@ -49,6 +49,17 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   const [inclusions, setInclusions] = useState<Inclusion[]>(listing.inclusions ?? [])
   const [addInput, setAddInput] = useState('')
   const addInputRef = useRef<HTMLInputElement>(null)
+  const savingInclusionsRef = useRef(false)
+
+  // AutoRefresh polls via router.refresh(), which re-renders this client component with a new
+  // `listing` prop but does not re-run useState's initializer -- without this, inclusions
+  // detected asynchronously from studio photos (photo-quality-gate.ts) never appear here until
+  // a full page reload. Guarded by savingInclusionsRef so a refresh landing mid-save doesn't
+  // clobber an optimistic local update with a not-yet-persisted server value.
+  useEffect(() => {
+    if (savingInclusionsRef.current) return
+    setInclusions(listing.inclusions ?? [])
+  }, [listing.inclusions])
 
   // Auto-discount per-listing override state
   const [adOverride, setAdOverride] = useState(
@@ -125,12 +136,17 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
   }
 
   async function saveInclusions(updated: Inclusion[]) {
+    savingInclusionsRef.current = true
     setInclusions(updated)
-    await fetch(`/api/listings/${listing.id}/inclusions`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inclusions: updated }),
-    })
+    try {
+      await fetch(`/api/listings/${listing.id}/inclusions`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inclusions: updated }),
+      })
+    } finally {
+      savingInclusionsRef.current = false
+    }
   }
 
   function removeInclusion(i: number) {
