@@ -2,7 +2,8 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { SeoAudit } from '@/components/publish/SeoAudit'
 import { PlatformTabs } from '@/components/publish/PlatformTabs'
-import type { Listing } from '@/types/listings'
+import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
+import type { Listing, PricingComp } from '@/types/listings'
 
 export default async function PublishPage({
   params,
@@ -12,17 +13,19 @@ export default async function PublishPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from('listings')
-    .select('*')
-    .eq('id', id)
-    .single()
+  const [{ data, error }, { data: compRows }] = await Promise.all([
+    supabase.from('listings').select('*').eq('id', id).single(),
+    supabase.from('pricing_comps').select('*').eq('listing_id', id),
+  ])
 
   if (error || !data) {
     notFound()
   }
 
   const listing = data as unknown as Listing
+  const comps = (compRows ?? []) as unknown as PricingComp[]
+  const gateUnlocked = isPricingGateUnlocked(listing)
+  const pricing = computeAdjustedPricing(listing, comps, { includePremiums: gateUnlocked })
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -40,9 +43,12 @@ export default async function PublishPage({
           <h1 className="text-lg font-semibold text-gray-100">
             {listing.title ?? listing.brand ?? 'Untitled'}
           </h1>
-          {listing.suggested_price_cents != null && (
+          {pricing.priceCents != null && (
             <p className="text-sm text-emerald-400 font-semibold mt-0.5">
-              ${(listing.suggested_price_cents / 100).toFixed(0)} suggested
+              ${(pricing.priceCents / 100).toFixed(0)} suggested
+              {!gateUnlocked && (
+                <span className="text-xs text-amber-500/80 font-normal"> — provisional, refines once condition and inclusions are confirmed</span>
+              )}
             </p>
           )}
         </div>

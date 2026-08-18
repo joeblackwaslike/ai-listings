@@ -17,11 +17,13 @@ import { computeAdjustedPricing, isPricingGateUnlocked } from '@/lib/pipeline/pr
  * `condition_id` straight through here would double-map an already-mapped value and silently
  * fall back to eBay's "GOOD"/2500 default for almost every listing.
  *
- * Throws if no price can be derived at all -- i.e. `final_price_cents` is unset AND
- * `computeAdjustedPricing` has no comps to work from (it returns `priceCents: null` when
- * `comps` is empty). This is a real, reachable state (zero sold comps is a normal pricing-
- * research outcome), and the alternative -- silently falling back to `price: 0` -- would
- * publish a live eBay listing at $0.00 with no error or warning.
+ * Price resolution order: `final_price_cents` (explicit seller override) wins when set;
+ * otherwise `computeAdjustedPricing`'s result; otherwise `listing.suggested_price_cents`, the
+ * model-estimated price step4a always persists (a required field in its structured output,
+ * even when step3 found zero comps) -- so a listing with no sold comps still has a legitimate
+ * fallback price rather than being unpublishable. Throws only if none of the three yields a
+ * positive price, since the alternative -- silently falling back to `price: 0` -- would publish
+ * a live eBay listing at $0.00 with no error or warning.
  */
 export async function buildUnifiedListingForEbay(
   listing: Listing,
@@ -50,12 +52,13 @@ export async function buildUnifiedListingForEbay(
   // set. Otherwise, computeAdjustedPricing is the source of truth -- includePremiums only when
   // the pricing gate is unlocked, matching the finalize-route gate exactly (a listing can't
   // reach 'finalizing'/publish without passing that gate, but this is computed defensively
-  // rather than assumed).
+  // rather than assumed). If there are no sold comps to compute from, fall back to step4a's
+  // model-estimated suggested_price_cents rather than treating the listing as unpriceable.
   const adjusted = computeAdjustedPricing(listing, comps, { includePremiums: isPricingGateUnlocked(listing) });
-  const priceCents = listing.final_price_cents ?? adjusted.priceCents;
+  const priceCents = listing.final_price_cents ?? adjusted.priceCents ?? listing.suggested_price_cents;
   if (priceCents == null || priceCents <= 0) {
     throw new Error(
-      'buildUnifiedListingForEbay: no valid price available -- final_price_cents is unset (or zero/negative) and computeAdjustedPricing found no comps to derive a price from',
+      'buildUnifiedListingForEbay: no valid price available -- final_price_cents, computeAdjustedPricing, and suggested_price_cents all produced no usable price',
     );
   }
 

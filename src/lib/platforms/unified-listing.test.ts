@@ -187,9 +187,16 @@ test('buildUnifiedListingForEbay throws when sku is not yet assigned', async () 
   )
 })
 
-test('buildUnifiedListingForEbay throws when no price can be derived (no final_price_cents override and no comps)', async () => {
+test('buildUnifiedListingForEbay falls back to suggested_price_cents when there are no comps and no final_price_cents override', async () => {
+  // step4a always persists a required suggested_price_cents, even when step3 found zero comps
+  // -- this is the normal "no comps" pipeline outcome, not an unpriceable listing.
+  const result = await buildUnifiedListingForEbay(fixtureListing({ suggested_price_cents: 9_999 }), [], [])
+  assert.equal(result.price, 9_999)
+})
+
+test('buildUnifiedListingForEbay throws when truly no price can be derived (no final_price_cents, no comps, no suggested_price_cents)', async () => {
   await assert.rejects(
-    () => buildUnifiedListingForEbay(fixtureListing(), [], []),
+    () => buildUnifiedListingForEbay(fixtureListing({ suggested_price_cents: null }), [], []),
     /no valid price available/,
   )
 })
