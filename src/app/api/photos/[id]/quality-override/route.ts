@@ -85,10 +85,18 @@ export async function PATCH(
     .eq('photoroom_meta->>quality_failed', 'true')
 
   if (!countError && count === 0) {
-    await supabase
+    const { error: unblockError } = await supabase
       .from('listings')
       .update({ agent_blocked: false, agent_blocked_reason: null })
       .eq('id', photoRow.listing_id)
+    if (unblockError) {
+      // The underlying quality-failed state is already resolved (count === 0), but the write
+      // to actually clear agent_blocked failed -- the listing stays visibly blocked with no
+      // actionable checklist item. Self-heals on the next studio-photo upload (which re-runs
+      // photo-quality-gate.ts's own independent reconciliation), but log so it's diagnosable
+      // in the meantime rather than silent.
+      console.error(`quality-override: failed to clear agent_blocked for listing ${photoRow.listing_id} after resolving quality-failed count to zero:`, unblockError)
+    }
   }
 
   if (updateError) {
