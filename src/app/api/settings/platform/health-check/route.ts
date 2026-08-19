@@ -31,8 +31,15 @@ async function checkPoshmark(userId: string): Promise<HealthStatus> {
       signal: AbortSignal.timeout(10_000),
     })
     if (res.status === 401 || res.status === 403) return 'invalid'
-    if (res.ok) return 'valid'
-    return 'unreachable'
+    if (!res.ok) return 'unreachable'
+    // A 200 alone doesn't confirm the cookies actually authenticated the request --
+    // an invalid/expired cookie can still land on this endpoint and get back an
+    // HTML error/login page or an unexpected body instead of a proper 401. Require
+    // the response to actually be the expected search-result JSON shape before
+    // calling it 'valid'.
+    const json = (await res.json().catch(() => null)) as { data?: unknown } | null
+    if (!json || !Array.isArray(json.data)) return 'invalid'
+    return 'valid'
   } catch {
     return 'unreachable'
   }
@@ -74,13 +81,17 @@ async function checkEbay(userId: string): Promise<HealthStatus> {
 const HEALTH_CACHE_TTL_MS = 60_000
 const healthCache = new Map<string, { result: { poshmark: HealthStatus; ebay: HealthStatus }; expiresAt: number }>()
 
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // The settings UI re-requests this right after saving a credential so the
+  // badge reflects the new value immediately -- ?fresh=1 bypasses the cache for
+  // that one call instead of showing the pre-save status for up to 60s.
+  const fresh = new URL(req.url).searchParams.get('fresh') === '1'
   const cached = healthCache.get(user.id)
-  if (cached && cached.expiresAt > Date.now()) {
+  if (!fresh && cached && cached.expiresAt > Date.now()) {
     return Response.json(cached.result)
   }
 

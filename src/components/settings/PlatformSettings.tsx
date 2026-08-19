@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -178,9 +178,11 @@ function HealthBadge({ platformId, status }: Readonly<{ platformId: string; stat
 function TextSettingRow({
   fieldDef,
   initialValue,
+  onSaved,
 }: Readonly<{
   fieldDef: TextFieldDef
   initialValue: string
+  onSaved?: () => void
 }>) {
   const [value, setValue] = useState(initialValue)
   const [savedValue, setSavedValue] = useState(initialValue)
@@ -208,6 +210,7 @@ function TextSettingRow({
       setSavedValue(value.trim())
       setStatus('saved')
       setTimeout(() => setStatus('idle'), 2000)
+      onSaved?.()
     } finally {
       setPending(false)
     }
@@ -409,12 +412,14 @@ function PlatformSection({
   existingRules,
   siteUrl,
   healthStatus,
+  onCredentialSaved,
 }: Readonly<{
   platform: PlatformDef
   existingSettings: Record<string, string>
   existingRules?: Record<string, string>
   siteUrl: string
   healthStatus: HealthStatus | null
+  onCredentialSaved?: () => void
 }>) {
   const hasOAuth = platform.fields.some((f) => f.kind === 'oauth')
   const callbackUrl = hasOAuth ? `${siteUrl}/api/auth/callback/${platform.id}` : null
@@ -475,11 +480,13 @@ function PlatformSection({
               />
             )
           }
+          const tracksHealth = platform.id === 'poshmark' || platform.id === 'ebay'
           return (
             <TextSettingRow
               key={field.key}
               fieldDef={field}
               initialValue={existingSettings[field.key] ?? ''}
+              onSaved={tracksHealth ? onCredentialSaved : undefined}
             />
           )
         })}
@@ -516,9 +523,9 @@ function isHealthStatus(value: unknown): value is HealthStatus {
 export function PlatformSettings({ existingSettings, existingRules, siteUrl }: Readonly<PlatformSettingsProps>) {
   const [health, setHealth] = useState<{ poshmark: HealthStatus; ebay: HealthStatus } | null>(null)
 
-  useEffect(() => {
+  const refetchHealth = useCallback((opts?: { fresh?: boolean }) => {
     let cancelled = false
-    fetch('/api/settings/platform/health-check')
+    fetch(opts?.fresh ? '/api/settings/platform/health-check?fresh=1' : '/api/settings/platform/health-check')
       .then(async (res) => {
         if (!res.ok) throw new Error('health-check request failed')
         const data: unknown = await res.json()
@@ -542,6 +549,8 @@ export function PlatformSettings({ existingSettings, existingRules, siteUrl }: R
     }
   }, [])
 
+  useEffect(() => refetchHealth(), [refetchHealth])
+
   function healthStatusFor(platformId: string): HealthStatus | null {
     if (!health) return null
     if (platformId === 'poshmark') return health.poshmark
@@ -559,6 +568,7 @@ export function PlatformSettings({ existingSettings, existingRules, siteUrl }: R
           existingRules={existingRules}
           siteUrl={siteUrl}
           healthStatus={healthStatusFor(platform.id)}
+          onCredentialSaved={() => refetchHealth({ fresh: true })}
         />
       ))}
     </div>

@@ -44,6 +44,19 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 const UNCONFIRMED: VerificationResult = { identityConfirmed: false, soldConfirmed: false }
 
+const TITLE_WORD_STOPWORDS = new Set([
+  'and', 'the', 'with', 'for', 'from', 'this', 'that', 'your', 'new', 'used', 'size',
+])
+
+// Words worth checking for on the fetched page beyond the brand name itself --
+// short/common words are too likely to appear by coincidence to mean anything.
+function significantTitleWords(title: string): string[] {
+  return title
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 4 && !TITLE_WORD_STOPWORDS.has(w))
+}
+
 function isAllowedHostname(url: string, source: string): boolean {
   const allowed = ALLOWED_HOSTNAMES[source]
   if (!allowed) return false
@@ -107,7 +120,13 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
       // treats every failure mode as UNCONFIRMED.
       redirect: 'error',
     })
-    if (!res.ok) return UNCONFIRMED
+    if (!res.ok) {
+      // Distinct from the catch-all below: this is a clean HTTP response, just not
+      // a 2xx (e.g. a 403 bot challenge from TheRealReal/Poshmark) -- worth telling
+      // apart from a network-level failure if reclassification quietly stops working.
+      console.warn(`verifyComp: HTTP ${res.status} for ${comp.listing_url}`)
+      return UNCONFIRMED
+    }
 
     // Defense in depth: redirect: 'error' above means res.url should always equal
     // the originally-validated URL, but re-check in case a runtime's fetch ever
@@ -115,9 +134,22 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
     if (!isAllowedHostname(res.url, comp.source)) return UNCONFIRMED
 
     const html = await readBoundedText(res, MAX_RESPONSE_BYTES)
-    if (html === null) return UNCONFIRMED
+    if (html === null) {
+      console.warn(`verifyComp: response exceeded ${MAX_RESPONSE_BYTES} bytes for ${comp.listing_url}`)
+      return UNCONFIRMED
+    }
 
-    const identityConfirmed = html.toLowerCase().includes(brand.toLowerCase())
+    // Brand-only matching lets an unrelated same-brand listing (wrong model/color)
+    // satisfy identity, which would then let a *different* item's sold badge
+    // reclassify this comp -- also require at least one other significant word
+    // from the comp's own title to appear on the page. If the title has no
+    // significant word beyond the brand (e.g. just "Chanel"), fall back to the
+    // brand-only check rather than making identity unconfirmable altogether.
+    const htmlLower = html.toLowerCase()
+    const brandConfirmed = htmlLower.includes(brand.toLowerCase())
+    const otherTitleWords = significantTitleWords(comp.title).filter((w) => w !== brand.toLowerCase())
+    const identityConfirmed =
+      brandConfirmed && (otherTitleWords.length === 0 || otherTitleWords.some((w) => htmlLower.includes(w)))
 
     const soldPattern = SOLD_BADGE_PATTERNS[comp.source]
     const soldConfirmed = soldPattern ? soldPattern.test(html) : false

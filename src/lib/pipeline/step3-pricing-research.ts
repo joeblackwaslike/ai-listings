@@ -121,10 +121,16 @@ async function fetchEbaySoldComps(
     url.searchParams.set('api_key', apiKey)
 
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) })
-    if (!res.ok) return []
+    if (!res.ok) {
+      console.warn(`fetchEbaySoldComps: HTTP ${res.status} for query "${query}"`)
+      return []
+    }
 
     const data = (await res.json()) as SerpApiEbayResponse
-    if (data.error) return []
+    if (data.error) {
+      console.warn(`fetchEbaySoldComps: SerpAPI error for query "${query}"`, data.error)
+      return []
+    }
 
     return (data.organic_results ?? [])
       .filter((r) => r.title && r.price?.extracted_value && r.sold_date)
@@ -198,7 +204,10 @@ async function fetchTheRealRealComps(
     url.searchParams.set('api_key', apiKey)
 
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) })
-    if (!res.ok) return []
+    if (!res.ok) {
+      console.warn(`fetchTheRealRealComps: HTTP ${res.status} for query "${query}"`)
+      return []
+    }
 
     const data = (await res.json()) as SerpApiGoogleResponse
     return (data.organic_results ?? [])
@@ -208,7 +217,8 @@ async function fetchTheRealRealComps(
         return { title: r.title ?? '', priceCents, listingUrl: r.link ?? '' }
       })
       .filter((c): c is { title: string; priceCents: number; listingUrl: string } => c !== null)
-  } catch {
+  } catch (err) {
+    console.warn(`fetchTheRealRealComps: failed for query "${query}"`, err instanceof Error ? err.message : String(err))
     return []
   }
 }
@@ -870,6 +880,28 @@ export async function runStep3PricingResearch(
     }
   }
 
+  // toInsert.length === 0 means every fetcher came back empty this run and the
+  // insert/delete above was skipped entirely -- pricing_comps was left untouched
+  // on purpose. But everything below this point recomputes confidence/price from
+  // filteredComps/filteredActive, which are ALSO empty in that case: falling
+  // through unguarded would still overwrite the listing's suggested_price_cents
+  // with null and confidence with 20% via pushPipelineStep below, even though the
+  // real comp evidence is sitting untouched in the table -- exactly the
+  // ai-listings-drz scenario referenced above, just one layer up (the listing's
+  // pricing fields instead of the pricing_comps rows). Reload what's actually
+  // persisted and compute against that instead of an empty result set.
+  let effectiveSoldComps = filteredComps
+  let effectiveActiveComps = filteredActive
+  if (toInsert.length === 0) {
+    const { data: existingRows } = await supabase
+      .from('pricing_comps')
+      .select('*')
+      .eq('listing_id', listingId)
+    const existing = (existingRows ?? []) as typeof compRows
+    effectiveSoldComps = existing.filter((r) => !r.source.endsWith('_active'))
+    effectiveActiveComps = existing.filter((r) => r.source.endsWith('_active'))
+  }
+
   // When there are zero relevant SOLD comps but real active-market data exists
   // (the exact bug found auditing HB-0085/86/87: 9-38 active comps sitting unused
   // while confidence/price both said "zero data"), derive a real, honestly-labeled
@@ -877,15 +909,15 @@ export async function runStep3PricingResearch(
   // data" narrative. Active-only estimates are asking-price data, not confirmed
   // sales, so the confidence score is halved and then capped below the lowest
   // sold-comp tier (35, versus calcConfidenceScore's own tiers of 40/60/75/90).
-  const usingActiveFallback = filteredComps.length === 0 && filteredActive.length > 0
+  const usingActiveFallback = effectiveSoldComps.length === 0 && effectiveActiveComps.length > 0
 
   const confidenceScore = usingActiveFallback
-    ? Math.min(35, calcConfidenceScore(filteredActive.length) * 0.5)
-    : calcConfidenceScore(filteredComps.length)
+    ? Math.min(35, calcConfidenceScore(effectiveActiveComps.length) * 0.5)
+    : calcConfidenceScore(effectiveSoldComps.length)
 
   const prices = usingActiveFallback
-    ? filteredActive.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
-    : filteredComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+    ? effectiveActiveComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+    : effectiveSoldComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
   const mid = Math.floor(prices.length / 2)
   const suggestedPriceCents =
     prices.length === 0
@@ -907,8 +939,8 @@ export async function runStep3PricingResearch(
     .order('created_at', { ascending: true })
 
   const sources = usingActiveFallback
-    ? [...new Set(filteredActive.map((r) => r.source))]
-    : [...new Set(filteredComps.map((r) => r.source))]
+    ? [...new Set(effectiveActiveComps.map((r) => r.source))]
+    : [...new Set(effectiveSoldComps.map((r) => r.source))]
   // Every other fetcher in this file degrades to an empty/null result on failure
   // rather than throwing (SerpAPI, Reddit, etc.) -- generatePricingMethodology's
   // internal runText() call has no such guard, so a transient Claude API error
@@ -916,7 +948,7 @@ export async function runStep3PricingResearch(
   // computed. Fall back to a null methodology instead of losing that work.
   const methodologyText = apiKeys.anthropic
     ? await generatePricingMethodology(
-        usingActiveFallback ? filteredActive.length : filteredComps.length,
+        usingActiveFallback ? effectiveActiveComps.length : effectiveSoldComps.length,
         sources,
         suggestedPriceCents,
         priceToMoveCents,
@@ -960,7 +992,7 @@ export async function runStep3PricingResearch(
         listing_id: listingId,
         event_type: 'initial',
         price_cents: suggestedPriceCents,
-        note: `Initial pricing — ${usingActiveFallback ? filteredActive.length : filteredComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
+        note: `Initial pricing — ${usingActiveFallback ? effectiveActiveComps.length : effectiveSoldComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
       })
     }
   } catch {
