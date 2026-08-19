@@ -159,7 +159,10 @@ type HealthStatus = 'valid' | 'invalid' | 'unreachable' | 'not_configured'
 
 function HealthBadge({ platformId, status }: Readonly<{ platformId: string; status: HealthStatus | null }>) {
   const supported = platformId === 'poshmark' || platformId === 'ebay'
-  if (!supported || status === null) return null
+  if (!supported) return null
+  if (status === null) {
+    return <p className="text-[10px] text-gray-600">Checking…</p>
+  }
 
   const labels: Record<HealthStatus, { text: string; className: string }> = {
     valid: { text: '✅ Connection valid', className: 'text-emerald-500' },
@@ -499,7 +502,7 @@ export interface PlatformSettingsProps {
   siteUrl: string
 }
 
-const VALID_HEALTH_STATUSES: ReadonlySet<string> = new Set<HealthStatus>([
+const VALID_HEALTH_STATUSES: ReadonlySet<HealthStatus> = new Set<HealthStatus>([
   'valid',
   'invalid',
   'unreachable',
@@ -507,7 +510,7 @@ const VALID_HEALTH_STATUSES: ReadonlySet<string> = new Set<HealthStatus>([
 ])
 
 function isHealthStatus(value: unknown): value is HealthStatus {
-  return typeof value === 'string' && VALID_HEALTH_STATUSES.has(value)
+  return typeof value === 'string' && (VALID_HEALTH_STATUSES as ReadonlySet<string>).has(value)
 }
 
 export function PlatformSettings({ existingSettings, existingRules, siteUrl }: Readonly<PlatformSettingsProps>) {

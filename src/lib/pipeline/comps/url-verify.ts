@@ -17,8 +17,11 @@ export interface VerificationResult {
 }
 
 const SOLD_BADGE_PATTERNS: Record<string, RegExp> = {
-  therealreal_active: /class="[^"]*sold[^"]*"|>\s*Sold\s*</i,
-  poshmark_active: /"availability"\s*:\s*"sold_out"|>\s*Sold\s*</i,
+  // Word-bounded so a class/token that merely contains "sold" as a substring
+  // (e.g. "resold", "unsold", "sold_count") doesn't falsely flag an active
+  // listing as sold.
+  therealreal_active: /class="[^"]*\bsold\b[^"]*"|>\s*Sold\s*<\/[a-z]/i,
+  poshmark_active: /"availability"\s*:\s*"sold_out"|>\s*Sold\s*<\/[a-z]/i,
 }
 
 // Only these source -> hostname pairs are ever fetched. comp.listing_url traces
@@ -45,7 +48,9 @@ function isAllowedHostname(url: string, source: string): boolean {
   const allowed = ALLOWED_HOSTNAMES[source]
   if (!allowed) return false
   try {
-    return allowed.includes(new URL(url).hostname)
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:') return false
+    return allowed.includes(parsed.hostname)
   } catch {
     return false
   }
@@ -93,12 +98,20 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
       },
       signal: AbortSignal.timeout(8_000),
+      // The allowlist above only validates the *requested* URL -- fetch() follows
+      // redirects by default, and a redirect chain (attacker-influenced, since
+      // listing_url traces back to raw SerpAPI results) could land on an internal
+      // address (e.g. cloud metadata) before any post-fetch hostname check runs.
+      // 'error' rejects the fetch outright on any redirect rather than following
+      // it, which is safe here since this is already a best-effort check that
+      // treats every failure mode as UNCONFIRMED.
+      redirect: 'error',
     })
     if (!res.ok) return UNCONFIRMED
 
-    // fetch() follows redirects by default, so the final URL can differ from the
-    // one requested -- re-validate against the allowlist to catch a redirect that
-    // lands outside the allowed host.
+    // Defense in depth: redirect: 'error' above means res.url should always equal
+    // the originally-validated URL, but re-check in case a runtime's fetch ever
+    // resolves a redirect without throwing.
     if (!isAllowedHostname(res.url, comp.source)) return UNCONFIRMED
 
     const html = await readBoundedText(res, MAX_RESPONSE_BYTES)
@@ -110,10 +123,22 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
     const soldConfirmed = soldPattern ? soldPattern.test(html) : false
 
     return { identityConfirmed, soldConfirmed }
-  } catch {
+  } catch (err) {
+    // Best-effort: any failure (network, timeout, redirect, malformed response,
+    // or a genuine programming error) leaves the comp in its default
+    // classification. Log so a real bug here doesn't look identical to a
+    // routine network timeout in production.
+    console.warn('verifyComp: failed for', comp.listing_url, err instanceof Error ? err.message : String(err))
     return UNCONFIRMED
   }
 }
+
+// Fetching every candidate at once (up to `sampleSize` concurrent outbound
+// requests to the same external host) risks tripping rate-limiting/bot-detection
+// on TheRealReal or Poshmark. Verification runs at pipeline time, where
+// throughput isn't critical, so a small batch size trades a little latency for
+// being a better-behaved client.
+const VERIFY_CONCURRENCY = 3
 
 // Verifies a bounded sample (not every comp -- a full fetch-every-comp pass proved
 // too slow/rate-limited in early testing) and returns which indices should be
@@ -129,11 +154,14 @@ export async function verifyAndReclassify<T extends VerifiableComp & { sold_at: 
     .slice(0, sampleSize)
 
   const reclassify = new Set<number>()
-  await Promise.all(
-    candidates.map(async ({ c, i }) => {
-      const result = await verifyComp(c, brand)
-      if (result.identityConfirmed && result.soldConfirmed) reclassify.add(i)
-    })
-  )
+  for (let start = 0; start < candidates.length; start += VERIFY_CONCURRENCY) {
+    const batch = candidates.slice(start, start + VERIFY_CONCURRENCY)
+    await Promise.all(
+      batch.map(async ({ c, i }) => {
+        const result = await verifyComp(c, brand)
+        if (result.identityConfirmed && result.soldConfirmed) reclassify.add(i)
+      })
+    )
+  }
   return reclassify
 }

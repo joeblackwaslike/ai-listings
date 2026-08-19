@@ -128,14 +128,26 @@ async function fetchEbaySoldComps(
 
     return (data.organic_results ?? [])
       .filter((r) => r.title && r.price?.extracted_value && r.sold_date)
-      .map((r) => ({
-        title: r.title ?? '',
-        priceCents: Math.round((r.price?.extracted_value ?? 0) * 100),
-        soldAt: r.sold_date ? new Date(r.sold_date).toISOString() : null,
-        listingUrl: r.link ?? '',
-      }))
+      .map((r) => {
+        // SerpAPI's eBay sold_date is a scraped, human-readable string (e.g.
+        // "Sold  Mar 14, 2024") -- strip a leading "Sold" prefix and validate
+        // the parse before calling toISOString(), which throws RangeError on
+        // an Invalid Date and would otherwise lose the entire batch below.
+        const cleaned = r.sold_date?.replace(/^sold\s*/i, '').trim()
+        const parsedDate = cleaned ? new Date(cleaned) : null
+        const soldAt = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null
+        return {
+          title: r.title ?? '',
+          priceCents: Math.round((r.price?.extracted_value ?? 0) * 100),
+          soldAt,
+          listingUrl: r.link ?? '',
+        }
+      })
       .filter((c) => c.priceCents > 0)
-  } catch {
+  } catch (err) {
+    // SerpAPI eBay sold is documented as flaky (503s, multi-minute timeouts observed).
+    // Log so operators can distinguish timeout/quota exhaustion from a bug.
+    console.warn('fetchEbaySoldComps: failed, returning empty', err instanceof Error ? err.message : String(err))
     return []
   }
 }
@@ -150,10 +162,16 @@ interface SerpApiGoogleResponse {
   organic_results?: SerpApiOrganicResult[]
 }
 
+// Google Shopping / site-search snippets for resale platforms frequently show
+// both the original retail price and the resale price in the same snippet
+// (e.g. "Originally $1,200 · Now $380"). Matching the *first* dollar amount
+// picks up the inflated retail price; the resale/sale price consistently comes
+// last, so take the last match instead.
 function extractPriceFromSnippet(snippet: string): number | null {
-  const match = snippet.match(/\$([\d,]+(?:\.\d{2})?)/)
-  if (!match) return null
-  const dollars = parseFloat(match[1].replace(/,/g, ''))
+  const matches = [...snippet.matchAll(/\$([\d,]+(?:\.\d{2})?)/g)]
+  if (matches.length === 0) return null
+  const last = matches[matches.length - 1]
+  const dollars = parseFloat(last[1].replace(/,/g, ''))
   return isNaN(dollars) ? null : Math.round(dollars * 100)
 }
 
@@ -164,8 +182,9 @@ function extractPriceFromSnippet(snippet: string): number | null {
 // process.env.SERPAPI_API_KEY) -- reimplemented standalone here to match this
 // file's existing fetcher(query, apiKey) shape instead of instantiating that class.
 // Search-result snippets can't distinguish "for sale" from "sold" -- every result
-// here is classified therealreal_active by default; URL-verification (Task 12)
-// reclassifies confirmed sold items.
+// here is classified therealreal_active by default. url-verify.ts implements a
+// best-effort URL-verification reclassification pass, but it is not wired into
+// this file -- comps here always stay classified as active until that's done.
 async function fetchTheRealRealComps(
   query: string,
   apiKey: string
@@ -824,13 +843,21 @@ export async function runStep3PricingResearch(
     insertedIds.push(...(inserted ?? []).map((row) => row.id as string))
 
     // Only now that the fresh comps are safely stored, clear anything from a prior run.
-    const { error: deleteError } = await supabase
-      .from('pricing_comps')
-      .delete()
-      .eq('listing_id', listingId)
-      .not('id', 'in', `(${insertedIds.join(',')})`)
-    if (deleteError) {
-      throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
+    // Guarded on insertedIds.length: an insert that succeeds (no `error`) but whose
+    // `.select('id')` comes back empty -- e.g. an RLS SELECT policy that doesn't cover
+    // the just-inserted rows -- would otherwise build `.not('id','in','()')`, which is
+    // invalid Postgres syntax. Skipping the delete in that case is also the safer
+    // choice on its own merits: leave the prior run's comps in place rather than
+    // execute a filter we can't build correctly.
+    if (insertedIds.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('pricing_comps')
+        .delete()
+        .eq('listing_id', listingId)
+        .not('id', 'in', `(${insertedIds.join(',')})`)
+      if (deleteError) {
+        throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
+      }
     }
   }
 
@@ -838,12 +865,13 @@ export async function runStep3PricingResearch(
   // (the exact bug found auditing HB-0085/86/87: 9-38 active comps sitting unused
   // while confidence/price both said "zero data"), derive a real, honestly-labeled
   // active-market estimate instead of falling straight to the speed-to-sell "no
-  // data" narrative. Active-only estimates cap below sold-comp confidence tiers --
-  // this is asking-price data, not confirmed sales.
+  // data" narrative. Active-only estimates are asking-price data, not confirmed
+  // sales, so the confidence score is halved and then capped below the lowest
+  // sold-comp tier (35, versus calcConfidenceScore's own tiers of 40/60/75/90).
   const usingActiveFallback = filteredComps.length === 0 && relevantActive.length > 0
 
   const confidenceScore = usingActiveFallback
-    ? Math.min(35, Math.round(calcConfidenceScore(relevantActive.length) * 0.5))
+    ? Math.min(35, calcConfidenceScore(relevantActive.length) * 0.5)
     : calcConfidenceScore(filteredComps.length)
 
   const prices = usingActiveFallback
@@ -872,6 +900,11 @@ export async function runStep3PricingResearch(
   const sources = usingActiveFallback
     ? [...new Set(relevantActive.map((r) => r.source))]
     : [...new Set(filteredComps.map((r) => r.source))]
+  // Every other fetcher in this file degrades to an empty/null result on failure
+  // rather than throwing (SerpAPI, Reddit, etc.) -- generatePricingMethodology's
+  // internal runText() call has no such guard, so a transient Claude API error
+  // here would otherwise crash the whole step after comps/pricing are already
+  // computed. Fall back to a null methodology instead of losing that work.
   const methodologyText = apiKeys.anthropic
     ? await generatePricingMethodology(
         usingActiveFallback ? relevantActive.length : filteredComps.length,
@@ -884,7 +917,10 @@ export async function runStep3PricingResearch(
         priceHistory ?? [],
         apiKeys,
         usingActiveFallback
-      )
+      ).catch((err) => {
+        console.warn('generatePricingMethodology: failed, falling back to null', err instanceof Error ? err.message : String(err))
+        return null
+      })
     : null
 
   await pushPipelineStep(listingId, {
