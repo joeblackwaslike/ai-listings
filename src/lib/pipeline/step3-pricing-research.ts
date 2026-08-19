@@ -422,16 +422,48 @@ function calcConfidenceScore(compCount: number): number {
 const COMP_RELEVANCE_THRESHOLD = 6
 const COMP_FILTER_BATCH = 25
 
-async function filterRelevantComps(
+export interface CompRelevance {
+  score: number
+  color: string | null
+}
+
+/** Parses the LLM's per-index `{score, color}` scoring response into a map of
+ * every entry it could recover. Malformed JSON, a missing object, or a
+ * non-numeric score all degrade to being dropped rather than thrown — callers
+ * apply their own relevance threshold against the returned scores. */
+export function parseRelevanceScores(text: string): Map<number, CompRelevance> {
+  const entries = new Map<number, CompRelevance>()
+  const match = /\{[\s\S]+\}/.exec(text)
+  if (!match) return entries
+  let parsed: Record<string, { score?: unknown; color?: unknown }>
+  try {
+    parsed = JSON.parse(match[0]) as Record<string, { score?: unknown; color?: unknown }>
+  } catch {
+    return entries
+  }
+  for (const [idx, entry] of Object.entries(parsed)) {
+    const score = entry?.score
+    if (typeof score !== 'number' || !Number.isFinite(score)) continue
+    const color = typeof entry?.color === 'string' ? entry.color : null
+    entries.set(Number(idx), { score, color })
+  }
+  return entries
+}
+
+/** Scores every comp 0-10 against the target item and extracts each title's own
+ * color/variant descriptor. Returns relevance data for ALL input comps (not just
+ * ones above threshold) — callers decide what counts as relevant for their use
+ * case (e.g. active comps are inserted regardless of score, but still tagged). */
+async function scoreCompRelevance(
   comps: Array<{ title: string }>,
   brand: string,
   model: string,
   category: string,
   notableFeatures: string[],
   anthropicApiKey: string
-): Promise<Set<number>> {
-  if (comps.length === 0) return new Set()
-  const keepIndices = new Set<number>()
+): Promise<Map<number, CompRelevance>> {
+  if (comps.length === 0) return new Map()
+  const scored = new Map<number, CompRelevance>()
   const featureHints = notableFeatures.slice(0, 4).join(', ')
   const targetDesc = featureHints
     ? `"${brand} ${model}" (${category}) — key attributes: ${featureHints}`
@@ -442,7 +474,7 @@ async function filterRelevantComps(
       const titlesBlock = batch.map((c, i) => `${start + i}. ${c.title}`).join('\n')
       const text = await runText({
         model: 'claude-haiku-4-5',
-        maxTokens: 512,
+        maxTokens: 768,
         apiKey: anthropicApiKey,
         prompt: `Score each title by how well it matches this specific item: ${targetDesc}.
 
@@ -458,26 +490,20 @@ Rules:
 - Color/material MUST match to score above 6. If the target has a specific colorway or pattern (e.g. "graffiti", "sterling silver", "white lambskin", "tie-dye") and the comp mentions a different one, cap at 5.
 - Bulk lots (e.g. "lot of 10", clearly re-seller inventory) = 0.
 
-Return ONLY a JSON object mapping index → score. Example: {"0":8,"1":2,"3":9}
+Also extract each title's own color/material/variant descriptor as a short phrase (e.g. "black leather", "sterling silver", "graffiti print") — null if the title doesn't mention one.
+
+Return ONLY a JSON object mapping index → {"score": number, "color": string|null}. Example: {"0":{"score":8,"color":"black leather"},"1":{"score":2,"color":"tan canvas"}}
 
 Titles:
 ${titlesBlock}`,
       })
-      const match = /\{[^}]+\}/.exec(text)
-      if (!match) continue
-      let scores: Record<string, number>
-      try {
-        scores = JSON.parse(match[0]) as Record<string, number>
-      } catch {
-        continue
-      }
-      for (const [idx, score] of Object.entries(scores)) {
-        if (score >= COMP_RELEVANCE_THRESHOLD) keepIndices.add(Number(idx))
+      for (const [idx, relevance] of parseRelevanceScores(text)) {
+        scored.set(idx, relevance)
       }
     }
-    return keepIndices
+    return scored
   } catch {
-    return new Set(comps.map((_, i) => i))
+    return new Map(comps.map((_, i) => [i, { score: COMP_RELEVANCE_THRESHOLD, color: null }]))
   }
 }
 
@@ -517,6 +543,8 @@ export async function runStep3PricingResearch(
     listing_url: string
     condition_delta: 'same' | 'better' | 'worse'
     adjusted_price_cents: number
+    relevance_score: number | null
+    color: string | null
   }> = []
 
   for (const result of serpResults) {
@@ -538,6 +566,8 @@ export async function runStep3PricingResearch(
       listing_url: result.link,
       condition_delta: delta,
       adjusted_price_cents: adjustForCondition(priceCents, delta),
+      relevance_score: null,
+      color: null,
     })
   }
 
@@ -553,6 +583,8 @@ export async function runStep3PricingResearch(
       listing_url: comp.listing_url,
       condition_delta: delta,
       adjusted_price_cents: adjustForCondition(comp.sale_price_cents, delta),
+      relevance_score: null,
+      color: null,
     })
   }
 
@@ -563,6 +595,7 @@ export async function runStep3PricingResearch(
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
       listing_url: item.listingUrl, condition_delta: delta,
       adjusted_price_cents: adjustForCondition(item.priceCents, delta),
+      relevance_score: null, color: null,
     })
   }
 
@@ -573,6 +606,7 @@ export async function runStep3PricingResearch(
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
       listing_url: item.listingUrl, condition_delta: delta,
       adjusted_price_cents: adjustForCondition(item.priceCents, delta),
+      relevance_score: null, color: null,
     })
   }
 
@@ -583,6 +617,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'ebay_active', title: item.title,
       sale_price_cents: item.priceCents, condition: item.condition, sold_at: null,
       listing_url: item.url, condition_delta: 'same', adjusted_price_cents: item.priceCents,
+      relevance_score: null, color: null,
     })
   }
   for (const item of poshmarkActive) {
@@ -590,6 +625,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'poshmark_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
+      relevance_score: null, color: null,
     })
   }
   for (const item of mercariActive) {
@@ -597,6 +633,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'mercari_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
+      relevance_score: null, color: null,
     })
   }
   // Move any _active rows that ended up in compRows (from SerpAPI) into activeRows
@@ -608,10 +645,18 @@ export async function runStep3PricingResearch(
   // cheap items (a $9.99 Kenneth Cole is not a Movado comp), which would wreck the signal.
   // Without the relevance gate we can't trust the cheapest active listing (it could be
   // an unrelated $9.99 item), so surface nothing rather than a wrong signal.
-  const activeRelevantIndices = apiKeys.anthropic && activeRows.length > 0
-    ? await filterRelevantComps(activeRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
-    : new Set<number>()
-  const relevantActive = activeRows.filter((_, i) => activeRelevantIndices.has(i))
+  const activeRelevance = apiKeys.anthropic && activeRows.length > 0
+    ? await scoreCompRelevance(activeRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
+    : new Map<number, CompRelevance>()
+  // Every active row gets inserted regardless of relevance (it's context-only, never
+  // auto-prices) — but still tag each with whatever score/color was found, for later
+  // auditability of why a given active comp shows up.
+  activeRows.forEach((row, i) => {
+    const relevance = activeRelevance.get(i)
+    row.relevance_score = relevance?.score ?? null
+    row.color = relevance?.color ?? null
+  })
+  const relevantActive = activeRows.filter((row) => (row.relevance_score ?? 0) >= COMP_RELEVANCE_THRESHOLD)
   const lowestActive = relevantActive.length > 0
     ? relevantActive.reduce((min, r) => (r.sale_price_cents < min.sale_price_cents ? r : min))
     : null
@@ -620,10 +665,15 @@ export async function runStep3PricingResearch(
   const dedupedRows = deduplicateComps(soldRows)
 
   // Filter out irrelevant comps (wrong product type, wrong color/variant, unrelated merchandise)
-  const relevantIndices = apiKeys.anthropic
-    ? await filterRelevantComps(dedupedRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
-    : new Set(dedupedRows.map((_, i) => i))
-  const relevantComps = dedupedRows.filter((_, i) => relevantIndices.has(i))
+  const soldRelevance = apiKeys.anthropic
+    ? await scoreCompRelevance(dedupedRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
+    : null
+  const relevantComps = dedupedRows
+    .map((row, i) => {
+      const relevance = soldRelevance?.get(i)
+      return { ...row, relevance_score: relevance?.score ?? null, color: relevance?.color ?? null }
+    })
+    .filter((row) => (soldRelevance === null ? true : (row.relevance_score ?? 0) >= COMP_RELEVANCE_THRESHOLD))
 
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
