@@ -434,7 +434,7 @@ export interface CompRelevance {
  * counting, rather than regex — a regex either truncates on the first nested
  * `}` (non-greedy) or overshoots past trailing prose into a later unrelated
  * `}` (greedy), and this response nests a `{score, color}` object per index.
- * Tracks string-literal state (respecting `\"` escapes) so a `{`/`}` inside a
+ * Tracks double-quoted JSON string literals (respecting `\"` escapes) so a `{`/`}` inside a
  * quoted color value (e.g. `"vintage {frame}"`) doesn't perturb the depth
  * count. Residual limitation: if the model emits two separate top-level JSON
  * objects, only the first is returned — this doesn't detect or merge that. */
