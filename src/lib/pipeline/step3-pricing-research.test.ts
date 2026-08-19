@@ -32,3 +32,36 @@ test('parseRelevanceScores: skips an entry whose score is not a finite number', 
   const result = parseRelevanceScores(text)
   assert.deepEqual([...result.entries()], [[1, { score: 7, color: 'blue' }]])
 })
+
+test('parseRelevanceScores: skips a non-numeric key instead of coercing it to a NaN map key', () => {
+  const text = '{"foo":{"score":8,"color":"black"},"1":{"score":7,"color":"blue"}}'
+  const result = parseRelevanceScores(text)
+  assert.deepEqual([...result.entries()], [[1, { score: 7, color: 'blue' }]])
+  assert.equal([...result.keys()].some(Number.isNaN), false)
+})
+
+test('parseRelevanceScores: skips a negative index', () => {
+  const text = '{"-1":{"score":8,"color":"black"},"0":{"score":7,"color":"blue"}}'
+  const result = parseRelevanceScores(text)
+  assert.deepEqual([...result.entries()], [[0, { score: 7, color: 'blue' }]])
+})
+
+test('parseRelevanceScores: skips a score outside the 0-10 scale', () => {
+  const text = '{"0":{"score":11,"color":"black"},"1":{"score":-1,"color":"tan"},"2":{"score":10,"color":"blue"}}'
+  const result = parseRelevanceScores(text)
+  assert.deepEqual([...result.entries()], [[2, { score: 10, color: 'blue' }]])
+})
+
+test('parseRelevanceScores: extracts the JSON object even with trailing prose after it', () => {
+  const text = '{"0":{"score":8,"color":"black leather"}}\n\nLet me know if you need more detail.'
+  const result = parseRelevanceScores(text)
+  assert.deepEqual(result.get(0), { score: 8, color: 'black leather' })
+})
+
+test('parseRelevanceScores: does not stop at the first nested closing brace', () => {
+  // A non-greedy or single-level regex would truncate this at the inner `}` after "black leather".
+  const text = '{"0":{"score":8,"color":"black leather"},"1":{"score":9,"color":"tan canvas"}}'
+  const result = parseRelevanceScores(text)
+  assert.equal(result.size, 2)
+  assert.deepEqual(result.get(1), { score: 9, color: 'tan canvas' })
+})

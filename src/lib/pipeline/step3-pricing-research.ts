@@ -423,29 +423,60 @@ const COMP_RELEVANCE_THRESHOLD = 6
 const COMP_FILTER_BATCH = 25
 
 export interface CompRelevance {
-  score: number
+  /** null means "not actually scored" (the LLM call for this comp's batch
+   * failed) — distinct from a real 0-10 judgment. Never persisted as if it
+   * were a real score; callers decide fail-open vs fail-closed per use case. */
+  score: number | null
   color: string | null
 }
 
+/** Finds the first balanced top-level `{...}` object in `text` by brace-depth
+ * counting, rather than regex — a regex either truncates on the first nested
+ * `}` (non-greedy) or overshoots past trailing prose into a later unrelated
+ * `}` (greedy), and this response nests a `{score, color}` object per index. */
+function extractJsonObject(text: string): string | null {
+  const start = text.indexOf('{')
+  if (start === -1) return null
+  let depth = 0
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++
+    else if (text[i] === '}') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
 /** Parses the LLM's per-index `{score, color}` scoring response into a map of
- * every entry it could recover. Malformed JSON, a missing object, or a
- * non-numeric score all degrade to being dropped rather than thrown — callers
+ * every entry it could recover. A missing/unbalanced object, malformed JSON,
+ * a non-integer or negative index, and a score that's non-numeric or outside
+ * 0-10 all degrade to that entry being dropped rather than thrown — callers
  * apply their own relevance threshold against the returned scores. */
 export function parseRelevanceScores(text: string): Map<number, CompRelevance> {
   const entries = new Map<number, CompRelevance>()
-  const match = /\{[\s\S]+\}/.exec(text)
-  if (!match) return entries
+  const jsonText = extractJsonObject(text)
+  if (!jsonText) {
+    console.error(`[step3] parseRelevanceScores: no JSON object found in LLM response: ${text.slice(0, 200)}`)
+    return entries
+  }
   let parsed: Record<string, { score?: unknown; color?: unknown }>
   try {
-    parsed = JSON.parse(match[0]) as Record<string, { score?: unknown; color?: unknown }>
-  } catch {
+    parsed = JSON.parse(jsonText) as Record<string, { score?: unknown; color?: unknown }>
+  } catch (err) {
+    console.error(`[step3] parseRelevanceScores: JSON.parse failed on extracted object: ${jsonText.slice(0, 200)}`, err)
     return entries
   }
   for (const [idx, entry] of Object.entries(parsed)) {
+    const numericIdx = Number(idx)
+    if (!Number.isInteger(numericIdx) || numericIdx < 0) continue
     const score = entry?.score
-    if (typeof score !== 'number' || !Number.isFinite(score)) continue
+    if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 10) continue
     const color = typeof entry?.color === 'string' ? entry.color : null
-    entries.set(Number(idx), { score, color })
+    entries.set(numericIdx, { score, color })
+  }
+  if (entries.size === 0) {
+    console.error(`[step3] parseRelevanceScores: JSON parsed but yielded no valid entries: ${jsonText.slice(0, 200)}`)
   }
   return entries
 }
@@ -453,7 +484,11 @@ export function parseRelevanceScores(text: string): Map<number, CompRelevance> {
 /** Scores every comp 0-10 against the target item and extracts each title's own
  * color/variant descriptor. Returns relevance data for ALL input comps (not just
  * ones above threshold) — callers decide what counts as relevant for their use
- * case (e.g. active comps are inserted regardless of score, but still tagged). */
+ * case (e.g. active comps are inserted regardless of score, but still tagged).
+ * Each batch's LLM call is isolated: one batch failing doesn't discard scores
+ * already recovered from other batches, and a failed batch's comps get an
+ * explicit null score (never a fabricated passing score) so callers can choose
+ * fail-open or fail-closed honestly instead of silently trusting fake data. */
 async function scoreCompRelevance(
   comps: Array<{ title: string }>,
   brand: string,
@@ -468,10 +503,10 @@ async function scoreCompRelevance(
   const targetDesc = featureHints
     ? `"${brand} ${model}" (${category}) — key attributes: ${featureHints}`
     : `"${brand} ${model}" (${category})`
-  try {
-    for (let start = 0; start < comps.length; start += COMP_FILTER_BATCH) {
-      const batch = comps.slice(start, start + COMP_FILTER_BATCH)
-      const titlesBlock = batch.map((c, i) => `${start + i}. ${c.title}`).join('\n')
+  for (let start = 0; start < comps.length; start += COMP_FILTER_BATCH) {
+    const batch = comps.slice(start, start + COMP_FILTER_BATCH)
+    const titlesBlock = batch.map((c, i) => `${start + i}. ${c.title}`).join('\n')
+    try {
       const text = await runText({
         model: 'claude-haiku-4-5',
         maxTokens: 768,
@@ -500,11 +535,14 @@ ${titlesBlock}`,
       for (const [idx, relevance] of parseRelevanceScores(text)) {
         scored.set(idx, relevance)
       }
+    } catch (err) {
+      console.error(`[step3] scoreCompRelevance: batch at offset ${start} (${batch.length} comps) failed, marking unscored`, err)
+      for (let i = 0; i < batch.length; i++) {
+        scored.set(start + i, { score: null, color: null })
+      }
     }
-    return scored
-  } catch {
-    return new Map(comps.map((_, i) => [i, { score: COMP_RELEVANCE_THRESHOLD, color: null }]))
   }
+  return scored
 }
 
 export async function runStep3PricingResearch(
@@ -656,7 +694,12 @@ export async function runStep3PricingResearch(
     row.relevance_score = relevance?.score ?? null
     row.color = relevance?.color ?? null
   })
-  const relevantActive = activeRows.filter((row) => (row.relevance_score ?? 0) >= COMP_RELEVANCE_THRESHOLD)
+  // No key, no scoring attempt, or a failed batch all leave relevance_score null — for
+  // lowestActive specifically that must stay fail-CLOSED (null never counts as passing):
+  // an unverified "cheapest active listing" is worse than surfacing none, per the comment above.
+  const relevantActive = activeRows.filter(
+    (row) => row.relevance_score !== null && row.relevance_score >= COMP_RELEVANCE_THRESHOLD
+  )
   const lowestActive = relevantActive.length > 0
     ? relevantActive.reduce((min, r) => (r.sale_price_cents < min.sale_price_cents ? r : min))
     : null
@@ -668,12 +711,15 @@ export async function runStep3PricingResearch(
   const soldRelevance = apiKeys.anthropic
     ? await scoreCompRelevance(dedupedRows, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
     : null
+  // Sold comps feed the pricing median directly, so — unlike lowestActive above — a null
+  // relevance_score (no key, or a failed scoring batch) stays fail-OPEN: keep the comp rather
+  // than risk starving the median of evidence over a transient scoring failure.
   const relevantComps = dedupedRows
     .map((row, i) => {
       const relevance = soldRelevance?.get(i)
       return { ...row, relevance_score: relevance?.score ?? null, color: relevance?.color ?? null }
     })
-    .filter((row) => (soldRelevance === null ? true : (row.relevance_score ?? 0) >= COMP_RELEVANCE_THRESHOLD))
+    .filter((row) => row.relevance_score === null || row.relevance_score >= COMP_RELEVANCE_THRESHOLD)
 
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
