@@ -430,16 +430,18 @@ export interface CompRelevance {
   color: string | null
 }
 
-/** Finds the first balanced top-level `{...}` object in `text` by brace-depth
- * counting, rather than regex — a regex either truncates on the first nested
- * `}` (non-greedy) or overshoots past trailing prose into a later unrelated
- * `}` (greedy), and this response nests a `{score, color}` object per index.
- * Tracks double-quoted JSON string literals (respecting `\"` escapes) so a `{`/`}` inside a
- * quoted color value (e.g. `"vintage {frame}"`) doesn't perturb the depth
- * count. Residual limitation: if the model emits two separate top-level JSON
- * objects, only the first is returned — this doesn't detect or merge that. */
-function extractJsonObject(text: string): string | null {
-  const start = text.indexOf('{')
+/** Scans forward from `fromIndex` for the next balanced top-level `{...}`
+ * object by brace-depth counting, rather than regex — a regex either
+ * truncates on the first nested `}` (non-greedy) or overshoots past trailing
+ * prose into a later unrelated `}` (greedy), and this response nests a
+ * `{score, color}` object per index. Tracks double-quoted JSON string
+ * literals (respecting `\"` escapes) so a `{`/`}` inside a quoted color value
+ * (e.g. `"vintage {frame}"`) doesn't perturb the depth count. Returns null
+ * once no further `{` exists — callers advance `fromIndex` past a candidate
+ * that failed to parse to try the next one, rather than giving up on the
+ * first brace pair, which may be prose the model wrote before the payload. */
+function findNextJsonObject(text: string, fromIndex: number): { text: string; endIndex: number } | null {
+  const start = text.indexOf('{', fromIndex)
   if (start === -1) return null
   let depth = 0
   let inString = false
@@ -456,41 +458,51 @@ function extractJsonObject(text: string): string | null {
     else if (ch === '{') depth++
     else if (ch === '}') {
       depth--
-      if (depth === 0) return text.slice(start, i + 1)
+      if (depth === 0) return { text: text.slice(start, i + 1), endIndex: i + 1 }
     }
   }
   return null
 }
 
 /** Parses the LLM's per-index `{score, color}` scoring response into a map of
- * every entry it could recover. A missing/unbalanced object, malformed JSON,
- * a non-integer or negative index, and a score that's non-numeric or outside
- * 0-10 all degrade to that entry being dropped rather than thrown — callers
- * apply their own relevance threshold against the returned scores. */
+ * every entry it could recover. Scans candidate balanced-brace objects in
+ * order and uses the first one that parses as JSON — so prose containing
+ * braces before the real payload (e.g. `Note {approximate}. {"0":...}`) is
+ * skipped rather than causing the whole batch to come back empty. A missing
+ * object, malformed JSON in every candidate, a non-integer or negative index,
+ * and a score that's non-numeric or outside 0-10 all degrade to that entry
+ * being dropped rather than thrown — callers apply their own relevance
+ * threshold against the returned scores. */
 export function parseRelevanceScores(text: string): Map<number, CompRelevance> {
   const entries = new Map<number, CompRelevance>()
-  const jsonText = extractJsonObject(text)
-  if (!jsonText) {
-    console.error(`[step3] parseRelevanceScores: no JSON object found in LLM response: ${text.slice(0, 200)}`)
-    return entries
+  let searchFrom = 0
+  let sawCandidate = false
+  while (true) {
+    const found = findNextJsonObject(text, searchFrom)
+    if (!found) break
+    sawCandidate = true
+    searchFrom = found.endIndex
+    let parsed: Record<string, { score?: unknown; color?: unknown }>
+    try {
+      parsed = JSON.parse(found.text) as Record<string, { score?: unknown; color?: unknown }>
+    } catch {
+      continue // not valid JSON — likely prose containing a brace pair; try the next candidate
+    }
+    for (const [idx, entry] of Object.entries(parsed)) {
+      const numericIdx = Number(idx)
+      if (!Number.isInteger(numericIdx) || numericIdx < 0) continue
+      const score = entry?.score
+      if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 10) continue
+      const color = typeof entry?.color === 'string' ? entry.color : null
+      entries.set(numericIdx, { score, color })
+    }
+    if (entries.size === 0 && Object.keys(parsed).length > 0) {
+      console.error(`[step3] parseRelevanceScores: JSON parsed but yielded no valid entries: ${found.text.slice(0, 200)}`)
+    }
+    break // used the first candidate that parsed as valid JSON, regardless of entry count
   }
-  let parsed: Record<string, { score?: unknown; color?: unknown }>
-  try {
-    parsed = JSON.parse(jsonText) as Record<string, { score?: unknown; color?: unknown }>
-  } catch (err) {
-    console.error(`[step3] parseRelevanceScores: JSON.parse failed on extracted object: ${jsonText.slice(0, 200)}`, err)
-    return entries
-  }
-  for (const [idx, entry] of Object.entries(parsed)) {
-    const numericIdx = Number(idx)
-    if (!Number.isInteger(numericIdx) || numericIdx < 0) continue
-    const score = entry?.score
-    if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 10) continue
-    const color = typeof entry?.color === 'string' ? entry.color : null
-    entries.set(numericIdx, { score, color })
-  }
-  if (entries.size === 0 && Object.keys(parsed).length > 0) {
-    console.error(`[step3] parseRelevanceScores: JSON parsed but yielded no valid entries: ${jsonText.slice(0, 200)}`)
+  if (!sawCandidate) {
+    console.error(`[step3] parseRelevanceScores: no balanced JSON object found in LLM response: ${text.slice(0, 200)}`)
   }
   return entries
 }

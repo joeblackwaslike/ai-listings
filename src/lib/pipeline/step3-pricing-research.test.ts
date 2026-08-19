@@ -70,6 +70,12 @@ test('parseRelevanceScores: extracts the JSON object even with trailing prose af
   assert.deepEqual(result.get(0), { score: 8, color: 'black leather' })
 })
 
+test('parseRelevanceScores: skips over prose containing braces to find the real JSON payload', () => {
+  const text = 'Note {approximate colors only}. {"0":{"score":8,"color":"black leather"}}'
+  const result = parseRelevanceScores(text)
+  assert.deepEqual(result.get(0), { score: 8, color: 'black leather' })
+})
+
 test('parseRelevanceScores: does not stop at the first nested closing brace', () => {
   // A non-greedy or single-level regex would truncate this at the inner `}` after "black leather".
   const text = '{"0":{"score":8,"color":"black leather"},"1":{"score":9,"color":"tan canvas"}}'
