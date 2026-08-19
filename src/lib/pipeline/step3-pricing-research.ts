@@ -433,14 +433,28 @@ export interface CompRelevance {
 /** Finds the first balanced top-level `{...}` object in `text` by brace-depth
  * counting, rather than regex — a regex either truncates on the first nested
  * `}` (non-greedy) or overshoots past trailing prose into a later unrelated
- * `}` (greedy), and this response nests a `{score, color}` object per index. */
+ * `}` (greedy), and this response nests a `{score, color}` object per index.
+ * Tracks string-literal state (respecting `\"` escapes) so a `{`/`}` inside a
+ * quoted color value (e.g. `"vintage {frame}"`) doesn't perturb the depth
+ * count. Residual limitation: if the model emits two separate top-level JSON
+ * objects, only the first is returned — this doesn't detect or merge that. */
 function extractJsonObject(text: string): string | null {
   const start = text.indexOf('{')
   if (start === -1) return null
   let depth = 0
+  let inString = false
+  let escaped = false
   for (let i = start; i < text.length; i++) {
-    if (text[i] === '{') depth++
-    else if (text[i] === '}') {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth++
+    else if (ch === '}') {
       depth--
       if (depth === 0) return text.slice(start, i + 1)
     }
@@ -475,7 +489,7 @@ export function parseRelevanceScores(text: string): Map<number, CompRelevance> {
     const color = typeof entry?.color === 'string' ? entry.color : null
     entries.set(numericIdx, { score, color })
   }
-  if (entries.size === 0) {
+  if (entries.size === 0 && Object.keys(parsed).length > 0) {
     console.error(`[step3] parseRelevanceScores: JSON parsed but yielded no valid entries: ${jsonText.slice(0, 200)}`)
   }
   return entries

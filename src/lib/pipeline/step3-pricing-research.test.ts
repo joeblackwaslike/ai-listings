@@ -46,10 +46,22 @@ test('parseRelevanceScores: skips a negative index', () => {
   assert.deepEqual([...result.entries()], [[0, { score: 7, color: 'blue' }]])
 })
 
-test('parseRelevanceScores: skips a score outside the 0-10 scale', () => {
+test('parseRelevanceScores: skips a score above 10 or below 0 (index/key are valid; the score value itself is out of range)', () => {
   const text = '{"0":{"score":11,"color":"black"},"1":{"score":-1,"color":"tan"},"2":{"score":10,"color":"blue"}}'
   const result = parseRelevanceScores(text)
   assert.deepEqual([...result.entries()], [[2, { score: 10, color: 'blue' }]])
+})
+
+test('parseRelevanceScores: returns only the first top-level object when the LLM emits two', () => {
+  const text = '{"0":{"score":8,"color":"black leather"}}{"note":"extra explanatory object"}'
+  const result = parseRelevanceScores(text)
+  assert.deepEqual([...result.entries()], [[0, { score: 8, color: 'black leather' }]])
+})
+
+test('parseRelevanceScores: a brace inside a quoted color value does not perturb depth counting', () => {
+  const text = String.raw`{"0":{"score":8,"color":"vintage {frame} pattern"}}`
+  const result = parseRelevanceScores(text)
+  assert.deepEqual(result.get(0), { score: 8, color: 'vintage {frame} pattern' })
 })
 
 test('parseRelevanceScores: extracts the JSON object even with trailing prose after it', () => {
