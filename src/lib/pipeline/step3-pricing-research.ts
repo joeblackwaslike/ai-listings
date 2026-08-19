@@ -423,9 +423,12 @@ const COMP_RELEVANCE_THRESHOLD = 6
 const COMP_FILTER_BATCH = 25
 
 export interface CompRelevance {
-  /** null means "not actually scored" (the LLM call for this comp's batch
-   * failed) — distinct from a real 0-10 judgment. Never persisted as if it
-   * were a real score; callers decide fail-open vs fail-closed per use case. */
+  /** null means "not actually scored" — either an explicit failed-batch result
+   * from scoreCompRelevance, or simply never attempted (e.g. no Anthropic key
+   * configured, so the map has no entry for this index at all and a caller's
+   * `?? null` fallback applies). Both collapse to the same null on the row;
+   * distinct from a real 0-10 judgment and never persisted as if it were one —
+   * callers decide fail-open vs fail-closed per use case. */
   score: number | null
   color: string | null
 }
