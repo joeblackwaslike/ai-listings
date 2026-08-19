@@ -1,5 +1,6 @@
 import type { DetailGateContext, Listing } from '@/types/listings'
 import { detectClothingSubType, getMeasurementFields } from '@/lib/utils'
+import { detectJewelrySubType, parseChainLengthInches } from '@/lib/jewelry-detection'
 import { formatMeasurementValue } from '@/lib/units'
 
 const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
@@ -13,8 +14,9 @@ const GENDER_LABELS: Record<string, string> = {
 export type IdGateListing = Pick<Listing, 'brand' | 'category' | 'condition' | 'condition_notes' | 'intake_meta'>
 export type GenderGateListing = Pick<Listing, 'category' | 'intake_meta'>
 
-function notableFeaturesOf(intakeMeta: Record<string, unknown> | null): string[] {
-  return (intakeMeta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
+export function notableFeaturesOf(intakeMeta: Record<string, unknown> | null): string[] {
+  const source = intakeMeta?.visionAnalysis ?? intakeMeta?.textAnalysis
+  return (source as { notable_features?: string[] } | undefined)?.notable_features ?? []
 }
 
 export function buildIdGatePrompt(listing: IdGateListing): string {
@@ -54,16 +56,30 @@ export function buildGenderGatePrompt(
   const category = listing.category ?? 'item'
   const categoryNeedsGender = GENDER_CATEGORIES.has(category.toLowerCase())
   const notableFeatures = notableFeaturesOf(listing.intake_meta)
-  const clothingSubTypeHint = category === 'clothing' ? detectClothingSubType(notableFeatures) : null
-  const measurementFields = getMeasurementFields(category, clothingSubTypeHint)
+  let subTypeHint: DetailGateContext['subTypeHint'] = null
+  if (category === 'clothing') {
+    subTypeHint = detectClothingSubType(notableFeatures)
+  } else if (category === 'jewelry') {
+    subTypeHint = detectJewelrySubType(notableFeatures)
+  }
+  const measurementFields = getMeasurementFields(category, subTypeHint, notableFeatures)
   const categoryNeedsMeasurements = measurementFields.length > 0
+
+  let defaultMeasurementValues: DetailGateContext['defaultMeasurementValues']
+  if (subTypeHint === 'necklace') {
+    const chainLengthInches = parseChainLengthInches(notableFeatures)
+    if (chainLengthInches !== null) {
+      defaultMeasurementValues = { necklace_chain_length_in: chainLengthInches }
+    }
+  }
 
   const detailGateContext: DetailGateContext = {
     category,
     categoryNeedsGender,
-    clothingSubTypeHint,
+    subTypeHint,
     categoryNeedsMeasurements,
     measurementFields,
+    defaultMeasurementValues,
   }
 
   if (!categoryNeedsGender) {
@@ -123,6 +139,18 @@ export function buildIdGateAck(args: { confirmed: boolean }): string {
 
 export function buildGenderGateAck(): string {
   return 'Got it — running pricing research now. The listing will update in a moment.'
+}
+
+// listings.status stays 'gender_gate' for the rest of the intake pipeline (pricing research,
+// draft listing, background removal) after the gate is answered -- it only advances once all
+// of that finishes, which can take a while. A page reload/remount during that window would
+// otherwise re-derive "gate still pending" from status alone and re-show the gender/measurement
+// form even though it was already submitted (ai-listings-ftg). confirm-gender's
+// route always ends its conversation insert with buildGenderGateAck() as the last row, so its
+// presence at the tail of history is a reliable, DB-persisted "already answered" signal.
+export function isGenderGateAnswered(history: { role: string; content: string }[]): boolean {
+  const last = history[history.length - 1]
+  return last?.role === 'assistant' && last.content === buildGenderGateAck()
 }
 
 export function shouldPersistInLoopGreeting(

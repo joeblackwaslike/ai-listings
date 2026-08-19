@@ -1,8 +1,0 @@
-{
-  "observed_at": "2026-08-13T02:34:13.195Z",
-  "provider": "claude-code",
-  "event_name": "UserPromptSubmit",
-  "session_id": "fc2428eb-7dab-405b-8588-9b5087588eb4",
-  "turn_id": null,
-  "prompt_summary": "Extract the brand from: \"Vintage Levi's 501 jeans\""
-}

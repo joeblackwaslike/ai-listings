@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   const formData = await request.formData()
   const file = formData.get('photo') as File | null
   const listingId = formData.get('listingId') as string | null
+  const replacesPhotoId = formData.get('replacesPhotoId') as string | null
 
   if (!file || !listingId) {
     return NextResponse.json({ error: 'photo and listingId required' }, { status: 400 })
@@ -24,6 +25,20 @@ export async function POST(request: Request) {
   const { data: { user } } = await sessionClient.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  if (replacesPhotoId) {
+    const { data: replacedPhoto } = await sessionClient
+      .from('photos')
+      .select('id')
+      .eq('id', replacesPhotoId)
+      .eq('listing_id', listingId)
+      .eq('type', 'studio')
+      .eq('photoroom_meta->>quality_failed', 'true')
+      .maybeSingle()
+    if (!replacedPhoto) {
+      return NextResponse.json({ error: 'replacesPhotoId does not reference a studio photo on this listing that failed quality review' }, { status: 400 })
+    }
   }
 
   const supabase = getSupabaseAdmin()
@@ -60,6 +75,7 @@ export async function POST(request: Request) {
       listingId,
       photoId: photoRow.id as string,
       photoUrl,
+      ...(replacesPhotoId ? { replacesPhotoId } : {}),
     },
   })
 

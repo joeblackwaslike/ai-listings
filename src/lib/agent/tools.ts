@@ -4,12 +4,15 @@ import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
+import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
 import type {
   PricingResearchResult,
   AuthChecklistResult,
   ListingDescriptionResult,
   AgentToolError,
   ClothingSubType,
+  JewelrySubType,
+  Inclusion,
 } from '@/types/listings'
 
 // ─── Tool: research_pricing ───────────────────────────────────────────────────
@@ -131,7 +134,7 @@ async function buildDescription(
 
   const { data: listing, error: listingErr } = await supabase
     .from('listings')
-    .select('brand, category, condition, condition_notes, tags, inclusions, measurements, clothing_sub_type, suggested_price_cents, platform_fields')
+    .select('brand, category, condition, condition_notes, tags, inclusions, measurements, sub_type, suggested_price_cents, platform_fields, intake_meta')
     .eq('id', listingId)
     .single()
 
@@ -150,12 +153,16 @@ async function buildDescription(
       ).join('\n')
     : 'No comps available'
 
-  const inclusions = (listing.inclusions as Array<{ item: string; included: boolean }> ?? [])
-    .filter((i) => i.included).map((i) => i.item).join(', ') || 'None noted'
+  const inclusions = ((listing.inclusions as Inclusion[]) ?? [])
+    .filter((i) => i.confirmed).map((i) => i.item).join(', ') || 'None noted'
 
+  const notableFeatures = notableFeaturesOf(
+    (listing.intake_meta ?? null) as Record<string, unknown> | null
+  )
   const measurementFields = getMeasurementFields(
     (listing.category as string) ?? '',
-    (listing.clothing_sub_type ?? null) as ClothingSubType | null
+    (listing.sub_type ?? null) as ClothingSubType | JewelrySubType | null,
+    notableFeatures
   )
   const populatedMeasurements = listing.measurements
     ? measurementFields.filter((field) => {
@@ -246,8 +253,11 @@ Use the generate_listing tool. Rules:
 
 const InclusionSchema = z.object({
   item: z.string(),
-  included: z.boolean(),
+  source: z.enum(['detected', 'manual']),
+  confirmed: z.boolean(),
   notes: z.string().nullable(),
+  tagState: z.enum(['attached', 'severed']).optional(),
+  docSource: z.enum(['original', 'reseller', 'third_party']).optional(),
 })
 
 const AuthStepSchema = z.object({

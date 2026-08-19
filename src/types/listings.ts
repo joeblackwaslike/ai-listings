@@ -54,10 +54,17 @@ export const CATEGORY_PREFIXES: Record<ListingCategory, string> = {
   other: 'OT',
 };
 
+export type InclusionSource = 'detected' | 'manual';
+export type TagState = 'attached' | 'severed';
+export type AuthCardSource = 'original' | 'reseller' | 'third_party';
+
 export interface Inclusion {
   item: string;
-  included: boolean;
+  source: InclusionSource;
+  confirmed: boolean;
   notes: string | null;
+  tagState?: TagState;
+  docSource?: AuthCardSource;
 }
 
 export interface AuthStep {
@@ -72,6 +79,14 @@ export interface PhotoShot {
   description: string;
   required: boolean;
   photo_type: PhotoType;
+}
+
+// Always inches -- no unit suffix needed on the individual fields since, unlike jewelry's
+// mixed mm/in measurements, everything in this shape is the same unit.
+export interface ShippingBoxDims {
+  length: number;
+  width: number;
+  height: number;
 }
 
 export interface PlatformFields {
@@ -114,6 +129,16 @@ export type ClothingSubType =
   | 'skirt'
   | 'other';
 
+export type JewelrySubType =
+  | 'ring'
+  | 'bangle'
+  | 'bracelet'
+  | 'necklace'
+  | 'earrings'
+  | 'pendant'
+  | 'brooch'
+  | 'other';
+
 export interface Measurements {
   // clothing
   waist?: number;
@@ -130,6 +155,36 @@ export interface Measurements {
   depth?: number;
   // sneakers
   us_size?: number;
+  // Jewelry fields below embed their unit in the key name (_mm/_in), unlike
+  // clothing's unitless keys (waist, chest, ...) -- jewelry mixes mm (ring/
+  // bangle diameters) and inches (chain length) in the same interface, so
+  // the suffix disambiguates at a glance without relying on the hint string.
+  // jewelry: ring ("id" = inner diameter, not identifier)
+  ring_inscribed_size?: string;
+  ring_id_mm?: number;
+  ring_id_widest_mm?: number;
+  ring_id_narrowest_mm?: number;
+  // jewelry: bangle ("id" = inner diameter, same as ring)
+  bangle_id_mm?: number;
+  // jewelry: necklace
+  necklace_chain_length_in?: number;
+  // sneakers: sizing system capture (us_size above stays the resolved value)
+  shoe_size_system?: string;
+  shoe_size_raw?: string;
+  // sneakers: physical item dimensions -- one shoe of the pair, not the box. Only
+  // sneakers get dedicated L/W/H fields; every other category without sub-type-specific
+  // fields uses the generic width/height/depth above instead.
+  item_length_in?: number;
+  item_width_in?: number;
+  item_height_in?: number;
+  // shipping: computed estimate (padded item dims, or the real box below when known) --
+  // never asked for directly. See computeEstimatedShippingBox in lib/sizing/shipping-box.ts.
+  estimated_shipping_box?: ShippingBoxDims;
+  // shipping: real box dimensions, filled in via the finalizing-gate checklist when the
+  // original box is included -- overrides estimated_shipping_box when all three are known.
+  box_length_in?: number;
+  box_width_in?: number;
+  box_height_in?: number;
   // general
   weight_oz?: number;
 }
@@ -138,6 +193,7 @@ export interface MeasurementField {
   key: keyof Measurements;
   label: string;
   hint: string;
+  textInput?: true;
   useChips?: true;
   chipOptions?: string[];
 }
@@ -145,9 +201,10 @@ export interface MeasurementField {
 export interface DetailGateContext {
   category: string;
   categoryNeedsGender: boolean;
-  clothingSubTypeHint: ClothingSubType | null;
+  subTypeHint: ClothingSubType | JewelrySubType | null;
   categoryNeedsMeasurements: boolean;
   measurementFields: MeasurementField[];
+  defaultMeasurementValues?: Partial<Record<string, string | number>>;
 }
 
 export interface Listing {
@@ -166,7 +223,7 @@ export interface Listing {
   condition_notes: string | null;
   gender: string | null;
   item_size: string | null;
-  clothing_sub_type: ClothingSubType | null;
+  sub_type: ClothingSubType | JewelrySubType | null;
   measurements: Measurements | null;
   tags: string[];
   inclusions: Inclusion[];
@@ -199,6 +256,7 @@ export interface Listing {
 
   photos_confirmed: boolean;
   skip_background_removal: boolean;
+  condition_confirmed: boolean;
   is_luxury: boolean;
   intake_meta: Record<string, unknown> | null;
 

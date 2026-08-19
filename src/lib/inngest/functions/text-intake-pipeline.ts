@@ -6,8 +6,13 @@ import { runStep4aDraftListing } from '@/lib/pipeline/step4a-draft-listing'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
 import { getSupabaseAdmin, pushPipelineStep } from '@/lib/pipeline/supabase-push'
 import { getUserApiKeys } from '@/lib/user-api-keys'
+import { detectClothingSubType } from '@/lib/utils'
+import { detectJewelrySubType } from '@/lib/jewelry-detection'
+import { classifyJewelrySubTypeWithLlm } from '@/lib/jewelry-llm-fallback'
+import { computeEstimatedShippingBox } from '@/lib/sizing/shipping-box'
+import { deriveShoeUsSizeForStorage } from '@/lib/sizing/shoe-conversion'
 import type { VisionAnalysis } from '@/lib/pipeline/step2-vision-analysis'
-import type { ListingCategory, ConditionValue } from '@/types/listings'
+import type { ClothingSubType, ConditionValue, JewelrySubType, ListingCategory, Measurements } from '@/types/listings'
 
 const LUXURY_BRANDS = new Set([
   'Chanel',
@@ -172,6 +177,9 @@ export const textIntakePipeline = inngest.createFunction(
     name: 'Text Intake Pipeline',
     triggers: [{ event: 'text/submitted' }],
     retries: 3,
+    // Same memory-safety cap as intake-pipeline.ts's concurrency limit -- this
+    // pipeline runs the same memory-heavy step2/3/4 stages per item.
+    concurrency: { limit: 2 },
     onFailure: async ({ error, event }) => {
       const { listingId } = (
         event as unknown as { data: { event: TextSubmittedEvent } }
@@ -206,8 +214,9 @@ export const textIntakePipeline = inngest.createFunction(
     const { listingId, productData } = (event as unknown as TextSubmittedEvent).data
     const { description, brand, imageUrl } = productData
 
+    const supabase = getSupabaseAdmin()
+
     const apiKeys = await step.run('fetch-api-keys', async () => {
-      const supabase = getSupabaseAdmin()
       const { data: listingRow } = await supabase
         .from('listings')
         .select('user_id')
@@ -221,14 +230,80 @@ export const textIntakePipeline = inngest.createFunction(
       runTextAnalysis(listingId, description, brand, apiKeys)
     )
 
+    const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
+    const needsGender = GENDER_CATEGORIES.has(step2Result.category?.toLowerCase() ?? '')
+
+    let gender: string | null = null
+    let measurements: Record<string, unknown> | null = null
+
+    // Same gender/measurements/shipping-box gate as the photo-intake pipeline
+    // (intake-pipeline.ts) -- ai-listings-0wd. Text-intake listings previously had no path
+    // to collect item dimensions or get an estimated shipping box.
+    await step.run('gender-gate-start', () =>
+      supabase.from('listings').update({ status: 'gender_gate' }).eq('id', listingId).neq('status', 'archived')
+    )
+
+    const genderConfirmation = await step.waitForEvent('gender-gate-confirm', {
+      event: 'pipeline/gender-confirmed',
+      timeout: '7d',
+      match: 'data.listingId',
+    })
+
+    if (genderConfirmation) {
+      const gd = (genderConfirmation as unknown as {
+        data: { gender?: string; measurements?: Record<string, unknown> | null }
+      }).data
+      gender = needsGender ? (gd.gender ?? null) : null
+      measurements = gd.measurements ?? null
+
+      const category = (step2Result.category ?? '').toLowerCase()
+      const subType: ClothingSubType | JewelrySubType | null =
+        category === 'clothing' ? detectClothingSubType(step2Result.notableFeatures)
+        : category === 'jewelry' ? detectJewelrySubType(step2Result.notableFeatures)
+        : null
+
+      const shoeSizeMeasurements = deriveShoeUsSizeForStorage({
+        category,
+        gender,
+        brand: step2Result.brand,
+        measurements,
+      })
+      if (shoeSizeMeasurements) {
+        measurements = shoeSizeMeasurements
+      }
+
+      const estimatedShippingBox = computeEstimatedShippingBox(category, measurements as Measurements | null)
+      const measurementsWithShippingBox = estimatedShippingBox
+        ? { ...measurements, estimated_shipping_box: estimatedShippingBox }
+        : measurements
+
+      await step.run('store-gender', () =>
+        supabase.from('listings').update({ gender, measurements: measurementsWithShippingBox, sub_type: subType }).eq('id', listingId)
+      )
+
+      if (subType === null && category === 'jewelry') {
+        await step.run('jewelry-subtype-llm-fallback', async () => {
+          // Best-effort, deliberately non-fatal -- same rationale as intake-pipeline.ts's
+          // identical fallback.
+          try {
+            const llmSubType = await classifyJewelrySubTypeWithLlm(step2Result.notableFeatures, apiKeys)
+            if (llmSubType) {
+              await supabase.from('listings').update({ sub_type: llmSubType }).eq('id', listingId)
+            }
+          } catch (err) {
+            console.error('jewelry-subtype-llm-fallback failed for listing', listingId, err)
+          }
+        })
+      }
+    }
+
     const titleForComps = (step2Result.notableFeatures[0] ?? '').replace(/^Model:\s*/i, '').trim()
 
     // Step 3: pricing research
     await step.run('pricing-research', () =>
-      runStep3PricingResearch(listingId, step2Result, titleForComps, apiKeys)
+      runStep3PricingResearch(listingId, step2Result, titleForComps, apiKeys, gender)
     )
 
-    const supabase = getSupabaseAdmin()
     const { data: listingAfterStep3 } = await supabase
       .from('listings')
       .select('suggested_price_cents')

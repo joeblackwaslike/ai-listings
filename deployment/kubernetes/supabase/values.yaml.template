@@ -41,6 +41,25 @@ envs:
     SUPABASE_URL:              "http://ai-listings-supabase-kong:8000"
     STUDIO_PG_META_URL:        "http://ai-listings-supabase-meta:8080"
     NEXT_PUBLIC_ENABLE_LOGS:   "false"
+  auth:
+    # Codifies a manual `kubectl patch` applied directly to the live auth deployment at some
+    # earlier point (field manager "kubectl-patch", predates this file tracking envs.auth at
+    # all). Helm's server-side apply refuses to touch a Deployment where any field is owned by
+    # a different field manager unless the rendered value matches -- so these two must be
+    # declared here with their current live values, or every future `helm upgrade` on this
+    # release fails outright with a field-manager conflict, not just on the new var below.
+    API_EXTERNAL_URL: "https://sup-ai-listings.napoleon-catfish.ts.net"
+    GOTRUE_SITE_URL:  "https://ai-listings.napoleon-catfish.ts.net"
+    # Supabase refresh tokens are single-use. This app's proxy (src/proxy.ts) refreshes the
+    # session on every request, and the browser client also auto-refreshes independently --
+    # two parallel requests carrying the same not-yet-rotated refresh token (e.g. a page load
+    # firing several client-side fetch() calls at once) will race: the loser's refresh is
+    # rejected by GoTrue as token reuse, which can present as a hard, seemingly-random logout.
+    # This is a documented, expected limitation of @supabase/ssr (see its README's "Concurrent
+    # requests with the same expired session" section), not a bug in this app's code. GoTrue's
+    # reuse-interval grace period is the built-in mitigation -- widened from its default
+    # (commonly ~10s) to comfortably absorb this app's typical per-navigation request bursts.
+    GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "30"
 
 ingress:
   enabled: false

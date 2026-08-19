@@ -6,6 +6,8 @@ import {
   buildIdGateAck,
   buildIdGatePrompt,
   buildIdGateSnapshot,
+  isGenderGateAnswered,
+  notableFeaturesOf,
   shouldPersistInLoopGreeting,
   synthesizeGenderGateAnswer,
   synthesizeIdGateAnswer,
@@ -118,11 +120,59 @@ test('buildGenderGatePrompt asks for measurements only when the category needs n
   assert.deepEqual(detailGateContext.measurementFields.map((f) => f.key), ['width', 'height', 'depth'])
 })
 
+test('buildGenderGatePrompt threads notableFeatures through to detect an irregular ring band', () => {
+  const listing = genderListing({
+    category: 'jewelry',
+    intake_meta: { visionAnalysis: { notable_features: ['Model: Teardrop Bypass Ring', 'Style: Open bypass band'] } },
+  })
+  const { detailGateContext } = buildGenderGatePrompt(listing)
+  assert.equal(detailGateContext.subTypeHint, 'ring')
+  assert.deepEqual(detailGateContext.measurementFields.map((f) => f.key), ['ring_inscribed_size', 'ring_id_widest_mm', 'ring_id_narrowest_mm'])
+})
+
+test('buildGenderGatePrompt pre-fills necklace chain length when the vision notes state it', () => {
+  const listing = genderListing({
+    category: 'jewelry',
+    intake_meta: {
+      visionAnalysis: {
+        notable_features: ['Model: Elsa Peretti Teardrop Pendant Necklace', 'Chain length: approximately 16"'],
+      },
+    },
+  })
+  const { detailGateContext } = buildGenderGatePrompt(listing)
+  assert.equal(detailGateContext.subTypeHint, 'necklace')
+  assert.deepEqual(detailGateContext.defaultMeasurementValues, { necklace_chain_length_in: 16 })
+})
+
+test('buildGenderGatePrompt leaves defaultMeasurementValues undefined when chain length is not parseable', () => {
+  const listing = genderListing({
+    category: 'jewelry',
+    intake_meta: {
+      visionAnalysis: {
+        notable_features: ['Model: Elsa Peretti Bean Pendant Necklace', 'Chain style: fine cable chain'],
+      },
+    },
+  })
+  const { detailGateContext } = buildGenderGatePrompt(listing)
+  assert.equal(detailGateContext.subTypeHint, 'necklace')
+  assert.equal(detailGateContext.defaultMeasurementValues, undefined)
+})
+
+test('buildGenderGatePrompt leaves defaultMeasurementValues undefined for non-necklace jewelry', () => {
+  const listing = genderListing({
+    category: 'jewelry',
+    intake_meta: { visionAnalysis: { notable_features: ['Model: Solitaire Diamond Ring'] } },
+  })
+  const { detailGateContext } = buildGenderGatePrompt(listing)
+  assert.equal(detailGateContext.subTypeHint, 'ring')
+  assert.equal(detailGateContext.defaultMeasurementValues, undefined)
+})
+
 test('synthesizeGenderGateAnswer combines gender and measurement lines', () => {
   const detailGateContext: DetailGateContext = {
     category: 'clothing',
     categoryNeedsGender: true,
-    clothingSubTypeHint: 'jeans',
+    subTypeHint: 'jeans',
     categoryNeedsMeasurements: true,
     measurementFields: [
       { key: 'waist', label: 'Waist', hint: 'in inches' },
@@ -141,7 +191,7 @@ test('synthesizeGenderGateAnswer handles measurements-only (no gender)', () => {
   const detailGateContext: DetailGateContext = {
     category: 'handbag',
     categoryNeedsGender: false,
-    clothingSubTypeHint: null,
+    subTypeHint: null,
     categoryNeedsMeasurements: true,
     measurementFields: [
       { key: 'height', label: 'Height', hint: 'in inches' },
@@ -161,6 +211,41 @@ test('buildGenderGateAck returns the fixed acknowledgment', () => {
   assert.equal(
     buildGenderGateAck(),
     'Got it — running pricing research now. The listing will update in a moment.'
+  )
+})
+
+test('isGenderGateAnswered is false for empty history', () => {
+  assert.equal(isGenderGateAnswered([]), false)
+})
+
+test('isGenderGateAnswered is false when the last message is not the ack', () => {
+  assert.equal(
+    isGenderGateAnswered([
+      { role: 'assistant', content: 'Quick question before I run pricing — I need a few measurements.' },
+      { role: 'user', content: 'Chain Length: 17 in' },
+    ]),
+    false
+  )
+})
+
+test('isGenderGateAnswered is true when the last message is the gender-gate ack', () => {
+  assert.equal(
+    isGenderGateAnswered([
+      { role: 'assistant', content: 'Quick question before I run pricing — I need a few measurements.' },
+      { role: 'user', content: 'Chain Length: 17 in' },
+      { role: 'assistant', content: buildGenderGateAck() },
+    ]),
+    true
+  )
+})
+
+test('isGenderGateAnswered is false when the ack text appears but is not the last message', () => {
+  assert.equal(
+    isGenderGateAnswered([
+      { role: 'assistant', content: buildGenderGateAck() },
+      { role: 'user', content: 'What is the current price?' },
+    ]),
+    false
   )
 })
 
@@ -197,4 +282,22 @@ test('shouldPersistInLoopGreeting is false for every non-in_loop status', () => 
       `expected false for status ${status}`
     )
   }
+})
+
+test('notableFeaturesOf reads notable_features from visionAnalysis when present', () => {
+  const features = notableFeaturesOf({ visionAnalysis: { notable_features: ['Model: Submariner'] } })
+  assert.deepEqual(features, ['Model: Submariner'])
+})
+
+test('notableFeaturesOf falls back to textAnalysis when visionAnalysis is absent', () => {
+  const features = notableFeaturesOf({ textAnalysis: { notable_features: ['Model: Solitaire Ring'] }, source: 'text' })
+  assert.deepEqual(features, ['Model: Solitaire Ring'])
+})
+
+test('notableFeaturesOf returns an empty array when intake_meta is null', () => {
+  assert.deepEqual(notableFeaturesOf(null), [])
+})
+
+test('notableFeaturesOf returns an empty array when neither visionAnalysis nor textAnalysis is present', () => {
+  assert.deepEqual(notableFeaturesOf({}), [])
 })

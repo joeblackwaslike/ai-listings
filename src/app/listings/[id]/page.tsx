@@ -3,12 +3,13 @@ import { createClient } from '@/lib/supabase/server'
 import { FieldsPanel } from '@/components/workspace/FieldsPanel'
 import { AgentChat } from '@/components/workspace/AgentChat'
 import { ArchiveButton } from '@/components/workspace/ArchiveButton'
+import { FinalizeButton } from '@/components/workspace/FinalizeButton'
 import { PhotoSection } from '@/components/workspace/PhotoSection'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
 import { studioPhotosReady } from '@/lib/utils'
-import { buildGenderGatePrompt, buildIdGatePrompt, shouldPersistInLoopGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
+import { buildGenderGatePrompt, buildIdGatePrompt, isGenderGateAnswered, shouldPersistInLoopGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
 import { getSetting } from '@/lib/user-settings'
 
 type WorkspaceContext = {
@@ -123,7 +124,12 @@ function genderGateContext(listing: Listing): WorkspaceContext {
   ], detailGateContext)
 }
 
-function buildWorkspaceContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
+function buildWorkspaceContext(
+  listing: Listing,
+  photos: Photo[],
+  hasHistory: boolean,
+  history: { role: string; content: string }[]
+): WorkspaceContext {
   if (listing.agent_blocked && listing.agent_blocked_reason) {
     return { firstMessage: listing.agent_blocked_reason, suggestions: null }
   }
@@ -137,6 +143,11 @@ function buildWorkspaceContext(listing: Listing, photos: Photo[], hasHistory: bo
     return idGateContext(listing)
   }
   if (listing.status === 'gender_gate') {
+    // The gate can be answered well before status leaves 'gender_gate' -- the rest of the
+    // intake pipeline (pricing research, draft listing, background removal) still has to run
+    // first. Re-deriving the gender/measurement prompt from status alone would re-show it on
+    // every reload during that window (ai-listings-ftg).
+    if (isGenderGateAnswered(history)) return NO_CONTEXT
     return genderGateContext(listing)
   }
   if (listing.status !== 'in_loop') {
@@ -191,6 +202,12 @@ export default async function WorkspacePage({
   if (listingResult.error || !listingResult.data) {
     notFound()
   }
+  if (compsResult.error) {
+    // A failed comps fetch must not silently degrade to "no comps" -- FieldsPanel's price
+    // display is comp-dependent (premiums, gate-aware pricing), so an empty comp set here would
+    // show a different, unpremiumed price than a later publish could actually resolve.
+    throw new Error(`workspace page: pricing_comps fetch failed — ${compsResult.error.message}`)
+  }
 
   const listing = listingResult.data as unknown as Listing
   const photos = (photosResult.data ?? []) as unknown as Photo[]
@@ -199,8 +216,9 @@ export default async function WorkspacePage({
   const priceHistory = (priceHistoryResult.data ?? []) as unknown as ListingPriceEvent[]
 
   const hasHistory = history.length > 0
+  const genderGateAnswered = listing.status === 'gender_gate' && isGenderGateAnswered(history)
   const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate'
-    ? buildWorkspaceContext(listing, photos, hasHistory)
+    ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
   if (shouldPersistInLoopGreeting(listing, hasHistory, firstMessage)) {
@@ -225,6 +243,7 @@ export default async function WorkspacePage({
         <span className="text-gray-800">/</span>
         <span className="text-xs text-gray-400 font-mono">{listing.sku ?? listing.id.slice(0, 8)}</span>
         <div className="ml-auto flex items-center gap-4">
+          {listing.status === 'in_loop' && <FinalizeButton listingId={id} />}
           <ArchiveButton listingId={id} />
           <a href={`/listings/${id}/publish`} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
             Export →
@@ -250,7 +269,7 @@ export default async function WorkspacePage({
               created_at: m.created_at as string,
             }))}
             pendingIdGate={listing.status === 'id_gate'}
-            pendingGenderGate={listing.status === 'gender_gate'}
+            pendingGenderGate={listing.status === 'gender_gate' && !genderGateAnswered}
             detailGateContext={detailGateContext}
             firstMessage={firstMessage}
             suggestions={suggestions}

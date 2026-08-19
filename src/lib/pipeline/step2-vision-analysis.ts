@@ -4,6 +4,9 @@ import type { ProductIdData } from './step1-product-id'
 import { pushPipelineStep } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { toPublicUrl } from './to-public-url'
+import { getInclusionChecklist } from '@/lib/inclusions'
+import { mergeDetectedInclusions } from '@/lib/inclusions'
+import type { InclusionChecklistItem } from '@/lib/inclusions'
 
 const LUXURY_BRANDS = new Set([
   'Chanel',
@@ -33,6 +36,60 @@ const LUXURY_BRANDS = new Set([
   'Jaeger-LeCoultre',
 ])
 
+const INCLUSIONS_ITEM_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    item: { type: 'string' as const },
+    notes: { type: 'string' as const, nullable: true },
+    tagState: { type: 'string' as const, enum: ['attached', 'severed'], nullable: true },
+    docSource: { type: 'string' as const, enum: ['original', 'reseller', 'third_party'], nullable: true },
+  },
+  required: ['item', 'notes', 'tagState', 'docSource'],
+}
+
+function buildInclusionsDescription(checklist: InclusionChecklistItem[]): string {
+  return `Items visible alongside the product. Explicitly check for each of: ${checklist.map((c) => c.item).join(', ')}. Only include items you can actually see -- do not guess at items not visible. For any tag, set tagState to whether it is still attached to the item or has been cut off. For any authenticity card, set docSource: "original" if brand-issued, "reseller" if issued by a resale platform (e.g. TheRealReal's own item-code tag), "third_party" if it's a separate authentication service's documentation.`
+}
+
+type DetectedInclusion = { item: string; notes: string | null; tagState?: 'attached' | 'severed'; docSource?: 'original' | 'reseller' | 'third_party' }
+
+export async function detectInclusionsFromPhoto(
+  photoUrl: string,
+  checklist: InclusionChecklistItem[],
+  apiKeys: ApiKeys
+): Promise<DetectedInclusion[]> {
+  const publicPhotoUrl = await toPublicUrl(photoUrl)
+  let output: { inclusions: DetectedInclusion[] }
+  try {
+    output = await runStructured<{ inclusions: DetectedInclusion[] }>({
+      model: 'claude-sonnet-4-6',
+      maxTokens: 1024,
+      prompt: 'You are reviewing a studio photo for a resale listing platform. Identify any accessory items visible alongside the product using the extract_inclusions tool.',
+      image: { url: publicPhotoUrl },
+      apiKey: apiKeys.anthropic,
+      toolName: 'extract_inclusions',
+      toolDescription: 'Extract accessory items visible in the photo',
+      jsonSchema: {
+        type: 'object' as const,
+        properties: {
+          inclusions: {
+            type: 'array',
+            items: INCLUSIONS_ITEM_SCHEMA,
+            description: buildInclusionsDescription(checklist),
+          },
+        },
+        required: ['inclusions'],
+      },
+    })
+  } catch (err) {
+    if (err instanceof ClaudeStructuredOutputError) {
+      throw new Error('detectInclusionsFromPhoto: Claude did not return a tool_use block')
+    }
+    throw err
+  }
+  return output.inclusions
+}
+
 export interface VisionAnalysis {
   ok: true
   brand: string
@@ -52,7 +109,7 @@ type VisionOutput = {
   condition: ConditionValue
   condition_notes: string
   notable_features: string[]
-  inclusions: Array<{ item: string; included: boolean; notes: string | null }>
+  inclusions: DetectedInclusion[]
   photo_plan: Array<{
     shot: string
     description: string
@@ -71,6 +128,11 @@ export async function runStep2VisionAnalysis(
 ): Promise<VisionAnalysis> {
   console.log(`[step2] starting vision analysis for listing ${listingId}`)
   const publicPhotoUrl = await toPublicUrl(photoUrl)
+  // Checklist is best-effort here -- category is step1's pre-classification hint (possibly
+  // 'other' if Lens found no matches), not yet Claude's own authoritative classification,
+  // which only exists after this call returns. subType isn't computed until gender_gate,
+  // well after this function runs, so it's always null at this call site.
+  const checklist = getInclusionChecklist(step1.category, null)
   console.log(`[step2] public photo URL: ${publicPhotoUrl}, calling Claude...`)
 
   const correctionContext = corrections
@@ -86,13 +148,17 @@ export async function runStep2VisionAnalysis(
     attrsStr ? `Attributes: ${attrsStr}` : null,
   ].filter(Boolean).join('\n')
 
+  const lensHint = step1.hasLensMatch
+    ? `Google Lens previously identified this item as: "${step1.title}" (brand: ${step1.brand}, category: ${step1.category}).
+Top lens matches: ${step1.lensMatches
+        .slice(0, 5)
+        .map((m) => m.title)
+        .join('; ')}.`
+    : 'Google Lens found no visual matches for this item -- identify it directly from the photo.'
+
   const prompt = `You are analyzing a product photo for a resale listing platform.
 
-Google Lens previously identified this item as: "${step1.title}" (brand: ${step1.brand}, category: ${step1.category}).
-Top lens matches: ${step1.lensMatches
-    .slice(0, 5)
-    .map((m) => m.title)
-    .join('; ')}.
+${lensHint}
 ${kgContext ? `\nGoogle Knowledge Graph:\n${kgContext}` : ''}
 ${correctionContext}
 
@@ -163,16 +229,8 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
           },
           inclusions: {
             type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                item: { type: 'string' },
-                included: { type: 'boolean' },
-                notes: { type: 'string', nullable: true },
-              },
-              required: ['item', 'included', 'notes'],
-            },
-            description: 'Items visible alongside the product (box, dust bag, auth card, etc.)',
+            items: INCLUSIONS_ITEM_SCHEMA,
+            description: buildInclusionsDescription(checklist),
           },
           photo_plan: {
             type: 'array',
@@ -224,7 +282,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
     condition: output.condition,
     condition_notes: output.condition_notes,
     is_luxury: isLuxury,
-    inclusions: output.inclusions,
+    inclusions: mergeDetectedInclusions([], output.inclusions),
     photo_plan: output.photo_plan,
     intake_meta: {
       lensMatches: step1.lensMatches,
@@ -242,7 +300,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
     conditionNotes: output.condition_notes,
     notableFeatures: output.notable_features,
     isLuxury,
-    inclusions: output.inclusions,
+    inclusions: mergeDetectedInclusions([], output.inclusions),
     photoPlan: output.photo_plan,
     confidenceNote: output.confidence_note,
   }

@@ -5,7 +5,8 @@ import type { ApiKeys } from '@/lib/user-api-keys'
 import { getPlatformRules } from '@/lib/platform-rules'
 import { getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
-import type { ClothingSubType } from '@/types/listings'
+import { buildShoeSizingPromptSection } from '@/lib/sizing/shoe-conversion'
+import type { ClothingSubType, JewelrySubType } from '@/types/listings'
 
 interface DraftOutput {
   canonical_title: string
@@ -58,16 +59,27 @@ export async function runStep4aDraftListing(
 
   const { data: measurementsRow } = await supabase
     .from('listings')
-    .select('measurements, clothing_sub_type')
+    .select('measurements, sub_type, gender')
     .eq('id', listingId)
     .single()
 
   const measurementFields = getMeasurementFields(
     step2.category,
-    (measurementsRow?.clothing_sub_type ?? null) as ClothingSubType | null
+    (measurementsRow?.sub_type ?? null) as ClothingSubType | JewelrySubType | null,
+    step2.notableFeatures
   )
+  const sizingSection = buildShoeSizingPromptSection({
+    category: step2.category,
+    brand: step2.brand,
+    gender: (measurementsRow?.gender ?? null) as string | null,
+    measurements: (measurementsRow?.measurements as Record<string, unknown> | null) ?? null,
+  })
+  // When the sizing table above already covers these, drop them from the flat measurements
+  // line -- otherwise the raw "EU 39" and the formatted "EU 39 · UK 6 · US 8" both show up.
+  const shoeSizingKeys = new Set(['shoe_size_system', 'shoe_size_raw', 'us_size'])
   const populatedMeasurements = measurementsRow?.measurements
     ? measurementFields.filter((field) => {
+        if (sizingSection && shoeSizingKeys.has(field.key)) return false
         const value = (measurementsRow.measurements as Record<string, unknown>)[field.key]
         return value !== undefined && value !== null && value !== ''
       })
@@ -99,6 +111,10 @@ export async function runStep4aDraftListing(
     ? `Suggested price from comps: $${(suggestedPriceCents / 100).toFixed(0)}.`
     : 'No pricing data available — suggest a reasonable price.'
 
+  // Lists every detected inclusion, not just confirmed ones -- this runs immediately after
+  // gender_gate, in the automated pipeline, before the user has had any FieldsPanel
+  // opportunity to confirm or reject a single detected item. Filtering on `confirmed` here
+  // would always evaluate empty (ai-listings-kks final review).
   const prompt = `Generate a complete resale listing for this item.
 
 Item details:
@@ -108,9 +124,8 @@ Item details:
 - Condition notes: ${step2.conditionNotes}
 - Notable features: ${step2.notableFeatures.join(', ')}
 - Inclusions: ${step2.inclusions
-    .filter((i) => i.included)
     .map((i) => i.item)
-    .join(', ') || 'None noted'}${measurementsLine}
+    .join(', ') || 'None noted'}${measurementsLine}${sizingSection}
 
 Comparable sold prices:
 ${compsText}
@@ -124,6 +139,7 @@ ${rulesSection}Rules:
 - eBay title: exactly 80 chars or fewer, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
 - Poshmark title: natural, 60 chars max
 - eBay item specifics: brand, style/model, color, material, condition, size/dimensions where relevant
+- If a Sizing line is present, present it as a compact size comparison in the description (e.g. "Sizing: EU 39 · UK 6 · US 8.5") and, if a Sizing note is present, weave it into the description as a natural sentence — never invent, alter, or omit these numbers.
 - eBay category_id: use standard eBay category ID numbers (Handbags: 169291, Sneakers: 155202, Electronics/phones: 9355, Clothing tops: 53159)
 - Descriptions should be factual, buyer-oriented, no filler phrases like "don't miss out"
 - Do NOT end descriptions with a "Condition: X — ..." summary block — condition is displayed separately in the listing fields. Condition context may be woven naturally into the description body where relevant, but never as a labeled "Condition:" section at the end.`

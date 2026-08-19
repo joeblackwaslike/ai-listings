@@ -25,6 +25,11 @@ interface SerpApiLensResponse {
 
 export interface ProductIdData {
   ok: true
+  // False when Google Lens found no visual matches for the photo -- title/brand/category
+  // below are placeholders in that case, not a real identification. step2's vision analysis
+  // classifies the item directly from the photo either way, so this only controls whether
+  // step2's prompt cites step1 as a hint.
+  hasLensMatch: boolean
   title: string
   brand: string
   category: ListingCategory
@@ -105,16 +110,23 @@ export async function runStep1ProductId(
   }
 
   const matches = data.visual_matches ?? []
+  const hasLensMatch = matches.length > 0
 
-  if (matches.length === 0) {
-    throw new Error('step1: SerpAPI returned zero visual matches')
+  // A generic/unbranded item can legitimately have no reverse-image match (confirmed live on
+  // ai-listings-8aw: a plain sterling silver heart pendant). Falling back instead of throwing
+  // matters because a hard failure here blocks the whole listing (agent_blocked), and "restart"
+  // re-fires the identical deterministic search against the identical photo -- it never
+  // recovers on its own. step2's Claude vision analysis identifies brand/category directly
+  // from the photo and unconditionally overwrites whatever step1 guesses, so step1 finding
+  // nothing is a degraded hint, not a fatal error.
+  if (!hasLensMatch) {
+    console.warn(`[step1] SerpAPI returned zero visual matches for listing ${listingId} — falling back to vision-only identification`)
   }
+  const category = hasLensMatch ? inferCategory(matches) : 'other'
+  const brand = hasLensMatch ? inferBrand(matches) : 'Unknown'
+  const title = hasLensMatch ? (data.knowledge_graph?.title ?? matches[0].title) : 'Unidentified item'
 
-  const category = inferCategory(matches)
-  const brand = inferBrand(matches)
-  const title = data.knowledge_graph?.title ?? matches[0].title
-
-  console.log(`[step1] identified: title="${title}" brand="${brand}" category="${category}"`)
+  console.log(`[step1] identified: title="${title}" brand="${brand}" category="${category}" hasLensMatch=${hasLensMatch}`)
 
   const supabase = getSupabaseAdmin()
   const prefix = {
@@ -144,6 +156,7 @@ export async function runStep1ProductId(
   }))
   return {
     ok: true,
+    hasLensMatch,
     title,
     brand,
     category,

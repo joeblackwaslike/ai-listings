@@ -8,6 +8,12 @@ import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
 import { getSupabaseAdmin, pushPipelineStep } from '@/lib/pipeline/supabase-push'
 import { getUserApiKeys } from '@/lib/user-api-keys'
+import { detectClothingSubType } from '@/lib/utils'
+import { detectJewelrySubType } from '@/lib/jewelry-detection'
+import { classifyJewelrySubTypeWithLlm } from '@/lib/jewelry-llm-fallback'
+import { computeEstimatedShippingBox } from '@/lib/sizing/shipping-box'
+import { deriveShoeUsSizeForStorage } from '@/lib/sizing/shoe-conversion'
+import type { ClothingSubType, JewelrySubType, Measurements } from '@/types/listings'
 
 export const intakePipeline = inngest.createFunction(
   {
@@ -15,7 +21,12 @@ export const intakePipeline = inngest.createFunction(
     name: 'Intake Pipeline',
     triggers: [{ event: 'photo/uploaded' }],
     retries: 5,
-    concurrency: { limit: 4 },
+    // Capped at 2: each concurrent run does Claude Vision + image handling for a
+    // single item, which is memory-heavy on this cluster's resource-constrained
+    // Pi node. A batch upload of 4 items running fully in parallel (the old
+    // limit) OOM-killed the pod (2026-08-15 incident) -- this bounds per-pod
+    // memory use regardless of how many items get uploaded in one batch.
+    concurrency: { limit: 2 },
     onFailure: async ({ error, event }) => {
       const { listingId } = (
         event as unknown as { data: { event: PhotoUploadedEvent } }
@@ -129,9 +140,47 @@ export const intakePipeline = inngest.createFunction(
       }).data
       gender = needsGender ? (gd.gender ?? null) : null
       measurements = gd.measurements ?? null
+
+      const category = (step2Result.category ?? '').toLowerCase()
+      const subType: ClothingSubType | JewelrySubType | null =
+        category === 'clothing' ? detectClothingSubType(step2Result.notableFeatures)
+        : category === 'jewelry' ? detectJewelrySubType(step2Result.notableFeatures)
+        : null
+
+      const shoeSizeMeasurements = deriveShoeUsSizeForStorage({
+        category,
+        gender,
+        brand: step2Result.brand,
+        measurements,
+      })
+      if (shoeSizeMeasurements) {
+        measurements = shoeSizeMeasurements
+      }
+
+      const estimatedShippingBox = computeEstimatedShippingBox(category, measurements as Measurements | null)
+      const measurementsWithShippingBox = estimatedShippingBox
+        ? { ...measurements, estimated_shipping_box: estimatedShippingBox }
+        : measurements
+
       await step.run('store-gender', () =>
-        supabase.from('listings').update({ gender, measurements }).eq('id', listingId)
+        supabase.from('listings').update({ gender, measurements: measurementsWithShippingBox, sub_type: subType }).eq('id', listingId)
       )
+
+      if (subType === null && category === 'jewelry') {
+        await step.run('jewelry-subtype-llm-fallback', async () => {
+          // Best-effort, deliberately non-fatal: a failed classification here would
+          // otherwise mark the whole listing agent_blocked via onFailure, which isn't
+          // warranted for a nice-to-have enrichment.
+          try {
+            const llmSubType = await classifyJewelrySubTypeWithLlm(step2Result.notableFeatures, apiKeys)
+            if (llmSubType) {
+              await supabase.from('listings').update({ sub_type: llmSubType }).eq('id', listingId)
+            }
+          } catch (err) {
+            console.error('jewelry-subtype-llm-fallback failed for listing', listingId, err)
+          }
+        })
+      }
     }
 
     const titleForComps = (step2Result.notableFeatures[0] ?? '').replace(/^Model:\s*/i, '').trim()
