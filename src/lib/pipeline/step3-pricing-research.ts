@@ -808,11 +808,20 @@ export async function runStep3PricingResearch(
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
 
-  // Insert all: filtered sold comps + relevance-filtered active market context. activeRows
-  // itself stays unfiltered (used above for the lowestActive/relevantActive fallback signal),
-  // but only the relevance-filtered subset gets written -- HB-0086 had 38 unfiltered active
-  // comps, most of them loosely-related Chanel Cambon variants, none checked against
-  // item+color before this fix.
+  // Same dedupe + outlier removal the sold-comp path gets above (dedupedRows ->
+  // filteredComps), applied to the relevance-filtered active set. Without this, an
+  // active-comp fallback median (below) or the persisted rows can be dominated by
+  // duplicate/cross-posted listings or repeated same-price inventory -- the exact
+  // failure mode deduplicateComps/removeOutlierComps exist to catch, just not
+  // previously applied on the active side.
+  const filteredActive = removeOutlierComps(deduplicateComps(relevantActive))
+
+  // Insert all: filtered sold comps + relevance-filtered, deduped, outlier-filtered
+  // active market context. activeRows itself stays unfiltered (used above for the
+  // lowestActive/relevantActive fallback signal), but only the fully-filtered subset
+  // gets written -- HB-0086 had 38 unfiltered active comps, most of them
+  // loosely-related Chanel Cambon variants, none checked against item+color before
+  // this fix.
   //
   // step3 can be retried (see retry-step.ts), and computeAdjustedPricing (pricing-adjust.ts)
   // treats every stored pricing_comps row for the listing as current, sold-comp evidence -- a
@@ -833,7 +842,7 @@ export async function runStep3PricingResearch(
   // signal and no replacement data -- ai-listings-drz confirmed this exact scenario (a step3
   // retry that found zero comps cleared suggested_price_cents, leaving the listing with no
   // price at all). Skip both operations together in that case, leaving existing data untouched.
-  const toInsert = [...filteredComps, ...relevantActive]
+  const toInsert = [...filteredComps, ...filteredActive]
   const insertedIds: string[] = []
   if (toInsert.length > 0) {
     const { data: inserted, error } = await supabase.from('pricing_comps').insert(toInsert).select('id')
@@ -868,14 +877,14 @@ export async function runStep3PricingResearch(
   // data" narrative. Active-only estimates are asking-price data, not confirmed
   // sales, so the confidence score is halved and then capped below the lowest
   // sold-comp tier (35, versus calcConfidenceScore's own tiers of 40/60/75/90).
-  const usingActiveFallback = filteredComps.length === 0 && relevantActive.length > 0
+  const usingActiveFallback = filteredComps.length === 0 && filteredActive.length > 0
 
   const confidenceScore = usingActiveFallback
-    ? Math.min(35, calcConfidenceScore(relevantActive.length) * 0.5)
+    ? Math.min(35, calcConfidenceScore(filteredActive.length) * 0.5)
     : calcConfidenceScore(filteredComps.length)
 
   const prices = usingActiveFallback
-    ? relevantActive.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+    ? filteredActive.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
     : filteredComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
   const mid = Math.floor(prices.length / 2)
   const suggestedPriceCents =
@@ -898,7 +907,7 @@ export async function runStep3PricingResearch(
     .order('created_at', { ascending: true })
 
   const sources = usingActiveFallback
-    ? [...new Set(relevantActive.map((r) => r.source))]
+    ? [...new Set(filteredActive.map((r) => r.source))]
     : [...new Set(filteredComps.map((r) => r.source))]
   // Every other fetcher in this file degrades to an empty/null result on failure
   // rather than throwing (SerpAPI, Reddit, etc.) -- generatePricingMethodology's
@@ -907,7 +916,7 @@ export async function runStep3PricingResearch(
   // computed. Fall back to a null methodology instead of losing that work.
   const methodologyText = apiKeys.anthropic
     ? await generatePricingMethodology(
-        usingActiveFallback ? relevantActive.length : filteredComps.length,
+        usingActiveFallback ? filteredActive.length : filteredComps.length,
         sources,
         suggestedPriceCents,
         priceToMoveCents,
@@ -951,7 +960,7 @@ export async function runStep3PricingResearch(
         listing_id: listingId,
         event_type: 'initial',
         price_cents: suggestedPriceCents,
-        note: `Initial pricing — ${usingActiveFallback ? relevantActive.length : filteredComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
+        note: `Initial pricing — ${usingActiveFallback ? filteredActive.length : filteredComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
       })
     }
   } catch {
