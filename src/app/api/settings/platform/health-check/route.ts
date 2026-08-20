@@ -57,7 +57,16 @@ async function checkPoshmark(userId: string): Promise<HealthStatus> {
 // comps search (src/lib/pipeline/comps/ebay-oauth.ts) and says nothing about
 // whether this user has connected their own eBay seller account.
 async function checkEbay(userId: string): Promise<HealthStatus> {
-  const creds = await getEbayCreds(userId)
+  let creds: Awaited<ReturnType<typeof getEbayCreds>>
+  try {
+    creds = await getEbayCreds(userId)
+  } catch (err) {
+    // Same reasoning as checkPoshmark's getSetting guard: a settings-store
+    // failure here shouldn't 500 the whole endpoint and take the Poshmark
+    // status down with it via Promise.all.
+    console.error('checkEbay: getEbayCreds failed', err)
+    return 'unreachable'
+  }
   if (!creds) return 'not_configured'
   try {
     const basic = Buffer.from(`${creds.clientId}:${creds.clientSecret}`).toString('base64')
