@@ -509,15 +509,13 @@ export interface PlatformSettingsProps {
   siteUrl: string
 }
 
-const VALID_HEALTH_STATUSES: ReadonlySet<HealthStatus> = new Set<HealthStatus>([
-  'valid',
-  'invalid',
-  'unreachable',
-  'not_configured',
-])
+const VALID_HEALTH_STATUSES = ['valid', 'invalid', 'unreachable', 'not_configured'] as const satisfies readonly HealthStatus[]
 
 function isHealthStatus(value: unknown): value is HealthStatus {
-  return typeof value === 'string' && (VALID_HEALTH_STATUSES as ReadonlySet<string>).has(value)
+  // VALID_HEALTH_STATUSES is typed as readonly HealthStatus[], so .includes() only accepts
+  // HealthStatus -- widen to readonly string[] to check an unknown value against it, which is
+  // sound since HealthStatus is itself a string literal union.
+  return typeof value === 'string' && (VALID_HEALTH_STATUSES as readonly string[]).includes(value)
 }
 
 export function PlatformSettings({ existingSettings, existingRules, siteUrl }: Readonly<PlatformSettingsProps>) {
