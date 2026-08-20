@@ -893,10 +893,18 @@ export async function runStep3PricingResearch(
   let effectiveSoldComps = filteredComps
   let effectiveActiveComps = filteredActive
   if (toInsert.length === 0) {
-    const { data: existingRows } = await supabase
+    const { data: existingRows, error: reloadError } = await supabase
       .from('pricing_comps')
       .select('*')
       .eq('listing_id', listingId)
+    if (reloadError) {
+      // Same reasoning as the insert/delete guards above: a failed read here must
+      // not fall through and silently overwrite the listing's pricing fields with
+      // null/20%-confidence via pushPipelineStep below, as if there were genuinely
+      // zero comps -- throw so the caller's retry logic gets a chance to succeed
+      // against a transient failure instead.
+      throw new Error(`step3: pricing_comps reload failed — ${reloadError.message}`)
+    }
     const existing = (existingRows ?? []) as typeof compRows
     effectiveSoldComps = existing.filter((r) => !r.source.endsWith('_active'))
     effectiveActiveComps = existing.filter((r) => r.source.endsWith('_active'))
