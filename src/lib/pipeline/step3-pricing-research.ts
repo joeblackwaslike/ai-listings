@@ -149,7 +149,11 @@ async function fetchEbaySoldComps(
           listingUrl: r.link ?? '',
         }
       })
-      .filter((c) => c.priceCents > 0)
+      // soldAt null means the scraped date string didn't parse -- these rows
+      // already passed the r.sold_date-is-truthy filter above, so a null here
+      // is a genuine parse failure, not "no date provided". Drop rather than
+      // insert as unverifiable sold evidence with no confirmable sale date.
+      .filter((c) => c.priceCents > 0 && c.soldAt !== null)
   } catch (err) {
     // SerpAPI eBay sold is documented as flaky (503s, multi-minute timeouts observed).
     // Log so operators can distinguish timeout/quota exhaustion from a bug.
@@ -476,6 +480,15 @@ function removeOutlierComps<T extends { adjusted_price_cents: number }>(comps: T
   return comps.filter((c) => c.adjusted_price_cents >= lo && c.adjusted_price_cents <= hi)
 }
 
+// Single source of truth for the sold/active split convention used both at
+// insert time (compRows/activeRows) and on reload (effectiveSoldComps/
+// effectiveActiveComps) -- previously each call site re-derived this inline,
+// so a future source name that doesn't follow the "_active" suffix (or a typo
+// in one of the call sites) could silently split rows the wrong way.
+function isActiveSource(source: string): boolean {
+  return source.endsWith('_active')
+}
+
 function calcConfidenceScore(compCount: number): number {
   if (compCount >= 10) return 90
   if (compCount >= 6) return 75
@@ -769,8 +782,8 @@ export async function runStep3PricingResearch(
     })
   }
   // Move any _active rows that ended up in compRows (from SerpAPI) into activeRows
-  const soldRows = compRows.filter((r) => !r.source.endsWith('_active'))
-  activeRows.push(...compRows.filter((r) => r.source.endsWith('_active')))
+  const soldRows = compRows.filter((r) => !isActiveSource(r.source))
+  activeRows.push(...compRows.filter((r) => isActiveSource(r.source)))
 
   // Lowest live exact-item listing — surfaced as a fast-sale data point (never auto-prices).
   // Filter to the SAME exact item+color first: a raw keyword search surfaces unrelated
@@ -897,6 +910,8 @@ export async function runStep3PricingResearch(
       .from('pricing_comps')
       .select('*')
       .eq('listing_id', listingId)
+      .order('created_at', { ascending: false })
+      .limit(200)
     if (reloadError) {
       // Same reasoning as the insert/delete guards above: a failed read here must
       // not fall through and silently overwrite the listing's pricing fields with
@@ -905,9 +920,15 @@ export async function runStep3PricingResearch(
       // against a transient failure instead.
       throw new Error(`step3: pricing_comps reload failed — ${reloadError.message}`)
     }
+    // These rows were persisted by a prior run's own filteredComps/filteredActive
+    // (already deduped + outlier-removed at insert time -- see toInsert above), but
+    // re-run the same passes here rather than trusting that invariant blindly: rows
+    // from an older pipeline version, or a mix of two different runs' comps sitting
+    // in the table together, could reintroduce duplicates/outliers that a fresh run
+    // would have caught.
     const existing = (existingRows ?? []) as typeof compRows
-    effectiveSoldComps = existing.filter((r) => !r.source.endsWith('_active'))
-    effectiveActiveComps = existing.filter((r) => r.source.endsWith('_active'))
+    effectiveSoldComps = removeOutlierComps(deduplicateComps(existing.filter((r) => !isActiveSource(r.source))))
+    effectiveActiveComps = removeOutlierComps(deduplicateComps(existing.filter((r) => isActiveSource(r.source))))
   }
 
   // When there are zero relevant SOLD comps but real active-market data exists
@@ -920,7 +941,7 @@ export async function runStep3PricingResearch(
   const usingActiveFallback = effectiveSoldComps.length === 0 && effectiveActiveComps.length > 0
 
   const confidenceScore = usingActiveFallback
-    ? Math.min(35, calcConfidenceScore(effectiveActiveComps.length) * 0.5)
+    ? Math.min(35, Math.round(calcConfidenceScore(effectiveActiveComps.length) * 0.5))
     : calcConfidenceScore(effectiveSoldComps.length)
 
   const prices = usingActiveFallback
