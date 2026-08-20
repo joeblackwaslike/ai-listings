@@ -35,7 +35,7 @@ export async function PATCH(req: Request) {
   // unlike a bare includes('=') && includes(';') check, this accepts a single pair with no
   // semicolon (a valid one-cookie Cookie header) while still rejecting a JWT with a stray "="
   // or ";" appended (which would otherwise slip past a substring-only check).
-  const COOKIE_PAIRS_RE = /^[^=;\s]+=[^;]*(;\s*[^=;\s]+=[^;]*)*;?\s*$/
+  const COOKIE_PAIRS_RE = /^[^=;\s]+=[^;]+(;\s*[^=;\s]+=[^;]+)*;?\s*$/
   if (key === 'poshmark_cookies' && !COOKIE_PAIRS_RE.test(trimmedValue)) {
     return Response.json({
       error: `This doesn't look like a valid cookie string (expected "name=value; name2=value2" pairs). ` +
