@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -522,9 +522,17 @@ function isHealthStatus(value: unknown): value is HealthStatus {
 
 export function PlatformSettings({ existingSettings, existingRules, siteUrl }: Readonly<PlatformSettingsProps>) {
   const [health, setHealth] = useState<{ poshmark: HealthStatus; ebay: HealthStatus } | null>(null)
+  // The mount-time fetch and a post-save refetchHealth({ fresh: true }) can both be
+  // in flight at once, and the network makes no ordering guarantee about which
+  // resolves last -- each call's own local `cancelled` flag only protects that
+  // call's closure, not the relative order between two different calls. A request
+  // counter lets each response check whether it's still the most recently issued
+  // request before applying setHealth, so a slow mount-time response can't overwrite
+  // a newer fresh=1 result.
+  const latestRequestId = useRef(0)
 
   const refetchHealth = useCallback((opts?: { fresh?: boolean }) => {
-    let cancelled = false
+    const requestId = ++latestRequestId.current
     fetch(opts?.fresh ? '/api/settings/platform/health-check?fresh=1' : '/api/settings/platform/health-check')
       .then(async (res) => {
         if (!res.ok) throw new Error('health-check request failed')
@@ -532,7 +540,7 @@ export function PlatformSettings({ existingSettings, existingRules, siteUrl }: R
         return data
       })
       .then((data) => {
-        if (cancelled) return
+        if (latestRequestId.current !== requestId) return
         const poshmark = data && typeof data === 'object' && 'poshmark' in data ? (data as { poshmark: unknown }).poshmark : undefined
         const ebay = data && typeof data === 'object' && 'ebay' in data ? (data as { ebay: unknown }).ebay : undefined
         setHealth({
@@ -541,12 +549,9 @@ export function PlatformSettings({ existingSettings, existingRules, siteUrl }: R
         })
       })
       .catch(() => {
-        if (cancelled) return
+        if (latestRequestId.current !== requestId) return
         setHealth({ poshmark: 'unreachable', ebay: 'unreachable' })
       })
-    return () => {
-      cancelled = true
-    }
   }, [])
 
   useEffect(() => refetchHealth(), [refetchHealth])

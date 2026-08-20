@@ -95,6 +95,15 @@ async function checkEbay(userId: string): Promise<HealthStatus> {
 const HEALTH_CACHE_TTL_MS = 60_000
 const healthCache = new Map<string, { result: { poshmark: HealthStatus; ebay: HealthStatus }; expiresAt: number }>()
 
+// ?fresh=1 was the only escape hatch from the 60s cache, which made it the only
+// rate limit on live eBay OAuth mints / Poshmark probes too -- a tight client loop
+// hitting ?fresh=1 bypassed the cache on every single call. Track the last fresh
+// probe per user separately and only honor a repeat bypass after this interval,
+// so ?fresh=1 still gets an immediate post-save refresh but can't be used to spam
+// live checks.
+const FRESH_BYPASS_MIN_INTERVAL_MS = 5_000
+const lastFreshProbeAt = new Map<string, number>()
+
 export async function GET(req: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -103,12 +112,16 @@ export async function GET(req: Request) {
   // The settings UI re-requests this right after saving a credential so the
   // badge reflects the new value immediately -- ?fresh=1 bypasses the cache for
   // that one call instead of showing the pre-save status for up to 60s.
-  const fresh = new URL(req.url).searchParams.get('fresh') === '1'
+  const requestedFresh = new URL(req.url).searchParams.get('fresh') === '1'
+  const now = Date.now()
+  const lastFresh = lastFreshProbeAt.get(user.id) ?? 0
+  const fresh = requestedFresh && now - lastFresh >= FRESH_BYPASS_MIN_INTERVAL_MS
   const cached = healthCache.get(user.id)
-  if (!fresh && cached && cached.expiresAt > Date.now()) {
+  if (!fresh && cached && cached.expiresAt > now) {
     return Response.json(cached.result)
   }
 
+  if (requestedFresh) lastFreshProbeAt.set(user.id, now)
   const [poshmark, ebay] = await Promise.all([checkPoshmark(user.id), checkEbay(user.id)])
   const result = { poshmark, ebay }
   healthCache.set(user.id, { result, expiresAt: Date.now() + HEALTH_CACHE_TTL_MS })
