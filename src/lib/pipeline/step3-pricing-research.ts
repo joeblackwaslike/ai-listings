@@ -128,7 +128,7 @@ async function fetchEbaySoldComps(
 
     const data = (await res.json()) as SerpApiEbayResponse
     if (data.error) {
-      console.warn(`fetchEbaySoldComps: SerpAPI error for query "${query}"`, data.error)
+      console.warn(`fetchEbaySoldComps: SerpAPI error for query "${query}"`, JSON.stringify(data.error))
       return []
     }
 
@@ -193,8 +193,9 @@ function extractPriceFromSnippet(snippet: string): number | null {
 // file's existing fetcher(query, apiKey) shape instead of instantiating that class.
 // Search-result snippets can't distinguish "for sale" from "sold" -- every result
 // here is classified therealreal_active by default. url-verify.ts implements a
-// best-effort URL-verification reclassification pass, but it is not wired into
-// this file -- comps here always stay classified as active until that's done.
+// best-effort URL-verification reclassification pass, but wiring it in here is
+// deliberately deferred (tracked: ai-listings-534) -- comps here stay classified
+// as active until that lands.
 async function fetchTheRealRealComps(
   query: string,
   apiKey: string
@@ -832,11 +833,12 @@ export async function runStep3PricingResearch(
   const filteredComps = removeOutlierComps(relevantComps)
 
   // Same dedupe + outlier removal the sold-comp path gets above (dedupedRows ->
-  // filteredComps), applied to the relevance-filtered active set. Without this, an
-  // active-comp fallback median (below) or the persisted rows can be dominated by
-  // duplicate/cross-posted listings or repeated same-price inventory -- the exact
-  // failure mode deduplicateComps/removeOutlierComps exist to catch, just not
-  // previously applied on the active side.
+  // filteredComps), applied here to relevantActive (the relevance-filtered active
+  // set) to produce filteredActive. Without this, an active-comp fallback median
+  // (below) or the persisted rows can be dominated by duplicate/cross-posted
+  // listings or repeated same-price inventory -- the exact failure mode
+  // deduplicateComps/removeOutlierComps exist to catch, just not previously
+  // applied on the active side.
   const filteredActive = removeOutlierComps(deduplicateComps(relevantActive))
   if (relevantActive.length > 0 && filteredActive.length === 0) {
     console.warn(
@@ -895,6 +897,10 @@ export async function runStep3PricingResearch(
       if (deleteError) {
         throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
       }
+    } else {
+      console.warn(
+        `step3: pricing_comps insert succeeded but returned no ids for listing ${listingId} — skipped delete-old-rows, prior comps preserved`
+      )
     }
   }
 
@@ -994,7 +1000,11 @@ export async function runStep3PricingResearch(
         usingActiveFallback
       ).catch((err) => {
         console.warn('generatePricingMethodology: failed, falling back to null', err instanceof Error ? err.message : String(err))
-        return null
+        // A plain null here is indistinguishable in the UI (EvidenceDrawer renders
+        // nothing at all when pricingMethodology is falsy) from "no methodology was
+        // ever attempted" -- a sentinel makes a genuine generation failure visible
+        // to whoever's looking at the listing, not just to server logs.
+        return '_Pricing methodology generation failed for this run — see server logs._'
       })
     : null
 
