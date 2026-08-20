@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -155,17 +155,40 @@ function OAuthButton({ platform, label, connected }: Readonly<{ platform: string
   )
 }
 
+type HealthStatus = 'valid' | 'invalid' | 'unreachable' | 'not_configured'
+
+function HealthBadge({ platformId, status }: Readonly<{ platformId: string; status: HealthStatus | null }>) {
+  const supported = platformId === 'poshmark' || platformId === 'ebay'
+  if (!supported) return null
+  if (status === null) {
+    return <p className="text-[10px] text-gray-600">Checking…</p>
+  }
+
+  const labels: Record<HealthStatus, { text: string; className: string }> = {
+    valid: { text: '✅ Connection valid', className: 'text-emerald-500' },
+    invalid: { text: '❌ Invalid credential', className: 'text-red-400' },
+    unreachable: { text: '⚠️ Could not verify', className: 'text-amber-500' },
+    not_configured: { text: '— Not configured', className: 'text-gray-600' },
+  }
+  const label = labels[status]
+
+  return <p className={`text-[10px] ${label.className}`}>{label.text}</p>
+}
+
 function TextSettingRow({
   fieldDef,
   initialValue,
+  onSaved,
 }: Readonly<{
   fieldDef: TextFieldDef
   initialValue: string
+  onSaved?: () => void
 }>) {
   const [value, setValue] = useState(initialValue)
   const [savedValue, setSavedValue] = useState(initialValue)
   const [pending, setPending] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   async function save() {
     if (!value.trim() || value.trim() === savedValue) return
@@ -178,13 +201,16 @@ function TextSettingRow({
         body: JSON.stringify({ key: fieldDef.key, value: value.trim() }),
       })
       if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string }
+        setErrorMsg(errData.error ?? null)
         setStatus('error')
-        setTimeout(() => setStatus('idle'), 2000)
+        setTimeout(() => setStatus('idle'), 5000)
         return
       }
       setSavedValue(value.trim())
       setStatus('saved')
       setTimeout(() => setStatus('idle'), 2000)
+      onSaved?.()
     } finally {
       setPending(false)
     }
@@ -236,7 +262,7 @@ function TextSettingRow({
         <p className="text-[10px] text-emerald-500">Saved</p>
       )}
       {status === 'error' && (
-        <p className="text-[10px] text-red-400">Failed to save</p>
+        <p className="text-[10px] text-red-400">{errorMsg ?? 'Failed to save'}</p>
       )}
     </div>
   )
@@ -385,11 +411,15 @@ function PlatformSection({
   existingSettings,
   existingRules,
   siteUrl,
+  healthStatus,
+  onCredentialSaved,
 }: Readonly<{
   platform: PlatformDef
   existingSettings: Record<string, string>
   existingRules?: Record<string, string>
   siteUrl: string
+  healthStatus: HealthStatus | null
+  onCredentialSaved?: () => void
 }>) {
   const hasOAuth = platform.fields.some((f) => f.kind === 'oauth')
   const callbackUrl = hasOAuth ? `${siteUrl}/api/auth/callback/${platform.id}` : null
@@ -412,6 +442,7 @@ function PlatformSection({
           </a>
         )}
       </div>
+      <HealthBadge platformId={platform.id} status={healthStatus} />
       {callbackUrl && (
         <div className="space-y-1">
           <p className="text-[10px] text-gray-500">Redirect URI (paste into your app settings)</p>
@@ -449,11 +480,13 @@ function PlatformSection({
               />
             )
           }
+          const tracksHealth = platform.id === 'poshmark' || platform.id === 'ebay'
           return (
             <TextSettingRow
               key={field.key}
               fieldDef={field}
               initialValue={existingSettings[field.key] ?? ''}
+              onSaved={tracksHealth ? onCredentialSaved : undefined}
             />
           )
         })}
@@ -476,7 +509,58 @@ export interface PlatformSettingsProps {
   siteUrl: string
 }
 
+const VALID_HEALTH_STATUSES = ['valid', 'invalid', 'unreachable', 'not_configured'] as const satisfies readonly HealthStatus[]
+
+function isHealthStatus(value: unknown): value is HealthStatus {
+  // VALID_HEALTH_STATUSES is typed as readonly HealthStatus[], so .includes() only accepts
+  // HealthStatus -- widen to readonly string[] to check an unknown value against it, which is
+  // sound since HealthStatus is itself a string literal union.
+  return typeof value === 'string' && (VALID_HEALTH_STATUSES as readonly string[]).includes(value)
+}
+
 export function PlatformSettings({ existingSettings, existingRules, siteUrl }: Readonly<PlatformSettingsProps>) {
+  const [health, setHealth] = useState<{ poshmark: HealthStatus; ebay: HealthStatus } | null>(null)
+  // The mount-time fetch and a post-save refetchHealth({ fresh: true }) can both be
+  // in flight at once, and the network makes no ordering guarantee about which
+  // resolves last -- each call's own local `cancelled` flag only protects that
+  // call's closure, not the relative order between two different calls. A request
+  // counter lets each response check whether it's still the most recently issued
+  // request before applying setHealth, so a slow mount-time response can't overwrite
+  // a newer fresh=1 result.
+  const latestRequestId = useRef(0)
+
+  const refetchHealth = useCallback((opts?: { fresh?: boolean }) => {
+    const requestId = ++latestRequestId.current
+    fetch(opts?.fresh ? '/api/settings/platform/health-check?fresh=1' : '/api/settings/platform/health-check')
+      .then(async (res) => {
+        if (!res.ok) throw new Error('health-check request failed')
+        const data: unknown = await res.json()
+        return data
+      })
+      .then((data) => {
+        if (latestRequestId.current !== requestId) return
+        const poshmark = data && typeof data === 'object' && 'poshmark' in data ? (data as { poshmark: unknown }).poshmark : undefined
+        const ebay = data && typeof data === 'object' && 'ebay' in data ? (data as { ebay: unknown }).ebay : undefined
+        setHealth({
+          poshmark: isHealthStatus(poshmark) ? poshmark : 'unreachable',
+          ebay: isHealthStatus(ebay) ? ebay : 'unreachable',
+        })
+      })
+      .catch(() => {
+        if (latestRequestId.current !== requestId) return
+        setHealth({ poshmark: 'unreachable', ebay: 'unreachable' })
+      })
+  }, [])
+
+  useEffect(() => refetchHealth(), [refetchHealth])
+
+  function healthStatusFor(platformId: string): HealthStatus | null {
+    if (!health) return null
+    if (platformId === 'poshmark') return health.poshmark
+    if (platformId === 'ebay') return health.ebay
+    return null
+  }
+
   return (
     <div className="space-y-4">
       {PLATFORMS.map((platform) => (
@@ -486,6 +570,8 @@ export function PlatformSettings({ existingSettings, existingRules, siteUrl }: R
           existingSettings={existingSettings}
           existingRules={existingRules}
           siteUrl={siteUrl}
+          healthStatus={healthStatusFor(platform.id)}
+          onCredentialSaved={() => refetchHealth({ fresh: true })}
         />
       ))}
     </div>

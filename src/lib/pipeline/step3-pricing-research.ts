@@ -91,6 +91,143 @@ async function fetchRetailPrice(
   }
 }
 
+interface SerpApiEbayResult {
+  title?: string
+  price?: { extracted_value?: number }
+  sold_date?: string
+  link?: string
+  condition?: string
+}
+
+interface SerpApiEbayResponse {
+  organic_results?: SerpApiEbayResult[]
+  error?: string
+}
+
+// SerpAPI's dedicated eBay engine scrapes eBay's own public "Sold Items" search page
+// (show_only=Sold) -- no OAuth scope needed, unlike Marketplace Insights. Observed
+// flaky in practice (503s, multi-minute timeouts on some queries) -- always resolve
+// to an empty array rather than let a slow/failed scrape block the pipeline.
+async function fetchEbaySoldComps(
+  query: string,
+  apiKey: string
+): Promise<Array<{ title: string; priceCents: number; soldAt: string | null; listingUrl: string }>> {
+  if (!apiKey) return []
+  try {
+    const url = new URL('https://serpapi.com/search')
+    url.searchParams.set('engine', 'ebay')
+    url.searchParams.set('_nkw', query)
+    url.searchParams.set('show_only', 'Sold')
+    url.searchParams.set('api_key', apiKey)
+
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) })
+    if (!res.ok) {
+      console.warn(`fetchEbaySoldComps: HTTP ${res.status} for query "${query}"`)
+      return []
+    }
+
+    const data = (await res.json()) as SerpApiEbayResponse
+    if (data.error) {
+      console.warn(`fetchEbaySoldComps: SerpAPI error for query "${query}"`, JSON.stringify(data.error))
+      return []
+    }
+
+    return (data.organic_results ?? [])
+      .filter((r) => r.title && r.price?.extracted_value && r.sold_date)
+      .map((r) => {
+        // SerpAPI's eBay sold_date is a scraped, human-readable string (e.g.
+        // "Sold  Mar 14, 2024") -- strip a leading "Sold" prefix and validate
+        // the parse before calling toISOString(), which throws RangeError on
+        // an Invalid Date and would otherwise lose the entire batch below.
+        const cleaned = r.sold_date?.replace(/^sold\s*/i, '').trim()
+        const parsedDate = cleaned ? new Date(cleaned) : null
+        const soldAt = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null
+        return {
+          title: r.title ?? '',
+          priceCents: Math.round((r.price?.extracted_value ?? 0) * 100),
+          soldAt,
+          listingUrl: r.link ?? '',
+        }
+      })
+      // soldAt null means the scraped date string didn't parse -- these rows
+      // already passed the r.sold_date-is-truthy filter above, so a null here
+      // is a genuine parse failure, not "no date provided". Drop rather than
+      // insert as unverifiable sold evidence with no confirmable sale date.
+      .filter((c) => c.priceCents > 0 && c.soldAt !== null)
+  } catch (err) {
+    // SerpAPI eBay sold is documented as flaky (503s, multi-minute timeouts observed).
+    // Log so operators can distinguish timeout/quota exhaustion from a bug.
+    console.warn('fetchEbaySoldComps: failed, returning empty', err instanceof Error ? err.message : String(err))
+    return []
+  }
+}
+
+interface SerpApiOrganicResult {
+  title?: string
+  snippet?: string
+  link?: string
+}
+
+interface SerpApiGoogleResponse {
+  organic_results?: SerpApiOrganicResult[]
+}
+
+// Google Shopping / site-search snippets for resale platforms frequently show
+// both the original retail price and the resale price in the same snippet
+// (e.g. "Originally $1,200 · Now $380"). Matching the *first* dollar amount
+// picks up the inflated retail price; the resale/sale price consistently comes
+// last, so take the last match instead.
+function extractPriceFromSnippet(snippet: string): number | null {
+  const matches = [...snippet.matchAll(/\$([\d,]+(?:\.\d{2})?)/g)]
+  if (matches.length === 0) return null
+  const last = matches[matches.length - 1]
+  const dollars = parseFloat(last[1].replace(/,/g, ''))
+  return isNaN(dollars) ? null : Math.round(dollars * 100)
+}
+
+// site:therealreal.com search via SerpAPI's generic Google engine. TheRealReal has
+// no public API; TheRealRealAdapter.searchSoldComps() (src/lib/platforms/adapters/
+// therealreal.ts) already implements this exact approach but takes a userId the
+// pricing pipeline doesn't have and never actually uses it (only reads
+// process.env.SERPAPI_API_KEY) -- reimplemented standalone here to match this
+// file's existing fetcher(query, apiKey) shape instead of instantiating that class.
+// Search-result snippets can't distinguish "for sale" from "sold" -- every result
+// here is classified therealreal_active by default. url-verify.ts implements a
+// best-effort URL-verification reclassification pass, but wiring it in here is
+// deliberately deferred (tracked: ai-listings-534) -- comps here stay classified
+// as active until that lands.
+async function fetchTheRealRealComps(
+  query: string,
+  apiKey: string
+): Promise<Array<{ title: string; priceCents: number; listingUrl: string }>> {
+  if (!apiKey) return []
+  try {
+    const url = new URL('https://serpapi.com/search')
+    url.searchParams.set('engine', 'google')
+    url.searchParams.set('q', `site:therealreal.com ${query}`)
+    url.searchParams.set('num', '10')
+    url.searchParams.set('api_key', apiKey)
+
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) })
+    if (!res.ok) {
+      console.warn(`fetchTheRealRealComps: HTTP ${res.status} for query "${query}"`)
+      return []
+    }
+
+    const data = (await res.json()) as SerpApiGoogleResponse
+    return (data.organic_results ?? [])
+      .map((r) => {
+        const priceCents = r.snippet ? extractPriceFromSnippet(r.snippet) : null
+        if (!priceCents) return null
+        return { title: r.title ?? '', priceCents, listingUrl: r.link ?? '' }
+      })
+      .filter((c): c is { title: string; priceCents: number; listingUrl: string } => c !== null)
+  } catch (err) {
+    console.warn(`fetchTheRealRealComps: failed for query "${query}"`, err instanceof Error ? err.message : String(err))
+    return []
+  }
+}
+
 async function generatePricingMethodology(
   compCount: number,
   sources: string[],
@@ -100,7 +237,8 @@ async function generatePricingMethodology(
   confidenceScore: number,
   retailPriceCents: number | null,
   priceHistory: Array<{ event_type: string; price_cents: number; created_at: string }>,
-  apiKeys: ApiKeys
+  apiKeys: ApiKeys,
+  isActiveOnly: boolean
 ): Promise<string> {
   const suggestedStr = suggestedPriceCents != null ? `$${(suggestedPriceCents / 100).toFixed(2)}` : 'N/A'
   const priceToMoveStr = priceToMoveCents != null ? `$${(priceToMoveCents / 100).toFixed(2)}` : 'N/A'
@@ -122,7 +260,10 @@ async function generatePricingMethodology(
     historyStr = ` Price history shows ${priceHistory.length} previous prices: ${priceList}. The listing has been on market for ${daysSinceListed} days.`
   }
 
-  const prompt = `In 80–100 words, explain how this resale price was determined. Comp count: ${compCount}. Sources: ${sourcesStr}. Median adjusted price: ${suggestedStr}. Confidence: ${confidenceScore}%. Speed-to-sell price: ${priceToMoveStr} (${Math.round(discountPct * 100)}% below market median, typically sells in days vs weeks at list price).${retailStr}${historyStr} Return only the paragraph, no headings.`
+  const dataBasisNote = isActiveOnly
+    ? ' IMPORTANT: these are CURRENT ASKING PRICES from active listings, not confirmed sales -- say so explicitly (e.g. "based on N active listings, no confirmed sold comps"), do not describe this as a "market median" or imply any sale has actually occurred at this price.'
+    : ''
+  const prompt = `In 80–100 words, explain how this resale price was determined. Comp count: ${compCount}. Sources: ${sourcesStr}. Median adjusted price: ${suggestedStr}. Confidence: ${confidenceScore}%. Speed-to-sell price: ${priceToMoveStr} (${Math.round(discountPct * 100)}% below market median, typically sells in days vs weeks at list price).${retailStr}${historyStr}${dataBasisNote} Return only the paragraph, no headings.`
 
   const text = await runText({
     model: 'claude-haiku-4-5',
@@ -222,8 +363,6 @@ ${postsText}`,
   }
 }
 
-const MERCARI_CONSUMER_API = 'https://api.mercari.com/v2/entities:search'
-
 async function fetchPoshmarkSoldComps(
   query: string,
   cookies: string
@@ -300,75 +439,6 @@ async function fetchPoshmarkActiveFloor(
   }
 }
 
-async function fetchMercariSoldComps(
-  query: string,
-  accessToken: string
-): Promise<Array<{ title: string; priceCents: number; soldAt: string | null; listingUrl: string }>> {
-  if (!accessToken) return []
-  try {
-    const body = {
-      pageToken: '',
-      searchSessionId: crypto.randomUUID(),
-      indexRouting: 'INDEX_ROUTING_UNSPECIFIED',
-      searchCondition: { keyword: query, status: ['STATUS_SOLD_OUT'], categoryId: [], brandId: [] },
-      defaultDatasets: ['DATASET_TYPE_MERCARI'],
-      serviceFrom: 'suruga',
-    }
-    const res = await fetch(MERCARI_CONSUMER_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) return []
-    const data = (await res.json()) as { items?: Array<{ id: string; name: string; price: number; updated: number }> }
-    return (data.items ?? [])
-      .filter((item) => item.name && item.price > 0)
-      .map((item) => ({
-        title: item.name,
-        priceCents: Math.round(item.price * 100),
-        soldAt: item.updated ? new Date(item.updated * 1000).toISOString() : null,
-        listingUrl: `https://www.mercari.com/us/item/${item.id}`,
-      }))
-  } catch {
-    return []
-  }
-}
-
-async function fetchMercariActiveFloor(
-  query: string,
-  accessToken: string
-): Promise<Array<{ title: string; priceCents: number; listingUrl: string }>> {
-  if (!accessToken) return []
-  try {
-    const body = {
-      pageToken: '',
-      searchSessionId: crypto.randomUUID(),
-      indexRouting: 'INDEX_ROUTING_UNSPECIFIED',
-      searchCondition: { keyword: query, status: ['STATUS_ON_SALE'], categoryId: [], brandId: [] },
-      defaultDatasets: ['DATASET_TYPE_MERCARI'],
-      serviceFrom: 'suruga',
-      sort: { by: 'SORT_PRICE', order: 'ORDER_ASC' },
-      paging: { limit: 10, offset: 0 },
-    }
-    const res = await fetch(MERCARI_CONSUMER_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) return []
-    const data = (await res.json()) as { items?: Array<{ id: string; name: string; price: number }> }
-    return (data.items ?? [])
-      .filter((item) => item.name && item.price > 0)
-      .map((item) => ({
-        title: item.name,
-        priceCents: Math.round(item.price * 100),
-        listingUrl: `https://www.mercari.com/us/item/${item.id}`,
-      }))
-  } catch {
-    return []
-  }
-}
-
 function deduplicateComps<T extends { adjusted_price_cents: number; title: string }>(comps: T[]): T[] {
   // Remove bulk-lot duplicates: same seller listing same item 10+ times at identical price
   const kept: T[] = []
@@ -409,6 +479,15 @@ function removeOutlierComps<T extends { adjusted_price_cents: number }>(comps: T
   const lo = q1 - 1.5 * iqr
   const hi = q3 + 1.5 * iqr
   return comps.filter((c) => c.adjusted_price_cents >= lo && c.adjusted_price_cents <= hi)
+}
+
+// Single source of truth for the sold/active split convention used both at
+// insert time (compRows/activeRows) and on reload (effectiveSoldComps/
+// effectiveActiveComps) -- previously each call site re-derived this inline,
+// so a future source name that doesn't follow the "_active" suffix (or a typo
+// in one of the call sites) could silently split rows the wrong way.
+function isActiveSource(source: string): boolean {
+  return source.endsWith('_active')
 }
 
 function calcConfidenceScore(compCount: number): number {
@@ -587,7 +666,7 @@ export async function runStep3PricingResearch(
 
   const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
   const searchQuery = `${genderPrefix}${step2.brand} ${model}`
-  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, mercariSold, mercariActive] = await Promise.all([
+  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, ebaySold, theRealRealComps] = await Promise.all([
     searchEbayActive(searchQuery),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
@@ -596,8 +675,8 @@ export async function runStep3PricingResearch(
     fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
     fetchPoshmarkSoldComps(searchQuery, apiKeys.poshmarkCookies),
     fetchPoshmarkActiveFloor(searchQuery, apiKeys.poshmarkCookies),
-    fetchMercariSoldComps(searchQuery, apiKeys.mercariToken),
-    fetchMercariActiveFloor(searchQuery, apiKeys.mercariToken),
+    fetchEbaySoldComps(searchQuery, apiKeys.serpapi),
+    fetchTheRealRealComps(searchQuery, apiKeys.serpapi),
   ])
 
   const compRows: Array<{
@@ -666,10 +745,10 @@ export async function runStep3PricingResearch(
     })
   }
 
-  for (const item of mercariSold) {
+  for (const item of ebaySold) {
     const delta = conditionDelta(step2.condition, 'Not specified')
     compRows.push({
-      listing_id: listingId, source: 'mercari', title: item.title,
+      listing_id: listingId, source: 'ebay', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
       listing_url: item.listingUrl, condition_delta: delta,
       adjusted_price_cents: adjustForCondition(item.priceCents, delta),
@@ -695,17 +774,17 @@ export async function runStep3PricingResearch(
       relevance_score: null, color: null,
     })
   }
-  for (const item of mercariActive) {
+  for (const item of theRealRealComps) {
     activeRows.push({
-      listing_id: listingId, source: 'mercari_active', title: item.title,
+      listing_id: listingId, source: 'therealreal_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
       relevance_score: null, color: null,
     })
   }
   // Move any _active rows that ended up in compRows (from SerpAPI) into activeRows
-  const soldRows = compRows.filter((r) => !r.source.endsWith('_active'))
-  activeRows.push(...compRows.filter((r) => r.source.endsWith('_active')))
+  const soldRows = compRows.filter((r) => !isActiveSource(r.source))
+  activeRows.push(...compRows.filter((r) => isActiveSource(r.source)))
 
   // Lowest live exact-item listing — surfaced as a fast-sale data point (never auto-prices).
   // Filter to the SAME exact item+color first: a raw keyword search surfaces unrelated
@@ -753,6 +832,27 @@ export async function runStep3PricingResearch(
   // Remove bimodal outliers / IQR outliers to cut bulk lots and anomalous prices
   const filteredComps = removeOutlierComps(relevantComps)
 
+  // Same dedupe + outlier removal the sold-comp path gets above (dedupedRows ->
+  // filteredComps), applied here to relevantActive (the relevance-filtered active
+  // set) to produce filteredActive. Without this, an active-comp fallback median
+  // (below) or the persisted rows can be dominated by duplicate/cross-posted
+  // listings or repeated same-price inventory -- the exact failure mode
+  // deduplicateComps/removeOutlierComps exist to catch, just not previously
+  // applied on the active side.
+  const filteredActive = removeOutlierComps(deduplicateComps(relevantActive))
+  if (relevantActive.length > 0 && filteredActive.length === 0) {
+    console.warn(
+      `step3: filteredActive dropped all ${relevantActive.length} relevant active comps (dedup/outlier removal) for listing ${listingId}`
+    )
+  }
+
+  // Insert all: filtered sold comps + relevance-filtered, deduped, outlier-filtered
+  // active market context. activeRows itself stays unfiltered (used above for the
+  // lowestActive/relevantActive fallback signal), but only the fully-filtered subset
+  // gets written -- HB-0086 had 38 unfiltered active comps, most of them
+  // loosely-related Chanel Cambon variants, none checked against item+color before
+  // this fix.
+  //
   // step3 can be retried (see retry-step.ts), and computeAdjustedPricing (pricing-adjust.ts)
   // treats every stored pricing_comps row for the listing as current, sold-comp evidence -- a
   // retry that only inserted its fresh results would blend stale and current comps into the
@@ -764,7 +864,15 @@ export async function runStep3PricingResearch(
   // client-clock timestamp compared against pricing_comps.created_at (the database's own clock)
   // is vulnerable to ordinary clock skew between the app node and Postgres, which could delete
   // the batch just inserted above and leave the listing with zero comps.
-  const toInsert = [...filteredComps, ...activeRows]
+  //
+  // Both the insert AND the subsequent delete-old-rows step are gated on toInsert.length > 0.
+  // Most fetchers in this file degrade to an empty array on failure (expired cookies, API
+  // quota, flaky upstream) rather than throwing; if every source fails on one re-run, toInsert
+  // is empty, and deleting anyway would silently wipe a prior run's real comps with no error
+  // signal and no replacement data -- ai-listings-drz confirmed this exact scenario (a step3
+  // retry that found zero comps cleared suggested_price_cents, leaving the listing with no
+  // price at all). Skip both operations together in that case, leaving existing data untouched.
+  const toInsert = [...filteredComps, ...filteredActive]
   const insertedIds: string[] = []
   if (toInsert.length > 0) {
     const { data: inserted, error } = await supabase.from('pricing_comps').insert(toInsert).select('id')
@@ -772,21 +880,84 @@ export async function runStep3PricingResearch(
       throw new Error(`step3: pricing_comps insert failed — ${error.message}`)
     }
     insertedIds.push(...(inserted ?? []).map((row) => row.id as string))
+
+    // Only now that the fresh comps are safely stored, clear anything from a prior run.
+    // Guarded on insertedIds.length: an insert that succeeds (no `error`) but whose
+    // `.select('id')` comes back empty -- e.g. an RLS SELECT policy that doesn't cover
+    // the just-inserted rows -- would otherwise build `.not('id','in','()')`, which is
+    // invalid Postgres syntax. Skipping the delete in that case is also the safer
+    // choice on its own merits: leave the prior run's comps in place rather than
+    // execute a filter we can't build correctly.
+    if (insertedIds.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('pricing_comps')
+        .delete()
+        .eq('listing_id', listingId)
+        .not('id', 'in', `(${insertedIds.join(',')})`)
+      if (deleteError) {
+        throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
+      }
+    } else {
+      console.warn(
+        `step3: pricing_comps insert succeeded but returned no ids for listing ${listingId} — skipped delete-old-rows, prior comps preserved`
+      )
+    }
   }
 
-  // Only now that the fresh comps are safely stored, clear anything from a prior run.
-  let deleteQuery = supabase.from('pricing_comps').delete().eq('listing_id', listingId)
-  if (insertedIds.length > 0) {
-    deleteQuery = deleteQuery.not('id', 'in', `(${insertedIds.join(',')})`)
-  }
-  const { error: deleteError } = await deleteQuery
-  if (deleteError) {
-    throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
+  // toInsert.length === 0 means every fetcher came back empty this run and the
+  // insert/delete above was skipped entirely -- pricing_comps was left untouched
+  // on purpose. But everything below this point recomputes confidence/price from
+  // filteredComps/filteredActive, which are ALSO empty in that case: falling
+  // through unguarded would still overwrite the listing's suggested_price_cents
+  // with null and confidence with 20% via pushPipelineStep below, even though the
+  // real comp evidence is sitting untouched in the table -- exactly the
+  // ai-listings-drz scenario referenced above, just one layer up (the listing's
+  // pricing fields instead of the pricing_comps rows). Reload what's actually
+  // persisted and compute against that instead of an empty result set.
+  let effectiveSoldComps = filteredComps
+  let effectiveActiveComps = filteredActive
+  if (toInsert.length === 0) {
+    const { data: existingRows, error: reloadError } = await supabase
+      .from('pricing_comps')
+      .select('*')
+      .eq('listing_id', listingId)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (reloadError) {
+      // Same reasoning as the insert/delete guards above: a failed read here must
+      // not fall through and silently overwrite the listing's pricing fields with
+      // null/20%-confidence via pushPipelineStep below, as if there were genuinely
+      // zero comps -- throw so the caller's retry logic gets a chance to succeed
+      // against a transient failure instead.
+      throw new Error(`step3: pricing_comps reload failed — ${reloadError.message}`)
+    }
+    // These rows were persisted by a prior run's own filteredComps/filteredActive
+    // (already deduped + outlier-removed at insert time -- see toInsert above), but
+    // re-run the same passes here rather than trusting that invariant blindly: rows
+    // from an older pipeline version, or a mix of two different runs' comps sitting
+    // in the table together, could reintroduce duplicates/outliers that a fresh run
+    // would have caught.
+    const existing = (existingRows ?? []) as typeof compRows
+    effectiveSoldComps = removeOutlierComps(deduplicateComps(existing.filter((r) => !isActiveSource(r.source))))
+    effectiveActiveComps = removeOutlierComps(deduplicateComps(existing.filter((r) => isActiveSource(r.source))))
   }
 
-  const confidenceScore = calcConfidenceScore(filteredComps.length)
+  // When there are zero relevant SOLD comps but real active-market data exists
+  // (the exact bug found auditing HB-0085/86/87: 9-38 active comps sitting unused
+  // while confidence/price both said "zero data"), derive a real, honestly-labeled
+  // active-market estimate instead of falling straight to the speed-to-sell "no
+  // data" narrative. Active-only estimates are asking-price data, not confirmed
+  // sales, so the confidence score is halved and then capped below the lowest
+  // sold-comp tier (35, versus calcConfidenceScore's own tiers of 40/60/75/90).
+  const usingActiveFallback = effectiveSoldComps.length === 0 && effectiveActiveComps.length > 0
 
-  const prices = filteredComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+  const confidenceScore = usingActiveFallback
+    ? Math.min(35, Math.round(calcConfidenceScore(effectiveActiveComps.length) * 0.5))
+    : calcConfidenceScore(effectiveSoldComps.length)
+
+  const prices = usingActiveFallback
+    ? effectiveActiveComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+    : effectiveSoldComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
   const mid = Math.floor(prices.length / 2)
   const suggestedPriceCents =
     prices.length === 0
@@ -807,10 +978,17 @@ export async function runStep3PricingResearch(
     .eq('listing_id', listingId)
     .order('created_at', { ascending: true })
 
-  const sources = [...new Set(filteredComps.map((r) => r.source))]
+  const sources = usingActiveFallback
+    ? [...new Set(effectiveActiveComps.map((r) => r.source))]
+    : [...new Set(effectiveSoldComps.map((r) => r.source))]
+  // Every other fetcher in this file degrades to an empty/null result on failure
+  // rather than throwing (SerpAPI, Reddit, etc.) -- generatePricingMethodology's
+  // internal runText() call has no such guard, so a transient Claude API error
+  // here would otherwise crash the whole step after comps/pricing are already
+  // computed. Fall back to a null methodology instead of losing that work.
   const methodologyText = apiKeys.anthropic
     ? await generatePricingMethodology(
-        filteredComps.length,
+        usingActiveFallback ? effectiveActiveComps.length : effectiveSoldComps.length,
         sources,
         suggestedPriceCents,
         priceToMoveCents,
@@ -818,8 +996,16 @@ export async function runStep3PricingResearch(
         confidenceScore,
         retailResult?.retailPriceCents ?? null,
         priceHistory ?? [],
-        apiKeys
-      )
+        apiKeys,
+        usingActiveFallback
+      ).catch((err) => {
+        console.warn('generatePricingMethodology: failed, falling back to null', err instanceof Error ? err.message : String(err))
+        // A plain null here is indistinguishable in the UI (EvidenceDrawer renders
+        // nothing at all when pricingMethodology is falsy) from "no methodology was
+        // ever attempted" -- a sentinel makes a genuine generation failure visible
+        // to whoever's looking at the listing, not just to server logs.
+        return '_Pricing methodology generation failed for this run — see server logs._'
+      })
     : null
 
   await pushPipelineStep(listingId, {
@@ -850,7 +1036,7 @@ export async function runStep3PricingResearch(
         listing_id: listingId,
         event_type: 'initial',
         price_cents: suggestedPriceCents,
-        note: `Initial pricing — ${filteredComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
+        note: `Initial pricing — ${usingActiveFallback ? effectiveActiveComps.length : effectiveSoldComps.length} comps, ${Math.round(confidenceScore)}% confidence`,
       })
     }
   } catch {
