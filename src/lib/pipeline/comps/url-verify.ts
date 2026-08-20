@@ -121,9 +121,11 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
       // redirects by default, and a redirect chain (attacker-influenced, since
       // listing_url traces back to raw SerpAPI results) could land on an internal
       // address (e.g. cloud metadata) before any post-fetch hostname check runs.
-      // 'error' rejects the fetch outright on any redirect rather than following
-      // it, which is safe here since this is already a best-effort check that
-      // treats every failure mode as UNCONFIRMED.
+      // 'error' is documented to reject the fetch outright on any redirect, though
+      // that's not guaranteed identical across every fetch implementation -- some
+      // runtimes could plausibly resolve with an opaque error response instead of
+      // throwing. Either way this is safe: a thrown error is caught below and
+      // returns UNCONFIRMED, and an opaque response fails the res.ok check next.
       redirect: 'error',
     })
     if (!res.ok) {
@@ -134,9 +136,11 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
       return UNCONFIRMED
     }
 
-    // Defense in depth: redirect: 'error' above means res.url should always equal
-    // the originally-validated URL, but re-check in case a runtime's fetch ever
-    // resolves a redirect without throwing.
+    // Defense in depth: with redirect: 'error' behaving as documented, res.url here
+    // always equals the originally-validated URL and this check can never actually
+    // catch anything -- it's kept in case a runtime's fetch resolves a redirect
+    // (opaque error response) rather than throwing, which would otherwise reach
+    // this point with res.url pointing past the allowlist.
     if (!isAllowedHostname(res.url, comp.source)) return UNCONFIRMED
 
     const html = await readBoundedText(res, MAX_RESPONSE_BYTES)
@@ -148,8 +152,10 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
     // Brand-only matching lets an unrelated same-brand listing (wrong model/color)
     // satisfy identity, which would then let a *different* item's sold badge
     // reclassify this comp -- also require at least one other significant word
-    // from the comp's own title to appear on the page. If the title has no
-    // significant word beyond the brand (e.g. just "Chanel"), fall back to the
+    // from the comp's own title to appear on the page. otherTitleWords can be
+    // empty for more than just a single-word title (e.g. "Chanel" alone) -- any
+    // title whose non-brand words are all short (<4 chars) or in the stopword
+    // list (e.g. "Nike Air") lands here too. Either way, fall back to the
     // brand-only check rather than making identity unconfirmable altogether.
     const htmlLower = html.toLowerCase()
     const brandConfirmed = htmlLower.includes(brand.toLowerCase())
