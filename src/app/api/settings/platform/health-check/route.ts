@@ -34,11 +34,16 @@ async function checkPoshmark(userId: string): Promise<HealthStatus> {
     if (!res.ok) return 'unreachable'
     // A 200 alone doesn't confirm the cookies actually authenticated the request --
     // an invalid/expired cookie can still land on this endpoint and get back an
-    // HTML error/login page or an unexpected body instead of a proper 401. Require
-    // the response to actually be the expected search-result JSON shape before
-    // calling it 'valid'.
-    const json = (await res.json().catch(() => null)) as { data?: unknown } | null
-    if (!json || !Array.isArray(json.data)) return 'invalid'
+    // HTML error/login page instead of a proper 401. Require the body to actually
+    // parse as JSON before calling it 'valid'. Deliberately NOT asserting the exact
+    // shape beyond that (e.g. requiring `data` to be an array): this is an
+    // undocumented, reverse-engineered endpoint, and a wrong guess about its shape
+    // would flip every genuinely valid cookie to 'invalid' -- a worse regression
+    // than the "any 200 is valid" bug this replaces, since that only under-reported
+    // problems rather than reporting a false one to users whose credentials work
+    // fine.
+    const json = await res.json().catch(() => null)
+    if (json === null || typeof json !== 'object') return 'invalid'
     return 'valid'
   } catch {
     return 'unreachable'

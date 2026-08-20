@@ -50,11 +50,17 @@ const TITLE_WORD_STOPWORDS = new Set([
 
 // Words worth checking for on the fetched page beyond the brand name itself --
 // short/common words are too likely to appear by coincidence to mean anything.
-function significantTitleWords(title: string): string[] {
+// Brand words are excluded token-by-token (not by comparing the whole title word
+// against the whole brand string) so a multi-word brand like "Louis Vuitton"
+// doesn't leave "louis" and "vuitton" behind as if they were independent
+// title-specific signal -- both would trivially be found on the page once the
+// brand itself has already matched, making the whole check a no-op.
+function significantTitleWords(title: string, brand: string): string[] {
+  const brandWords = new Set(brand.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))
   return title
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((w) => w.length >= 4 && !TITLE_WORD_STOPWORDS.has(w))
+    .filter((w) => w.length >= 4 && !TITLE_WORD_STOPWORDS.has(w) && !brandWords.has(w))
 }
 
 function isAllowedHostname(url: string, source: string): boolean {
@@ -147,7 +153,7 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
     // brand-only check rather than making identity unconfirmable altogether.
     const htmlLower = html.toLowerCase()
     const brandConfirmed = htmlLower.includes(brand.toLowerCase())
-    const otherTitleWords = significantTitleWords(comp.title).filter((w) => w !== brand.toLowerCase())
+    const otherTitleWords = significantTitleWords(comp.title, brand)
     const identityConfirmed =
       brandConfirmed && (otherTitleWords.length === 0 || otherTitleWords.some((w) => htmlLower.includes(w)))
 
