@@ -838,6 +838,11 @@ export async function runStep3PricingResearch(
   // failure mode deduplicateComps/removeOutlierComps exist to catch, just not
   // previously applied on the active side.
   const filteredActive = removeOutlierComps(deduplicateComps(relevantActive))
+  if (relevantActive.length > 0 && filteredActive.length === 0) {
+    console.warn(
+      `step3: filteredActive dropped all ${relevantActive.length} relevant active comps (dedup/outlier removal) for listing ${listingId}`
+    )
+  }
 
   // Insert all: filtered sold comps + relevance-filtered, deduped, outlier-filtered
   // active market context. activeRows itself stays unfiltered (used above for the
