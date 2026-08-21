@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import sharp from 'sharp'
 import { inngest } from '@/lib/inngest/client'
 import { uploadFile } from '@/lib/storage'
+import { applyGrayWorldWhiteBalance } from '@/lib/pipeline/white-balance'
 
 function getSupabaseAdmin() {
   return createSupabaseClient(
@@ -55,6 +56,9 @@ export async function POST(request: Request) {
   // input under-uses the 0-255 range, which most phone camera photos don't) -- confirmed via
   // a controlled before/after brightness measurement on a real photo (ai-listings-orp).
   rawBuffer = Buffer.from(await sharp(rawBuffer).rotate().toBuffer())
+
+  // Gray-world color-cast correction -- see white-balance.ts for why this differs from normalise().
+  rawBuffer = Buffer.from(await applyGrayWorldWhiteBalance(rawBuffer))
 
   const { data: listing, error: listingError } = await supabase
     .from('listings')
