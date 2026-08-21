@@ -3,6 +3,8 @@ import type { ListingStatus } from '@/types/listings'
 interface BadgeInput {
   status: ListingStatus
   agent_blocked: boolean
+  pipeline_step: number
+  pipeline_total: number
 }
 
 function getBadge(listing: BadgeInput): { label: string; className: string } {
@@ -16,6 +18,15 @@ function getBadge(listing: BadgeInput): { label: string; className: string } {
     return { label: 'Needs you', className: 'bg-orange-900/60 text-orange-300' }
   }
   if (listing.status === 'in_loop') {
+    // 'in_loop' covers the entire remaining pipeline after the gender/measurement gate --
+    // pricing research, draft listing, photo processing, auth planning -- not just the
+    // genuinely-idle "ready for you to review" state at the end. pipeline_step reaches
+    // pipeline_total (set by step4a/step5, see step*.ts) only once every automated step has
+    // actually finished; anything short of that was showing "Ready" on listings still
+    // mid-pricing-research (dashboard report, 2026-08-21).
+    if (listing.pipeline_step < listing.pipeline_total) {
+      return { label: 'Processing', className: 'bg-gray-700/60 text-gray-400' }
+    }
     return { label: 'Ready', className: 'bg-emerald-900/60 text-emerald-400' }
   }
   if (listing.status === 'finalizing') {
