@@ -79,7 +79,15 @@ export async function runStructuredOauth<T>(params: StructuredCallParams): Promi
     prompt,
     options: {
       tools: [],
-      maxTurns: 1,
+      // maxTurns:1 shipped as an unverified placeholder (see this file's top comment) and was
+      // never exercised against a real image + our actual nested schema (inclusions/photo_plan
+      // arrays). That combination needs a turn to reason + call the structured-output tool and
+      // a second to return the result -- maxTurns:1 cut it off every time with error_max_turns,
+      // which step2/step4a/step5/photo-quality-gate's callers then saw as "did not return a
+      // tool_use block". Confirmed maxTurns:3 completes (num_turns:4 in the result) against a
+      // real stuck listing's photo; tested off the resource-constrained prod pod first because
+      // maxTurns:4 alone was enough to OOM it before returning (ai-listings-2k0).
+      maxTurns: 3,
       model: params.model,
       outputFormat: { type: 'json_schema', schema: params.jsonSchema },
       env: subprocessEnv(),
