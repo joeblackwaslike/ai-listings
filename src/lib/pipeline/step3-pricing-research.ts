@@ -174,13 +174,29 @@ interface SerpApiGoogleResponse {
 
 // Google Shopping / site-search snippets for resale platforms frequently show
 // both the original retail price and the resale price in the same snippet
-// (e.g. "Originally $1,200 · Now $380"). Matching the *first* dollar amount
-// picks up the inflated retail price; the resale/sale price consistently comes
-// last, so take the last match instead.
-function extractPriceFromSnippet(snippet: string): number | null {
+// (e.g. "Originally $1,200 · Now $380"). Taking the *last* dollar amount was the
+// existing approach here, on the assumption the retail figure always comes first --
+// but that ordering isn't reliable across sources: a TheRealReal snippet surfaced
+// "estimated retail price" as the trailing figure, so the last-match heuristic
+// picked the $1,200 reference price over the item's actual $369 listed price
+// (ai-listings dashboard report, HB-0102, 2026-08-21). Explicitly excluding
+// reference-price language near each match, regardless of position, is robust to
+// either ordering.
+const RETAIL_REFERENCE_PATTERN = /\b(?:est(?:imated)?\.?\s*retail|orig(?:inal)?(?:ly)?\.?\s*retail|retail\s*price|msrp|compare\s*at)\b/i
+
+export function extractPriceFromSnippet(snippet: string): number | null {
   const matches = [...snippet.matchAll(/\$([\d,]+(?:\.\d{2})?)/g)]
-  if (matches.length === 0) return null
-  const last = matches[matches.length - 1]
+  const realMatches = matches.filter((m, i) => {
+    // Bounded by the end of the previous match, not just a flat 40-char lookback -- a
+    // reference-price label attached to an earlier amount (e.g. "MSRP $1,200, our price
+    // $369") sits within 40 chars of the later, unrelated $369 and would otherwise wrongly
+    // exclude it too.
+    const prevEnd = i > 0 ? (matches[i - 1].index ?? 0) + matches[i - 1][0].length : 0
+    const start = Math.max(prevEnd, Math.max(0, (m.index ?? 0) - 40))
+    return !RETAIL_REFERENCE_PATTERN.test(snippet.slice(start, m.index ?? 0))
+  })
+  if (realMatches.length === 0) return null
+  const last = realMatches[realMatches.length - 1]
   const dollars = parseFloat(last[1].replace(/,/g, ''))
   return isNaN(dollars) ? null : Math.round(dollars * 100)
 }

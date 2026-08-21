@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseRelevanceScores } from './step3-pricing-research'
+import { parseRelevanceScores, extractPriceFromSnippet } from './step3-pricing-research'
 
 test('parseRelevanceScores: parses every valid entry with its score and color', () => {
   const text = '{"0":{"score":8,"color":"black leather"},"1":{"score":3,"color":"tan canvas"}}'
@@ -82,4 +82,34 @@ test('parseRelevanceScores: does not stop at the first nested closing brace', ()
   const result = parseRelevanceScores(text)
   assert.equal(result.size, 2)
   assert.deepEqual(result.get(1), { score: 9, color: 'tan canvas' })
+})
+
+test('extractPriceFromSnippet: skips a trailing "estimated retail price" figure and picks the real price', () => {
+  // HB-0102 (ai-listings dashboard report, 2026-08-21): TheRealReal snippet reported the
+  // estimated retail price ($1,200) as the last dollar amount, ahead of the item's actual
+  // listed price ($369) that appeared earlier in the snippet -- the old last-match heuristic
+  // picked the reference price.
+  const snippet = 'Now $369 · Hermes Bangle Bracelet · estimated retail price $1,200'
+  assert.equal(extractPriceFromSnippet(snippet), 36900)
+})
+
+test('extractPriceFromSnippet: skips a leading "originally retail" figure and picks the real price', () => {
+  const snippet = 'Originally retail $1,200 · Now $369'
+  assert.equal(extractPriceFromSnippet(snippet), 36900)
+})
+
+test('extractPriceFromSnippet: skips MSRP and compare-at reference prices', () => {
+  assert.equal(extractPriceFromSnippet('MSRP $1,200, our price $369'), 36900)
+  assert.equal(extractPriceFromSnippet('$369 (compare at $1,200)'), 36900)
+})
+
+test('extractPriceFromSnippet: returns null when every dollar match is a reference price', () => {
+  // No real price found -- returning null here is correct, not falling back to the
+  // reference figure that HB-0102 showed is unreliable as an actual sale/listing price.
+  const snippet = 'estimated retail price $1,200'
+  assert.equal(extractPriceFromSnippet(snippet), null)
+})
+
+test('extractPriceFromSnippet: returns null when the snippet has no dollar amount', () => {
+  assert.equal(extractPriceFromSnippet('Hermes Bangle Bracelet, gently used'), null)
 })
