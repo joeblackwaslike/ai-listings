@@ -21,12 +21,14 @@ export const intakePipeline = inngest.createFunction(
     name: 'Intake Pipeline',
     triggers: [{ event: 'photo/uploaded' }],
     retries: 5,
-    // Capped at 2: each concurrent run does Claude Vision + image handling for a
+    // Capped at 1: each concurrent run does Claude Vision + image handling for a
     // single item, which is memory-heavy on this cluster's resource-constrained
-    // Pi node. A batch upload of 4 items running fully in parallel (the old
-    // limit) OOM-killed the pod (2026-08-15 incident) -- this bounds per-pod
-    // memory use regardless of how many items get uploaded in one batch.
-    concurrency: { limit: 2 },
+    // Pi node. Was limit:2 after a 2026-08-15 incident with the old per-call HTTP
+    // Claude backend; since being patched to the subscription/Agent-SDK backend
+    // (spawns a real `claude` subprocess per call, ~36-50k tokens of system-prompt
+    // cache overhead, 8.5-12s latency -- see oauth-backend.ts), even 2 concurrent
+    // runs was enough to OOM the 1Gi-limited pod again (ai-listings-2k0).
+    concurrency: { limit: 1 },
     onFailure: async ({ error, event }) => {
       const { listingId } = (
         event as unknown as { data: { event: PhotoUploadedEvent } }
