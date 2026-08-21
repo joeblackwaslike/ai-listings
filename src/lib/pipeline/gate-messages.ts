@@ -156,23 +156,26 @@ export function isGenderGateAnswered(history: { role: string; content: string }[
 // The in_loop "analysis is done, upload studio photos" greeting only persists once (the
 // AgentChat client only shows the live firstMessage prop when messages.length === 0, so a
 // stale first message otherwise sits at the top of history forever). id_gate/gender_gate
-// prompts are recomputed live on every render instead (buildWorkspaceContext calls
-// idGateContext/genderGateContext unconditionally for those statuses) but were never
+// prompts, and agent_blocked failure reasons, are recomputed live on every render instead
+// (buildWorkspaceContext returns them unconditionally for those cases) but were never
 // persisted at all, so once *any* row existed in history -- including a stale in_loop
-// greeting from before the pipeline reached the gate -- the fresh gate prompt (item
-// description included) never appeared: buttons update live from `suggestions`, but the
-// visible text stayed frozen on whatever was last written to `conversations` (ai-listings
-// dashboard report, HB-0100: "Yes/Something's wrong" buttons shown under a stale "upload
-// studio photos" message with no item description). Persisting a new row whenever the fresh
-// gate prompt differs from the last stored message keeps history append-only (matches
-// isGenderGateAnswered's reliance on the tail of history above) while self-healing this once
-// the listing's next natural gate transition or re-identify attempt runs.
+// greeting from before the pipeline reached the gate, or before it failed -- the fresh
+// content never appeared: buttons/blocked-reason text update live from
+// firstMessage/suggestions, but the visible chat log stayed frozen on whatever was last
+// written to `conversations` (ai-listings dashboard reports: HB-0100 showed
+// "Yes/Something's wrong" buttons under a stale "upload studio photos" message with no item
+// description; HB-0091 was agent_blocked with a real pipeline failure reason but the chat
+// showed neither a prompt nor the reason at all). Persisting a new row whenever the fresh
+// content differs from the last stored message keeps history append-only (matches
+// isGenderGateAnswered's reliance on the tail of history above) while self-healing this on
+// the listing's next natural transition, retry, or page load.
 export function shouldPersistInLoopGreeting(
   listing: Pick<Listing, 'status' | 'agent_blocked'>,
   history: { role: string; content: string }[],
   firstMessage: string | null
 ): firstMessage is string {
-  if (!firstMessage || listing.agent_blocked) return false
+  if (!firstMessage) return false
+  if (listing.agent_blocked) return history[history.length - 1]?.content !== firstMessage
   if (listing.status === 'in_loop') return history.length === 0
   if (listing.status === 'id_gate' || listing.status === 'gender_gate') {
     return history[history.length - 1]?.content !== firstMessage

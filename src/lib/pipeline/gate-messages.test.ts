@@ -276,8 +276,33 @@ test('shouldPersistInLoopGreeting is false when firstMessage is null', () => {
   assert.equal(shouldPersistInLoopGreeting(greetingListing(), [], null), false)
 })
 
-test('shouldPersistInLoopGreeting is false for agent_blocked listings even when status is in_loop', () => {
-  assert.equal(shouldPersistInLoopGreeting(greetingListing({ agent_blocked: true }), [], 'step3: pricing failed'), false)
+test('shouldPersistInLoopGreeting is true for a newly agent_blocked listing (the failure reason must reach the chat)', () => {
+  // Regression: HB-0091 was agent_blocked with a real pipeline failure reason, but the chat
+  // showed neither a prompt nor the reason -- the old blanket `agent_blocked -> false` rule
+  // meant the reason never persisted even though `conversations` already had prior history.
+  assert.equal(shouldPersistInLoopGreeting(greetingListing({ agent_blocked: true }), [], 'step3: pricing failed'), true)
+})
+
+test('shouldPersistInLoopGreeting is false for agent_blocked once the same reason is already the last stored message', () => {
+  assert.equal(
+    shouldPersistInLoopGreeting(
+      greetingListing({ agent_blocked: true }),
+      [{ role: 'assistant', content: 'step3: pricing failed' }],
+      'step3: pricing failed'
+    ),
+    false
+  )
+})
+
+test('shouldPersistInLoopGreeting is true for agent_blocked when the failure reason changes', () => {
+  assert.equal(
+    shouldPersistInLoopGreeting(
+      greetingListing({ agent_blocked: true }),
+      [{ role: 'assistant', content: 'step2: vision analysis failed' }],
+      'step3: pricing failed'
+    ),
+    true
+  )
 })
 
 test('shouldPersistInLoopGreeting is false for statuses outside in_loop/id_gate/gender_gate, regardless of history', () => {

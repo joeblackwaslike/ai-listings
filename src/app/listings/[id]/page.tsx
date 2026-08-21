@@ -217,7 +217,7 @@ export default async function WorkspacePage({
 
   const hasHistory = history.length > 0
   const genderGateAnswered = listing.status === 'gender_gate' && isGenderGateAnswered(history)
-  const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate'
+  const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.agent_blocked
     ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
