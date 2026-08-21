@@ -8,7 +8,7 @@ import {
   buildIdGateSnapshot,
   isGenderGateAnswered,
   notableFeaturesOf,
-  shouldPersistInLoopGreeting,
+  shouldAttemptPersistGreeting,
   synthesizeGenderGateAnswer,
   synthesizeIdGateAnswer,
 } from './gate-messages'
@@ -257,94 +257,47 @@ function greetingListing(overrides: Partial<Pick<Listing, 'status' | 'agent_bloc
   }
 }
 
-test('shouldPersistInLoopGreeting is true for a fresh in_loop listing with no history', () => {
-  assert.equal(shouldPersistInLoopGreeting(greetingListing(), [], 'Upload your studio photos...'), true)
+test('shouldAttemptPersistGreeting is true for in_loop with a message', () => {
+  assert.equal(shouldAttemptPersistGreeting(greetingListing(), 'Upload your studio photos...'), true)
 })
 
-test('shouldPersistInLoopGreeting is false for in_loop once any history exists', () => {
-  assert.equal(
-    shouldPersistInLoopGreeting(
-      greetingListing(),
-      [{ role: 'assistant', content: 'Upload your studio photos...' }],
-      'Upload your studio photos...'
-    ),
-    false
-  )
+test('shouldAttemptPersistGreeting is false when firstMessage is null', () => {
+  assert.equal(shouldAttemptPersistGreeting(greetingListing(), null), false)
 })
 
-test('shouldPersistInLoopGreeting is false when firstMessage is null', () => {
-  assert.equal(shouldPersistInLoopGreeting(greetingListing(), [], null), false)
-})
-
-test('shouldPersistInLoopGreeting is true for a newly agent_blocked listing (the failure reason must reach the chat)', () => {
+test('shouldAttemptPersistGreeting is true for a newly agent_blocked listing (the failure reason must reach the chat)', () => {
   // Regression: HB-0091 was agent_blocked with a real pipeline failure reason, but the chat
   // showed neither a prompt nor the reason -- the old blanket `agent_blocked -> false` rule
   // meant the reason never persisted even though `conversations` already had prior history.
-  assert.equal(shouldPersistInLoopGreeting(greetingListing({ agent_blocked: true }), [], 'step3: pricing failed'), true)
+  assert.equal(shouldAttemptPersistGreeting(greetingListing({ agent_blocked: true }), 'step3: pricing failed'), true)
 })
 
-test('shouldPersistInLoopGreeting is false for agent_blocked once the same reason is already the last stored message', () => {
-  assert.equal(
-    shouldPersistInLoopGreeting(
-      greetingListing({ agent_blocked: true }),
-      [{ role: 'assistant', content: 'step3: pricing failed' }],
-      'step3: pricing failed'
-    ),
-    false
-  )
-})
-
-test('shouldPersistInLoopGreeting is true for agent_blocked when the failure reason changes', () => {
-  assert.equal(
-    shouldPersistInLoopGreeting(
-      greetingListing({ agent_blocked: true }),
-      [{ role: 'assistant', content: 'step2: vision analysis failed' }],
-      'step3: pricing failed'
-    ),
-    true
-  )
-})
-
-test('shouldPersistInLoopGreeting is false for statuses outside in_loop/id_gate/gender_gate, regardless of history', () => {
+test('shouldAttemptPersistGreeting is false for statuses outside in_loop/id_gate/gender_gate', () => {
   const otherStatuses: ListingStatus[] = ['intake', 'finalizing', 'published', 'archived']
   for (const status of otherStatuses) {
     assert.equal(
-      shouldPersistInLoopGreeting(greetingListing({ status }), [], 'some greeting'),
+      shouldAttemptPersistGreeting(greetingListing({ status }), 'some greeting'),
       false,
       `expected false for status ${status}`
     )
   }
 })
 
-test('shouldPersistInLoopGreeting is true for id_gate when the live prompt differs from the last stored message', () => {
+test('shouldAttemptPersistGreeting is true for id_gate with a message', () => {
   // Regression: a stale in_loop greeting persisted before the pipeline reached id_gate must
-  // not permanently block the real id_gate prompt (with item description) from ever appearing.
+  // not permanently block the real id_gate prompt (with item description) from ever
+  // appearing. The "does this already match the last message" dedup itself now lives in the
+  // insert_conversation_if_new DB function (migration 0022) -- not here, and deliberately so:
+  // deciding it against a `history` array raced under concurrent page loads and produced
+  // duplicate gate prompts seconds apart (HB-0102, SN-0035, 2026-08-21).
   assert.equal(
-    shouldPersistInLoopGreeting(
-      greetingListing({ status: 'id_gate' }),
-      [{ role: 'assistant', content: 'The automated analysis is done. Upload your studio photos...' }],
-      "I've analyzed the photo. Here's what I found: Chanel, small_leather_goods..."
-    ),
+    shouldAttemptPersistGreeting(greetingListing({ status: 'id_gate' }), "I've analyzed the photo..."),
     true
   )
 })
 
-test('shouldPersistInLoopGreeting is false for id_gate when the live prompt already matches the last stored message', () => {
-  assert.equal(
-    shouldPersistInLoopGreeting(
-      greetingListing({ status: 'id_gate' }),
-      [{ role: 'assistant', content: 'same prompt' }],
-      'same prompt'
-    ),
-    false
-  )
-})
-
-test('shouldPersistInLoopGreeting is true for gender_gate when the live prompt differs from the last stored message', () => {
-  assert.equal(
-    shouldPersistInLoopGreeting(greetingListing({ status: 'gender_gate' }), [], 'What is the gender?'),
-    true
-  )
+test('shouldAttemptPersistGreeting is true for gender_gate with a message', () => {
+  assert.equal(shouldAttemptPersistGreeting(greetingListing({ status: 'gender_gate' }), 'What is the gender?'), true)
 })
 
 test('notableFeaturesOf reads notable_features from visionAnalysis when present', () => {

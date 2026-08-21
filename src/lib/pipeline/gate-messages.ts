@@ -153,32 +153,22 @@ export function isGenderGateAnswered(history: { role: string; content: string }[
   return last?.role === 'assistant' && last.content === buildGenderGateAck()
 }
 
-// The in_loop "analysis is done, upload studio photos" greeting only persists once (the
-// AgentChat client only shows the live firstMessage prop when messages.length === 0, so a
-// stale first message otherwise sits at the top of history forever). id_gate/gender_gate
-// prompts, and agent_blocked failure reasons, are recomputed live on every render instead
-// (buildWorkspaceContext returns them unconditionally for those cases) but were never
-// persisted at all, so once *any* row existed in history -- including a stale in_loop
-// greeting from before the pipeline reached the gate, or before it failed -- the fresh
-// content never appeared: buttons/blocked-reason text update live from
-// firstMessage/suggestions, but the visible chat log stayed frozen on whatever was last
-// written to `conversations` (ai-listings dashboard reports: HB-0100 showed
-// "Yes/Something's wrong" buttons under a stale "upload studio photos" message with no item
-// description; HB-0091 was agent_blocked with a real pipeline failure reason but the chat
-// showed neither a prompt nor the reason at all). Persisting a new row whenever the fresh
-// content differs from the last stored message keeps history append-only (matches
-// isGenderGateAnswered's reliance on the tail of history above) while self-healing this on
-// the listing's next natural transition, retry, or page load.
-export function shouldPersistInLoopGreeting(
+// Cheap pre-filter for whether page.tsx should even attempt to persist the live-recomputed
+// greeting/gate/blocked-reason message -- the authoritative "does this already match the last
+// stored message" check lives in the insert_conversation_if_new DB function (migration 0022),
+// not here, because that decision has to run atomically against the true current state at
+// insert time. Deciding it here against a `history` array fetched moments earlier in the
+// request raced under concurrent page loads (AutoRefresh polling, multiple tabs): two
+// overlapping requests could both see "differs from last" and both insert, producing a
+// duplicate id-gate/gender-gate prompt seconds apart -- confirmed live on HB-0102 and SN-0035
+// (ai-listings dashboard report, 2026-08-21). buildWorkspaceContext (page.tsx) only ever
+// recomputes firstMessage fresh for these four cases, so this only needs to gate on "is this
+// one of them" -- it does NOT need its own hasHistory/id_gate change-detection anymore.
+export function shouldAttemptPersistGreeting(
   listing: Pick<Listing, 'status' | 'agent_blocked'>,
-  history: { role: string; content: string }[],
   firstMessage: string | null
 ): firstMessage is string {
   if (!firstMessage) return false
-  if (listing.agent_blocked) return history[history.length - 1]?.content !== firstMessage
-  if (listing.status === 'in_loop') return history.length === 0
-  if (listing.status === 'id_gate' || listing.status === 'gender_gate') {
-    return history[history.length - 1]?.content !== firstMessage
-  }
-  return false
+  if (listing.agent_blocked) return true
+  return listing.status === 'in_loop' || listing.status === 'id_gate' || listing.status === 'gender_gate'
 }

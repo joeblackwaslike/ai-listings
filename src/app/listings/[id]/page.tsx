@@ -9,7 +9,7 @@ import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
 import { studioPhotosReady } from '@/lib/utils'
-import { buildGenderGatePrompt, buildIdGatePrompt, isGenderGateAnswered, shouldPersistInLoopGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
+import { buildGenderGatePrompt, buildIdGatePrompt, isGenderGateAnswered, shouldAttemptPersistGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
 import { getSetting } from '@/lib/user-settings'
 
 type WorkspaceContext = {
@@ -221,15 +221,17 @@ export default async function WorkspacePage({
     ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
-  if (shouldPersistInLoopGreeting(listing, history, firstMessage)) {
-    const { error: firstMessageError } = await supabase.from('conversations').insert({
-      listing_id: id,
-      role: 'assistant',
-      content: firstMessage,
-      context_snapshot: null,
+  if (shouldAttemptPersistGreeting(listing, firstMessage)) {
+    // Atomic check-and-insert (migration 0022) -- deciding "does this already match the last
+    // message" here against `history` (fetched moments earlier) raced under concurrent page
+    // loads and produced duplicate gate prompts (ai-listings dashboard report, 2026-08-21).
+    const { error: firstMessageError } = await supabase.rpc('insert_conversation_if_new', {
+      p_listing_id: id,
+      p_role: 'assistant',
+      p_content: firstMessage,
     })
     if (firstMessageError) {
-      console.error(`Failed to persist in_loop first message for listing ${id}:`, firstMessageError.message)
+      console.error(`Failed to persist greeting for listing ${id}:`, firstMessageError.message)
     }
   }
 
