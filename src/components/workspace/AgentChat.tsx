@@ -139,10 +139,20 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   const fileInputRef = useRef<HTMLInputElement>(null)
   const idGateResolvedRef = useRef(false)
   const genderGateResolvedRef = useRef(false)
+  const isFirstRenderRef = useRef(true)
   const [pendingGender, setPendingGender] = useState<string | null>(null)
   const [showMeasurements, setShowMeasurements] = useState(false)
 
+  // Skip the initial mount: a listing can load with a long id-gate/gender-gate description
+  // already in `messages` (from initialMessages), and scrolling straight to the chips+input
+  // on first paint hides that description before the user has read it -- they see the action
+  // chips first with nothing to base a decision on. Auto-scroll still applies to every message
+  // added after mount (new replies, streaming, tool events).
   useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false
+      return
+    }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
