@@ -67,3 +67,5 @@ deployment/kubernetes/app/secret.yaml
 .dolt/
 *.db
 .beads-credential-key
+
+docs/_*.md
