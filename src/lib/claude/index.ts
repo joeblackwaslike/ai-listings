@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { getClaudeBackend } from './backend'
 import { runStructuredApiKey, runTextApiKey } from './api-key-backend'
 import { runStructuredOauth, runTextOauth } from './oauth-backend'
@@ -14,43 +13,42 @@ export type {
 export { ClaudeStructuredOutputError } from './types'
 export { getClaudeBackend } from './backend'
 
-/**
- * The oauth backend calls the Messages API directly with the subscription token as Bearer
- * auth (see oauth-backend.ts) -- fast and cheap, but Anthropic appears to rate-limit that
- * traffic pattern separately from normal Claude Code usage (confirmed 2026-08-21: heavy
- * testing produced repeated 429 rate_limit_error responses even with substantial subscription
- * quota remaining). A 429 there doesn't mean the work is impossible, just throttled on that
- * specific path, so fall through to the api-key backend rather than surfacing the failure --
- * requires ANTHROPIC_API_KEY to have a real balance (ai-listings-2k0 follow-up).
- */
-function isRateLimited(err: unknown): boolean {
-  return err instanceof Anthropic.RateLimitError
+function logFallback(err: unknown): void {
+  console.warn(
+    'claude: api-key backend failed, falling back to oauth (subscription) backend:',
+    err instanceof Error ? err.message : err
+  )
 }
 
 /**
- * Public facade for every Claude call in the app. Dispatches to the
- * api-key backend (pay-per-token `@anthropic-ai/sdk`) or the oauth backend
- * (Claude subscription, direct Messages API call with Bearer auth) based on
- * `getClaudeBackend()`, falling back oauth -> api-key on a 429.
+ * Public facade for every Claude call in the app. Always tries the pay-per-token api-key
+ * backend first -- it's a plain HTTPS call (~1-3s), no subprocess, no per-call system-prompt
+ * reload. Falls back to the subscription (oauth) backend, which spawns a real `claude` CLI
+ * subprocess per call (own process, full Claude Code system-prompt reload, ~30s-2min/call --
+ * see oauth-backend.ts), only when the api-key call fails and a subscription token is
+ * configured. Direct Bearer-token calls against the subscription token were tried instead of
+ * the subprocess (faster, cheaper) but got throttled hard as automated/server-side traffic
+ * even with plenty of subscription quota remaining -- the subprocess path doesn't hit that
+ * wall since it's genuine Claude Code CLI traffic (ai-listings-2k0). Net effect: once
+ * ANTHROPIC_API_KEY has a real balance, oauth is never invoked; until then, every call pays
+ * one fast, cheap failed attempt before falling through.
  */
 export async function runStructured<T>(params: StructuredCallParams): Promise<T> {
-  if (getClaudeBackend() !== 'oauth') return runStructuredApiKey<T>(params)
   try {
-    return await runStructuredOauth<T>(params)
+    return await runStructuredApiKey<T>(params)
   } catch (err) {
-    if (!isRateLimited(err)) throw err
-    console.warn('claude: oauth backend rate-limited, falling back to api-key backend')
-    return runStructuredApiKey<T>(params)
+    if (getClaudeBackend() !== 'oauth') throw err
+    logFallback(err)
+    return runStructuredOauth<T>(params)
   }
 }
 
 export async function runText(params: TextCallParams): Promise<string> {
-  if (getClaudeBackend() !== 'oauth') return runTextApiKey(params)
   try {
-    return await runTextOauth(params)
+    return await runTextApiKey(params)
   } catch (err) {
-    if (!isRateLimited(err)) throw err
-    console.warn('claude: oauth backend rate-limited, falling back to api-key backend')
-    return runTextApiKey(params)
+    if (getClaudeBackend() !== 'oauth') throw err
+    logFallback(err)
+    return runTextOauth(params)
   }
 }

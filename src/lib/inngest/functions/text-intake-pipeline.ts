@@ -178,9 +178,9 @@ export const textIntakePipeline = inngest.createFunction(
     triggers: [{ event: 'text/submitted' }],
     retries: 3,
     // Same memory-safety cap as intake-pipeline.ts's concurrency limit -- this
-    // pipeline runs the same memory-heavy step2/3/4 stages per item (see
-    // intake-pipeline.ts, ai-listings-2k0).
-    concurrency: { limit: 2 },
+    // pipeline runs the same memory-heavy step2/3/4 stages per item, now via the
+    // subprocess-based oauth Claude backend (see intake-pipeline.ts, ai-listings-2k0).
+    concurrency: { limit: 1 },
     onFailure: async ({ error, event }) => {
       const { listingId } = (
         event as unknown as { data: { event: TextSubmittedEvent } }
