@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import '@/lib/sharp-config'
 import { getSupabaseAdmin } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { toInternalUrl } from './to-public-url'

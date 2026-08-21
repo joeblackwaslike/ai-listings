@@ -5,6 +5,40 @@ import { Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ListingWithCover } from './ListingCard'
 
+// Server processes each photo synchronously (rotate + white balance) on a memory-constrained
+// pod; firing every dropped file at once multiplied that per-request cost enough to OOM it
+// (ai-listings-0yk). Cap how many uploads are in flight together.
+const MAX_CONCURRENT_UPLOADS = 3
+// A stuck/crash-looping backend previously left fetch() pending forever, which combined with
+// pointer-events-none on the drop zone meant reload was the only way to try again. Time out
+// and surface an error instead.
+const UPLOAD_TIMEOUT_MS = 30_000
+
+async function uploadOne(file: File): Promise<{ listingId: string; photoUrl: string }> {
+  const formData = new FormData()
+  formData.append('photo', file)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: formData, signal: controller.signal })
+    if (!res.ok) throw new Error('Upload failed')
+    return (await res.json()) as { listingId: string; photoUrl: string }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function runWithConcurrencyLimit<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
+  const queue = [...items]
+  async function next(): Promise<void> {
+    const item = queue.shift()
+    if (item === undefined) return
+    await worker(item)
+    await next()
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
+}
+
 export function UploadZone({ onUpload }: Readonly<{ onUpload?: (listing: ListingWithCover) => void }>) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -18,14 +52,10 @@ export function UploadZone({ onUpload }: Readonly<{ onUpload?: (listing: Listing
     }
 
     setUploading(true)
-    await Promise.all(
-      imageFiles.map(async (file) => {
-        const formData = new FormData()
-        formData.append('photo', file)
+    try {
+      await runWithConcurrencyLimit(imageFiles, MAX_CONCURRENT_UPLOADS, async (file) => {
         try {
-          const res = await fetch('/api/upload', { method: 'POST', body: formData })
-          if (!res.ok) throw new Error('Upload failed')
-          const data = await res.json() as { listingId: string; photoUrl: string }
+          const data = await uploadOne(file)
           toast.success(`${file.name} — pipeline started`)
           onUpload?.({
             id: data.listingId,
@@ -45,12 +75,14 @@ export function UploadZone({ onUpload }: Readonly<{ onUpload?: (listing: Listing
             skip_background_removal: false,
             coverPhoto: { raw_url: data.photoUrl, processed_url: null },
           })
-        } catch {
-          toast.error(`Failed to upload ${file.name}`)
+        } catch (err) {
+          const timedOut = err instanceof Error && err.name === 'AbortError'
+          toast.error(timedOut ? `${file.name} timed out — try again` : `Failed to upload ${file.name}`)
         }
       })
-    )
-    setUploading(false)
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
