@@ -91,6 +91,12 @@ export const intakePipeline = inngest.createFunction(
     let step2Result = await step.run('vision-analysis', () =>
       runStep2VisionAnalysis(listingId, photoUrl, step1Result, apiKeys, null)
     )
+    // The oauth Claude backend spawns a real subprocess per call; back-to-back vision-analysis
+    // calls across queued listings (even at concurrency:{limit:1}) OOM'd the pod because memory
+    // from one subprocess hadn't settled before the next started (ai-listings-2k0). This sleep
+    // keeps the concurrency slot held so the next queued listing's vision-analysis can't start
+    // immediately after this one's.
+    await step.sleep('cooldown-after-vision', '15s')
 
     let gateAttempt = 0
     while (gateAttempt < 3) {
@@ -115,6 +121,7 @@ export const intakePipeline = inngest.createFunction(
       step2Result = await step.run(`re-identify-${gateAttempt}`, () =>
         runStep2VisionAnalysis(listingId, photoUrl, step1Result, apiKeys, corrections)
       )
+      await step.sleep(`cooldown-after-reidentify-${gateAttempt}`, '15s')
 
       gateAttempt++
     }
