@@ -1,36 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { ClaudeImageInput, StructuredCallParams, TextCallParams } from './types'
+import type { StructuredCallParams, TextCallParams } from './types'
 import { ClaudeStructuredOutputError } from './types'
+import { buildUserContent } from './content-blocks'
 
 const DEFAULT_MAX_TOKENS = 1024
 const DEFAULT_TOOL_NAME = 'return_structured_output'
 const DEFAULT_TOOL_DESCRIPTION = 'Return the structured output matching the provided JSON schema.'
-
-function buildImageBlock(image: ClaudeImageInput): Anthropic.Messages.ImageBlockParam {
-  if ('url' in image) {
-    return { type: 'image', source: { type: 'url', url: image.url } }
-  }
-  return {
-    type: 'image',
-    source: {
-      type: 'base64',
-      media_type: image.mediaType as Anthropic.Messages.Base64ImageSource['media_type'],
-      data: image.base64,
-    },
-  }
-}
-
-function buildUserContent(
-  prompt: string,
-  image: ClaudeImageInput | undefined,
-  images: ClaudeImageInput[] | undefined
-): string | Anthropic.Messages.ContentBlockParam[] {
-  const inputs = images && images.length > 0 ? images : image ? [image] : []
-  if (inputs.length === 0) return prompt
-  // Image blocks first, then text — matches every pre-facade image call site
-  // (step2-vision-analysis.ts, photo-quality-gate.ts).
-  return [...inputs.map(buildImageBlock), { type: 'text', text: prompt }]
-}
 
 /**
  * Extracted from the `new Anthropic(...)` + `client.messages.create(...)`
