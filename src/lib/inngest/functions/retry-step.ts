@@ -6,6 +6,7 @@ import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getUserApiKeys } from '@/lib/user-api-keys'
+import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
 
 export const retryStep = inngest.createFunction(
   {
@@ -46,21 +47,32 @@ export const retryStep = inngest.createFunction(
     const photoUrl: string = (photoRow?.raw_url as string | null) ?? ''
     const intakePhotoId: string = (photoRow?.id as string | null) ?? ''
 
+    // Reconstructed from stored vision-analysis output, not left empty -- hardcoding
+    // notableFeatures/titleForComps to [] / '' starved both the draft title and the
+    // comp-search query of every brand/model/collab detail the original vision pass found,
+    // silently degrading a retried listing's title to a generic fallback and its comps to
+    // near-zero (OT-0026, ai-listings dashboard report, 2026-08-21 -- Gucci x Doraemon collab
+    // collapsed to "Gucci Women's Sneakers").
+    const visionOutput = (listing.intake_meta as Record<string, unknown> | null)?.visionAnalysis as
+      | { condition_notes?: string; confidence_note?: string }
+      | undefined
+    const notableFeatures = notableFeaturesOf(listing.intake_meta as Record<string, unknown> | null)
     const step2Partial = {
       brand: (listing.brand as string) ?? '',
       category: listing.category,
       condition: listing.condition,
-      conditionNotes: '',
-      notableFeatures: [],
+      conditionNotes: visionOutput?.condition_notes ?? '',
+      notableFeatures,
       isLuxury: listing.is_luxury as boolean,
       inclusions: [],
       photoPlan: [],
-      confidenceNote: '',
+      confidenceNote: visionOutput?.confidence_note ?? '',
     }
+    const titleForComps = (notableFeatures[0] ?? '').replace(/^Model:\s*/i, '').trim()
 
     if (stepNum === 3) {
       await step.run('retry-pricing-research', () =>
-        runStep3PricingResearch(listingId, step2Partial as unknown as Parameters<typeof runStep3PricingResearch>[1], '', apiKeys)
+        runStep3PricingResearch(listingId, step2Partial as unknown as Parameters<typeof runStep3PricingResearch>[1], titleForComps, apiKeys)
       )
     } else if (stepNum === 4) {
       await Promise.all([
