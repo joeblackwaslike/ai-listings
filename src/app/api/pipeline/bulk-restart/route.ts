@@ -26,25 +26,29 @@ export async function POST() {
   const listingIds = blocked.map((r: { id: string }) => r.id)
 
   // pipeline_step records the last step (1-5) that actually completed for this listing,
-  // independent of `status` (id1-step5-vision-analysis.ts:277). A blocked listing with
+  // independent of `status` (step2-vision-analysis.ts:277). A blocked listing with
   // pipeline_step >= 2 already got past id-gate (and gender-gate, if its category needed
   // one) — its failure was downstream, in step 3/4/5. Always re-firing photo/uploaded here
   // restarted every blocked listing from step1, discarding those already-answered gate
   // confirmations and re-asking id/measurements from scratch — repeatedly, once per restart
   // click, on every listing that failed again later the same day (ai-listings dashboard
   // report, 2026-08-21: "more than half the items are still stuck at id or measurement for
-  // 3rd+ time"). Listings past step2 are routed through pipeline/retry-step instead, which
-  // resumes the specific failed step from stored listing data without touching the gates.
+  // 3rd+ time"). Listings past step2 are routed through pipeline/resume instead, which
+  // drives every remaining step (3, 4, 5) through to completion in one run without touching
+  // the gates -- pipeline/retry-step only advances a single step per call, which left
+  // "Restart all failed" needing several manual follow-up calls to actually finish a listing
+  // (ai-listings dashboard report, 2026-08-21: "why isn't there a restart pipeline call that
+  // doesn't require this degree of handholding").
   const fullRestartIds: string[] = []
-  const stepRetries: { listingId: string; step: number }[] = []
+  const resumeIds: string[] = []
   for (const row of blocked as { id: string; pipeline_step: number | null }[]) {
     const step = row.pipeline_step ?? 0
     if (step < 2) {
       fullRestartIds.push(row.id)
     } else if (step < 5) {
-      stepRetries.push({ listingId: row.id, step: step + 1 })
+      resumeIds.push(row.id)
     }
-    // step >= 5 means the pipeline already finished -- nothing to retry, just unblock below.
+    // step >= 5 means the pipeline already finished -- nothing to resume, just unblock below.
   }
 
   // Fetch intake photos only for listings that need a full restart.
@@ -81,19 +85,19 @@ export async function POST() {
       },
     }))
 
-  const stepRetryEvents = stepRetries.map(({ listingId, step }) => ({
-    name: 'pipeline/retry-step' as const,
-    data: { listingId, step },
+  const resumeEvents = resumeIds.map((listingId) => ({
+    name: 'pipeline/resume' as const,
+    data: { listingId },
   }))
 
-  const events = [...fullRestartEvents, ...stepRetryEvents]
+  const events = [...fullRestartEvents, ...resumeEvents]
   if (events.length > 0) {
     await inngest.send(events)
   }
 
   return Response.json({
     restarted: fullRestartEvents.length,
-    stepRetried: stepRetryEvents.length,
+    resumed: resumeEvents.length,
     skipped: listingIds.length - events.length,
   })
 }

@@ -23,6 +23,13 @@ export interface PipelineRetryStepEvent {
   }
 }
 
+export interface PipelineResumeEvent {
+  name: 'pipeline/resume'
+  data: {
+    listingId: string
+  }
+}
+
 export interface PipelineIdConfirmedEvent {
   name: 'pipeline/id-confirmed'
   data: {

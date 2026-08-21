@@ -2,6 +2,7 @@ import { serve } from 'inngest/next'
 import { inngest } from '@/lib/inngest/client'
 import { intakePipeline } from '@/lib/inngest/functions/intake-pipeline'
 import { retryStep } from '@/lib/inngest/functions/retry-step'
+import { resumePipeline } from '@/lib/inngest/functions/resume-pipeline'
 import { photoQualityGate } from '@/lib/inngest/functions/photo-quality-gate'
 import { syncPlatformNotifications } from '@/lib/inngest/functions/sync-platform-notifications'
 import { syncPlatformMessages } from '@/lib/inngest/functions/sync-platform-messages'
@@ -15,6 +16,7 @@ export const { GET, POST, PUT } = serve({
   functions: [
     intakePipeline,
     retryStep,
+    resumePipeline,
     photoQualityGate,
     syncPlatformNotifications,
     syncPlatformMessages,
