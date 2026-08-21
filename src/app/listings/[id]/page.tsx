@@ -221,7 +221,7 @@ export default async function WorkspacePage({
     ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
-  if (shouldPersistInLoopGreeting(listing, hasHistory, firstMessage)) {
+  if (shouldPersistInLoopGreeting(listing, history, firstMessage)) {
     const { error: firstMessageError } = await supabase.from('conversations').insert({
       listing_id: id,
       role: 'assistant',

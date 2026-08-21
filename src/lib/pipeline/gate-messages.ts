@@ -153,10 +153,29 @@ export function isGenderGateAnswered(history: { role: string; content: string }[
   return last?.role === 'assistant' && last.content === buildGenderGateAck()
 }
 
+// The in_loop "analysis is done, upload studio photos" greeting only persists once (the
+// AgentChat client only shows the live firstMessage prop when messages.length === 0, so a
+// stale first message otherwise sits at the top of history forever). id_gate/gender_gate
+// prompts are recomputed live on every render instead (buildWorkspaceContext calls
+// idGateContext/genderGateContext unconditionally for those statuses) but were never
+// persisted at all, so once *any* row existed in history -- including a stale in_loop
+// greeting from before the pipeline reached the gate -- the fresh gate prompt (item
+// description included) never appeared: buttons update live from `suggestions`, but the
+// visible text stayed frozen on whatever was last written to `conversations` (ai-listings
+// dashboard report, HB-0100: "Yes/Something's wrong" buttons shown under a stale "upload
+// studio photos" message with no item description). Persisting a new row whenever the fresh
+// gate prompt differs from the last stored message keeps history append-only (matches
+// isGenderGateAnswered's reliance on the tail of history above) while self-healing this once
+// the listing's next natural gate transition or re-identify attempt runs.
 export function shouldPersistInLoopGreeting(
   listing: Pick<Listing, 'status' | 'agent_blocked'>,
-  hasHistory: boolean,
+  history: { role: string; content: string }[],
   firstMessage: string | null
 ): firstMessage is string {
-  return !hasHistory && !!firstMessage && !listing.agent_blocked && listing.status === 'in_loop'
+  if (!firstMessage || listing.agent_blocked) return false
+  if (listing.status === 'in_loop') return history.length === 0
+  if (listing.status === 'id_gate' || listing.status === 'gender_gate') {
+    return history[history.length - 1]?.content !== firstMessage
+  }
+  return false
 }

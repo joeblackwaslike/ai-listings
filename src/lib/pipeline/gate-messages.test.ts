@@ -258,30 +258,68 @@ function greetingListing(overrides: Partial<Pick<Listing, 'status' | 'agent_bloc
 }
 
 test('shouldPersistInLoopGreeting is true for a fresh in_loop listing with no history', () => {
-  assert.equal(shouldPersistInLoopGreeting(greetingListing(), false, 'Upload your studio photos...'), true)
+  assert.equal(shouldPersistInLoopGreeting(greetingListing(), [], 'Upload your studio photos...'), true)
 })
 
-test('shouldPersistInLoopGreeting is false when hasHistory is already true', () => {
-  assert.equal(shouldPersistInLoopGreeting(greetingListing(), true, 'Upload your studio photos...'), false)
+test('shouldPersistInLoopGreeting is false for in_loop once any history exists', () => {
+  assert.equal(
+    shouldPersistInLoopGreeting(
+      greetingListing(),
+      [{ role: 'assistant', content: 'Upload your studio photos...' }],
+      'Upload your studio photos...'
+    ),
+    false
+  )
 })
 
 test('shouldPersistInLoopGreeting is false when firstMessage is null', () => {
-  assert.equal(shouldPersistInLoopGreeting(greetingListing(), false, null), false)
+  assert.equal(shouldPersistInLoopGreeting(greetingListing(), [], null), false)
 })
 
 test('shouldPersistInLoopGreeting is false for agent_blocked listings even when status is in_loop', () => {
-  assert.equal(shouldPersistInLoopGreeting(greetingListing({ agent_blocked: true }), false, 'step3: pricing failed'), false)
+  assert.equal(shouldPersistInLoopGreeting(greetingListing({ agent_blocked: true }), [], 'step3: pricing failed'), false)
 })
 
-test('shouldPersistInLoopGreeting is false for every non-in_loop status', () => {
-  const nonInLoopStatuses: ListingStatus[] = ['intake', 'id_gate', 'gender_gate', 'finalizing', 'published', 'archived']
-  for (const status of nonInLoopStatuses) {
+test('shouldPersistInLoopGreeting is false for statuses outside in_loop/id_gate/gender_gate, regardless of history', () => {
+  const otherStatuses: ListingStatus[] = ['intake', 'finalizing', 'published', 'archived']
+  for (const status of otherStatuses) {
     assert.equal(
-      shouldPersistInLoopGreeting(greetingListing({ status }), false, 'some greeting'),
+      shouldPersistInLoopGreeting(greetingListing({ status }), [], 'some greeting'),
       false,
       `expected false for status ${status}`
     )
   }
+})
+
+test('shouldPersistInLoopGreeting is true for id_gate when the live prompt differs from the last stored message', () => {
+  // Regression: a stale in_loop greeting persisted before the pipeline reached id_gate must
+  // not permanently block the real id_gate prompt (with item description) from ever appearing.
+  assert.equal(
+    shouldPersistInLoopGreeting(
+      greetingListing({ status: 'id_gate' }),
+      [{ role: 'assistant', content: 'The automated analysis is done. Upload your studio photos...' }],
+      "I've analyzed the photo. Here's what I found: Chanel, small_leather_goods..."
+    ),
+    true
+  )
+})
+
+test('shouldPersistInLoopGreeting is false for id_gate when the live prompt already matches the last stored message', () => {
+  assert.equal(
+    shouldPersistInLoopGreeting(
+      greetingListing({ status: 'id_gate' }),
+      [{ role: 'assistant', content: 'same prompt' }],
+      'same prompt'
+    ),
+    false
+  )
+})
+
+test('shouldPersistInLoopGreeting is true for gender_gate when the live prompt differs from the last stored message', () => {
+  assert.equal(
+    shouldPersistInLoopGreeting(greetingListing({ status: 'gender_gate' }), [], 'What is the gender?'),
+    true
+  )
 })
 
 test('notableFeaturesOf reads notable_features from visionAnalysis when present', () => {
