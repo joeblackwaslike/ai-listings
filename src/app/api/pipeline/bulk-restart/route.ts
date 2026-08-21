@@ -15,7 +15,7 @@ export async function POST() {
   // stuck listing apart from an old archived one someone doesn't want resurrected.
   const { data: blocked, error } = await admin
     .from('listings')
-    .select('id, status')
+    .select('id, status, pipeline_step')
     .eq('user_id', user.id)
     .eq('agent_blocked', true)
     .neq('status', 'archived')
@@ -25,11 +25,33 @@ export async function POST() {
 
   const listingIds = blocked.map((r: { id: string }) => r.id)
 
-  // Fetch intake photos for these listings
+  // pipeline_step records the last step (1-5) that actually completed for this listing,
+  // independent of `status` (id1-step5-vision-analysis.ts:277). A blocked listing with
+  // pipeline_step >= 2 already got past id-gate (and gender-gate, if its category needed
+  // one) — its failure was downstream, in step 3/4/5. Always re-firing photo/uploaded here
+  // restarted every blocked listing from step1, discarding those already-answered gate
+  // confirmations and re-asking id/measurements from scratch — repeatedly, once per restart
+  // click, on every listing that failed again later the same day (ai-listings dashboard
+  // report, 2026-08-21: "more than half the items are still stuck at id or measurement for
+  // 3rd+ time"). Listings past step2 are routed through pipeline/retry-step instead, which
+  // resumes the specific failed step from stored listing data without touching the gates.
+  const fullRestartIds: string[] = []
+  const stepRetries: { listingId: string; step: number }[] = []
+  for (const row of blocked as { id: string; pipeline_step: number | null }[]) {
+    const step = row.pipeline_step ?? 0
+    if (step < 2) {
+      fullRestartIds.push(row.id)
+    } else if (step < 5) {
+      stepRetries.push({ listingId: row.id, step: step + 1 })
+    }
+    // step >= 5 means the pipeline already finished -- nothing to retry, just unblock below.
+  }
+
+  // Fetch intake photos only for listings that need a full restart.
   const { data: photos } = await admin
     .from('photos')
     .select('listing_id, raw_url')
-    .in('listing_id', listingIds)
+    .in('listing_id', fullRestartIds)
     .eq('type', 'intake')
 
   const photoByListing = Object.fromEntries(
@@ -48,7 +70,7 @@ export async function POST() {
 
   if (clearError) return Response.json({ error: clearError.message }, { status: 500 })
 
-  const events = listingIds
+  const fullRestartEvents = fullRestartIds
     .filter((id: string) => photoByListing[id])
     .map((id: string) => ({
       name: 'photo/uploaded' as const,
@@ -59,9 +81,19 @@ export async function POST() {
       },
     }))
 
+  const stepRetryEvents = stepRetries.map(({ listingId, step }) => ({
+    name: 'pipeline/retry-step' as const,
+    data: { listingId, step },
+  }))
+
+  const events = [...fullRestartEvents, ...stepRetryEvents]
   if (events.length > 0) {
     await inngest.send(events)
   }
 
-  return Response.json({ restarted: events.length, skipped: listingIds.length - events.length })
+  return Response.json({
+    restarted: fullRestartEvents.length,
+    stepRetried: stepRetryEvents.length,
+    skipped: listingIds.length - events.length,
+  })
 }
