@@ -3,6 +3,7 @@ import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { searchEbayActive } from './comps/ebay-browse'
+import { searchEbayInsights } from './comps/ebay-insights'
 import { conditionDelta, adjustForCondition, CATEGORY_DISCOUNT } from './pricing-adjust'
 
 interface SerpShoppingResult {
@@ -91,76 +92,6 @@ async function fetchRetailPrice(
   }
 }
 
-interface SerpApiEbayResult {
-  title?: string
-  price?: { extracted_value?: number }
-  sold_date?: string
-  link?: string
-  condition?: string
-}
-
-interface SerpApiEbayResponse {
-  organic_results?: SerpApiEbayResult[]
-  error?: string
-}
-
-// SerpAPI's dedicated eBay engine scrapes eBay's own public "Sold Items" search page
-// (show_only=Sold) -- no OAuth scope needed, unlike Marketplace Insights. Observed
-// flaky in practice (503s, multi-minute timeouts on some queries) -- always resolve
-// to an empty array rather than let a slow/failed scrape block the pipeline.
-async function fetchEbaySoldComps(
-  query: string,
-  apiKey: string
-): Promise<Array<{ title: string; priceCents: number; soldAt: string | null; listingUrl: string }>> {
-  if (!apiKey) return []
-  try {
-    const url = new URL('https://serpapi.com/search')
-    url.searchParams.set('engine', 'ebay')
-    url.searchParams.set('_nkw', query)
-    url.searchParams.set('show_only', 'Sold')
-    url.searchParams.set('api_key', apiKey)
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) })
-    if (!res.ok) {
-      console.warn(`fetchEbaySoldComps: HTTP ${res.status} for query "${query}"`)
-      return []
-    }
-
-    const data = (await res.json()) as SerpApiEbayResponse
-    if (data.error) {
-      console.warn(`fetchEbaySoldComps: SerpAPI error for query "${query}"`, JSON.stringify(data.error))
-      return []
-    }
-
-    return (data.organic_results ?? [])
-      .filter((r) => r.title && r.price?.extracted_value && r.sold_date)
-      .map((r) => {
-        // SerpAPI's eBay sold_date is a scraped, human-readable string (e.g.
-        // "Sold  Mar 14, 2024") -- strip a leading "Sold" prefix and validate
-        // the parse before calling toISOString(), which throws RangeError on
-        // an Invalid Date and would otherwise lose the entire batch below.
-        const cleaned = r.sold_date?.replace(/^sold\s*/i, '').trim()
-        const parsedDate = cleaned ? new Date(cleaned) : null
-        const soldAt = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null
-        return {
-          title: r.title ?? '',
-          priceCents: Math.round((r.price?.extracted_value ?? 0) * 100),
-          soldAt,
-          listingUrl: r.link ?? '',
-        }
-      })
-      // soldAt null means the scraped date string didn't parse -- these rows
-      // already passed the r.sold_date-is-truthy filter above, so a null here
-      // is a genuine parse failure, not "no date provided". Drop rather than
-      // insert as unverifiable sold evidence with no confirmable sale date.
-      .filter((c) => c.priceCents > 0 && c.soldAt !== null)
-  } catch (err) {
-    // SerpAPI eBay sold is documented as flaky (503s, multi-minute timeouts observed).
-    // Log so operators can distinguish timeout/quota exhaustion from a bug.
-    console.warn('fetchEbaySoldComps: failed, returning empty', err instanceof Error ? err.message : String(err))
-    return []
-  }
-}
 
 interface SerpApiOrganicResult {
   title?: string
@@ -691,7 +622,7 @@ export async function runStep3PricingResearch(
     fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
     fetchPoshmarkSoldComps(searchQuery, apiKeys.poshmarkCookies),
     fetchPoshmarkActiveFloor(searchQuery, apiKeys.poshmarkCookies),
-    fetchEbaySoldComps(searchQuery, apiKeys.serpapi),
+    searchEbayInsights(searchQuery),
     fetchTheRealRealComps(searchQuery, apiKeys.serpapi),
   ])
 
