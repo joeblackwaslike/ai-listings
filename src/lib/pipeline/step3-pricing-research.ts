@@ -120,7 +120,8 @@ interface SerpApiEbayActiveResponse {
 
 // SerpAPI's eBay engine, plain search (no show_only=Sold -- that filter is bot-blocked
 // by eBay as of 2026-08, confirmed live: 90s timeout -> 503, isolated to the Sold filter
-// specifically, while this plain-search form returns in ~2s). Used only as a fallback
+// specifically, while this plain-search form returned well under the 10s timeout below
+// in initial testing). Used only as a fallback
 // when the official Browse API (searchEbayActive) comes back empty -- see
 // searchEbayActiveWithFallback below -- not called on the happy path, so a working
 // Browse API never spends SerpAPI quota on a redundant second active-listings source.

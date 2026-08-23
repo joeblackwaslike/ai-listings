@@ -56,7 +56,11 @@ export async function searchEbaySoldComps(query: string, apiKey: string): Promis
         // throws RangeError on an Invalid Date and would otherwise lose the batch.
         const parsedDate = it.endedAt ? new Date(it.endedAt) : null
         const soldAt = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null
-        const price = it.soldPrice ? parseFloat(it.soldPrice) : NaN
+        // Live-tested response format is a bare numeric string ("380", "29.99") with no
+        // currency symbol or thousands separator -- strip both anyway so a future format
+        // change (e.g. "$1,234.56") degrades to a correct parse instead of a silently
+        // dropped or truncated-at-the-comma price.
+        const price = it.soldPrice ? parseFloat(it.soldPrice.replace(/[^0-9.-]/g, '')) : NaN
         return {
           title: it.title ?? '',
           priceCents: Number.isFinite(price) ? Math.round(price * 100) : 0,
