@@ -107,7 +107,10 @@ async function fetchRetailCandidates(brand: string, model: string, apiKey: strin
       url.searchParams.set('condition', 'new')
       return url
     }, apiKey)
-    if (!response || !response.ok) return []
+    if (!response || !response.ok) {
+      console.warn(`fetchRetailCandidates: HTTP ${response?.status ?? '(no response)'} for query "${query}"`)
+      return []
+    }
 
     const data = (await response.json()) as SerpApiShoppingResponse
     const results = data.shopping_results ?? []
@@ -116,7 +119,8 @@ async function fetchRetailCandidates(brand: string, model: string, apiKey: strin
         typeof r.extracted_price === 'number' && r.extracted_price > 0 && !isResaleMarketplace(r.source ?? '')
       )
       .map((r) => ({ title: r.title, priceCents: Math.round(r.extracted_price * 100), source: r.source ?? 'Google Shopping' }))
-  } catch {
+  } catch (err) {
+    console.warn('fetchRetailCandidates: failed, returning empty', err instanceof Error ? err.message : String(err))
     return []
   }
 }
@@ -162,7 +166,7 @@ async function fetchEbayActiveSerpApi(query: string, apiKey: string): Promise<Ac
     }
 
     return (data.organic_results ?? [])
-      .filter((r) => r.title && r.price?.extracted && r.link)
+      .filter((r) => r.title && typeof r.price?.extracted === 'number' && r.price.extracted > 0 && r.link)
       .map((r) => ({
         title: r.title ?? '',
         priceCents: Math.round((r.price?.extracted ?? 0) * 100),
@@ -702,19 +706,6 @@ export async function runStep3PricingResearch(
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
 
-  // Re-running pricing research (e.g. a manual "retry pricing" on a listing that already
-  // finished step4a/4b/5) must not regress the pipeline_step counter -- confirmed
-  // 2026-08-23: an unconditional pipeline_step:3 write below knocked every one of 16
-  // already-completed listings back to "Processing" on the dashboard, even though their
-  // draft/photos/auth-plan were untouched and still valid. Only step3's own actual
-  // progress (>= 3) is this call's business; never move the counter backward.
-  const { data: currentListing } = await supabase
-    .from('listings')
-    .select('pipeline_step')
-    .eq('id', listingId)
-    .single()
-  const pipelineStepFloor = Math.max((currentListing?.pipeline_step as number | null) ?? 0, 3)
-
   const isKeyboard = step2.category?.toLowerCase() === 'keyboards'
 
   const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
@@ -1126,7 +1117,11 @@ export async function runStep3PricingResearch(
     : null
 
   await pushPipelineStep(listingId, {
-    pipeline_step: pipelineStepFloor,
+    // pushPipelineStep floors pipeline_step atomically via a Postgres GREATEST() (migration
+    // 0025) -- passing this step's own number is enough; the DB-side floor is what actually
+    // prevents a "retry pricing" on an already-further-along listing from regressing it,
+    // including under concurrent writers (see supabase-push.ts).
+    pipeline_step: 3,
     confidence_score: confidenceScore,
     suggested_price_cents: suggestedPriceCents,
     price_to_move_cents: priceToMoveCents,

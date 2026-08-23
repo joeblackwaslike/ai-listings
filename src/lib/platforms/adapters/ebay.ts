@@ -166,16 +166,25 @@ export class EbayAdapter implements PlatformSDK {
   private _accessToken: string | null = null;
   private _tokenExpiresAt = 0;
 
-  constructor(creds: {
-    clientId: string;
-    clientSecret: string;
-    refreshToken: string;
-    fulfillmentPolicyId: string;
-    paymentPolicyId: string;
-    returnPolicyId: string;
-    merchantLocationKey: string;
-    sandbox: boolean;
-  }) {
+  // Optional, separate from `creds` above: SoldComps is a distinct third-party API with its
+  // own per-user key (src/lib/user-api-keys.ts's `soldcomps` field), not part of eBay's own
+  // OAuth credential set. Defaults to the env var for call sites that construct this adapter
+  // without a per-user key on hand (e.g. sync-platform-* Inngest functions that only need
+  // eBay's own APIs) -- mcp-server.ts's getAdapter is the one call site that has a userId and
+  // passes the real per-user key through.
+  constructor(
+    creds: {
+      clientId: string;
+      clientSecret: string;
+      refreshToken: string;
+      fulfillmentPolicyId: string;
+      paymentPolicyId: string;
+      returnPolicyId: string;
+      merchantLocationKey: string;
+      sandbox: boolean;
+    },
+    private readonly soldcompsApiKey: string = process.env.SOLDCOMPS_API_KEY ?? ''
+  ) {
     this.creds = creds;
     this.baseUrl = creds.sandbox ? 'https://api.sandbox.ebay.com' : 'https://api.ebay.com';
   }
@@ -257,12 +266,9 @@ export class EbayAdapter implements PlatformSDK {
     return res.json() as Promise<T>;
   }
 
-  async searchSoldComps(query: string): Promise<PlatformComp[]> {
-    // EbayAdapter takes pre-loaded eBay creds via its constructor, not the per-user
-    // ApiKeys object step3-pricing-research.ts threads through -- falls back to the
-    // env var directly here rather than silently reading it inside the shared client.
-    const results = await searchEbaySoldComps(query, process.env.SOLDCOMPS_API_KEY ?? '');
-    return results.map((r) => ({
+  async searchSoldComps(query: string, options?: { limit?: number }): Promise<PlatformComp[]> {
+    const results = await searchEbaySoldComps(query, this.soldcompsApiKey);
+    const mapped = results.map((r) => ({
       platform: 'ebay',
       title: r.title,
       soldPrice: r.priceCents,
@@ -270,6 +276,7 @@ export class EbayAdapter implements PlatformSDK {
       url: r.listingUrl,
       soldAt: r.soldAt ? new Date(r.soldAt) : null,
     }));
+    return options?.limit != null ? mapped.slice(0, options.limit) : mapped;
   }
 
   // ---- Listings -------------------------------------------------------------

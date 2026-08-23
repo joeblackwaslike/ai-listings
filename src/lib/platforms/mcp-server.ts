@@ -11,6 +11,7 @@
  * Usage as HTTP tool endpoint: see src/app/api/platforms/mcp/route.ts
  */
 
+import { getUserApiKeys } from '@/lib/user-api-keys';
 import { EbayAdapter } from './adapters/ebay';
 import { PoshmarkAdapter } from './adapters/poshmark';
 import { MercariAdapter } from './adapters/mercari';
@@ -133,7 +134,8 @@ async function getAdapter(platform: string, userId: string): Promise<PlatformSDK
     case 'ebay': {
       const creds = await getEbayCreds(userId);
       if (!creds) throw new Error('eBay credentials not configured for this user');
-      return new EbayAdapter(creds);
+      const apiKeys = await getUserApiKeys(userId);
+      return new EbayAdapter(creds, apiKeys.soldcomps);
     }
     case 'poshmark': {
       const creds = await getPoshmarkCreds(userId);
