@@ -24,22 +24,33 @@ async function fetchSerpComps(
   model: string,
   apiKey: string
 ): Promise<SerpShoppingResult[]> {
-  const query = `${brand} ${model}`
-  const url = new URL('https://serpapi.com/search')
-  url.searchParams.set('engine', 'google_shopping')
-  url.searchParams.set('q', query)
-  url.searchParams.set('api_key', apiKey)
-  url.searchParams.set('num', '10')
-  url.searchParams.set('condition', 'used')
+  try {
+    const query = `${brand} ${model}`
+    const url = new URL('https://serpapi.com/search')
+    url.searchParams.set('engine', 'google_shopping')
+    url.searchParams.set('q', query)
+    url.searchParams.set('api_key', apiKey)
+    url.searchParams.set('num', '10')
+    url.searchParams.set('condition', 'used')
 
-  const response = await fetch(url.toString())
+    const response = await fetch(url.toString())
 
-  if (!response.ok) {
-    throw new Error(`step3: SerpAPI shopping returned HTTP ${response.status}`)
+    if (!response.ok) {
+      console.warn(`fetchSerpComps: HTTP ${response.status} for query "${brand} ${model}"`)
+      return []
+    }
+
+    const data = (await response.json()) as SerpApiShoppingResponse
+    return data.shopping_results ?? []
+  } catch (err) {
+    // Every other fetcher in this file degrades to an empty/null result on failure
+    // rather than throwing (this one didn't -- a SerpAPI 429 during a batch run
+    // crashed runStep3PricingResearch entirely before any comps/pricing got written,
+    // rather than just missing this one source, confirmed 2026-08-23 during a
+    // 13-listing batch run: 5 listings failed outright on HTTP 429 alone).
+    console.warn('fetchSerpComps: failed, returning empty', err instanceof Error ? err.message : String(err))
+    return []
   }
-
-  const data = (await response.json()) as SerpApiShoppingResponse
-  return data.shopping_results ?? []
 }
 
 async function fetchRetailPrice(
