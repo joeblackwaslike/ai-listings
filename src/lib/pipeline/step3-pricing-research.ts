@@ -9,10 +9,20 @@ import { fetchSerpApi } from './serpapi-client'
 
 interface SerpShoppingResult {
   title: string
-  link: string
+  // Live-verified 2026-08-23: there's no plain `link` field on google_shopping results --
+  // the URL field is `product_link` (a Google Shopping SERP link, not a direct retailer
+  // URL). `link` was always undefined, which never surfaced because the extracted_price
+  // bug above (fixed same day) meant every result was already filtered out before this
+  // field was ever read.
+  product_link: string
   source?: string
   condition?: string
-  price?: { extracted_value?: number }
+  // Live-verified 2026-08-23: SerpAPI's google_shopping engine returns `price` as a
+  // formatted string ("$266.25") with the numeric value in a separate top-level
+  // `extracted_price` field -- NOT nested as `price.extracted_value`. That wrong shape
+  // meant `result.price?.extracted_value` was undefined for every result, always,
+  // silently dropping 100% of Google Shopping comps and retail-price detection.
+  extracted_price?: number
 }
 
 interface SerpApiShoppingResponse {
@@ -77,7 +87,7 @@ async function fetchRetailPrice(
     const results = data.shopping_results ?? []
 
     const prices = results
-      .map((r) => r.price?.extracted_value)
+      .map((r) => r.extracted_price)
       .filter((v): v is number => typeof v === 'number' && v > 0)
 
     if (prices.length === 0) return null
@@ -97,7 +107,7 @@ async function fetchRetailPrice(
       }
     }
 
-    const lowestResult = results.find((r) => r.price?.extracted_value === lowestPrice)
+    const lowestResult = results.find((r) => r.extracted_price === lowestPrice)
     const source = lowestResult?.source ?? 'Google Shopping'
 
     return { retailPriceCents, source, promoNote }
@@ -733,8 +743,8 @@ export async function runStep3PricingResearch(
   }> = []
 
   for (const result of serpResults) {
-    if (!result.price?.extracted_value) continue
-    const priceCents = Math.round(result.price.extracted_value * 100)
+    if (!result.extracted_price) continue
+    const priceCents = Math.round(result.extracted_price * 100)
     const source = result.source?.toLowerCase().includes('poshmark')
       ? 'poshmark_active'
       : result.source?.toLowerCase().includes('therealreal')
@@ -748,7 +758,7 @@ export async function runStep3PricingResearch(
       sale_price_cents: priceCents,
       condition: result.condition ?? 'Not specified',
       sold_at: null,
-      listing_url: result.link,
+      listing_url: result.product_link,
       condition_delta: delta,
       adjusted_price_cents: adjustForCondition(priceCents, delta),
       relevance_score: null,
