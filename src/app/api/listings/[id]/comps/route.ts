@@ -36,6 +36,14 @@ export async function POST(
   if (typeof body.salePriceCents !== 'number' || !Number.isFinite(body.salePriceCents) || body.salePriceCents <= 0) {
     return NextResponse.json({ error: 'salePriceCents must be a positive number' }, { status: 400 })
   }
+  // EvidenceDrawer renders comp.listing_url verbatim as an <a href> for every comp,
+  // including manual ones -- an unvalidated scheme (javascript:, data:, etc.) stored here
+  // would render as a clickable link that executes on click. Only http(s) is a real
+  // listing URL anyway.
+  const trimmedUrl = body.listingUrl?.trim() || null
+  if (trimmedUrl && !/^https?:\/\//i.test(trimmedUrl)) {
+    return NextResponse.json({ error: 'listingUrl must start with http:// or https://' }, { status: 400 })
+  }
 
   const isActive = body.isActive === true
   const salePriceCents = Math.round(body.salePriceCents)
@@ -53,7 +61,7 @@ export async function POST(
     sale_price_cents: salePriceCents,
     condition: 'Not specified',
     sold_at: isActive ? null : (body.soldAt ?? null),
-    listing_url: body.listingUrl?.trim() || null,
+    listing_url: trimmedUrl,
     condition_delta: 'same',
     // A hand-entered comp is a direct real-world observation, not a comparable that needs
     // the automated condition-normalization adjustment applied to fetched comps.
@@ -97,7 +105,9 @@ export async function DELETE(
   if (!listing) return NextResponse.json({ error: 'Listing not found' }, { status: 404 })
 
   const body = (await request.json()) as { compId?: string }
-  if (!body.compId) return NextResponse.json({ error: 'compId is required' }, { status: 400 })
+  if (!body.compId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.compId)) {
+    return NextResponse.json({ error: 'compId must be a valid UUID' }, { status: 400 })
+  }
 
   // Restrict the delete to this listing's own manual rows -- never lets the caller delete
   // an automated comp (those get regenerated/removed by the pipeline itself) or a comp
