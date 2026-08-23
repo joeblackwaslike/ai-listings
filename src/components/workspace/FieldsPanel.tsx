@@ -329,11 +329,16 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
           )}
         </div>
 
-        {resolvedPriceCents != null && (
+        {(
+          // Was gated on resolvedPriceCents != null, which hid this whole card -- including
+          // the price-override control -- for exactly the listings that need it most: zero
+          // comps, no computed price, nothing for the pipeline to go on (e.g. a rare item
+          // with no real market data). Always render the card; show a placeholder instead of
+          // a dollar figure when there's genuinely no price yet.
           <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 space-y-2">
             <div className="flex items-baseline justify-between">
-              <span className="text-xl font-bold text-emerald-400">
-                {formatPrice(resolvedPriceCents)}
+              <span className={resolvedPriceCents != null ? 'text-xl font-bold text-emerald-400' : 'text-sm text-gray-600'}>
+                {resolvedPriceCents != null ? formatPrice(resolvedPriceCents) : 'No price yet'}
               </span>
               {listing.confidence_score != null && (
                 <span className="text-xs text-gray-500">{listing.confidence_score}% confidence</span>
@@ -406,17 +411,13 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
                 Clear override
               </button>
             )}
-            {comps.length > 0 ? (
-              <button
-                onClick={() => setEvidenceOpen(true)}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-              >
-                View {comps.length} comp{comps.length === 1 ? '' : 's'}
-                <ChevronRight className="w-3 h-3" />
-              </button>
-            ) : (
-              <span className="text-xs text-gray-700">No market comparables found</span>
-            )}
+            <button
+              onClick={() => setEvidenceOpen(true)}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              {comps.length > 0 ? `View ${comps.length} comp${comps.length === 1 ? '' : 's'}` : 'No market comparables — add one'}
+              <ChevronRight className="w-3 h-3" />
+            </button>
           </div>
         )}
 
