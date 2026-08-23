@@ -258,12 +258,15 @@ export class EbayAdapter implements PlatformSDK {
   }
 
   async searchSoldComps(query: string): Promise<PlatformComp[]> {
-    const results = await searchEbaySoldComps(query);
+    // EbayAdapter takes pre-loaded eBay creds via its constructor, not the per-user
+    // ApiKeys object step3-pricing-research.ts threads through -- falls back to the
+    // env var directly here rather than silently reading it inside the shared client.
+    const results = await searchEbaySoldComps(query, process.env.SOLDCOMPS_API_KEY ?? '');
     return results.map((r) => ({
       platform: 'ebay',
       title: r.title,
       soldPrice: r.priceCents,
-      condition: 'Not specified',
+      condition: r.condition,
       url: r.listingUrl,
       soldAt: r.soldAt ? new Date(r.soldAt) : null,
     }));

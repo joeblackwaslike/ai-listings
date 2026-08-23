@@ -682,7 +682,7 @@ export async function runStep3PricingResearch(
     fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
     fetchPoshmarkSoldComps(searchQuery, apiKeys.poshmarkCookies),
     fetchPoshmarkActiveFloor(searchQuery, apiKeys.poshmarkCookies),
-    searchEbaySoldComps(searchQuery),
+    searchEbaySoldComps(searchQuery, apiKeys.soldcomps),
     fetchTheRealRealComps(searchQuery, apiKeys.serpapi),
   ])
 

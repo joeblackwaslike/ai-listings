@@ -7,6 +7,7 @@ export interface ApiKeys {
   ebayAppId: string
   poshmarkCookies: string
   mercariToken: string
+  soldcomps: string
 }
 
 export async function getUserApiKeys(userId: string | null | undefined): Promise<ApiKeys> {
@@ -20,6 +21,7 @@ export async function getUserApiKeys(userId: string | null | undefined): Promise
       ebayAppId:       isDev ? (process.env.EBAY_APP_ID          ?? '') : '',
       poshmarkCookies: isDev ? (process.env.POSHMARK_COOKIES     ?? '') : '',
       mercariToken:    isDev ? (process.env.MERCARI_API_TOKEN     ?? '') : '',
+      soldcomps:       isDev ? (process.env.SOLDCOMPS_API_KEY     ?? '') : '',
     }
   }
 
@@ -45,5 +47,6 @@ export async function getUserApiKeys(userId: string | null | undefined): Promise
     ebayAppId:       ebayAppId      || (isDev ? (process.env.EBAY_APP_ID          ?? '') : ''),
     poshmarkCookies: poshmarkCookies || (isDev ? (process.env.POSHMARK_COOKIES    ?? '') : ''),
     mercariToken:    mercariToken    || (isDev ? (process.env.MERCARI_API_TOKEN    ?? '') : ''),
+    soldcomps:       keys.soldcomps  ?? (isDev ? (process.env.SOLDCOMPS_API_KEY    ?? '') : ''),
   }
 }

@@ -10,6 +10,7 @@ export interface SoldListing {
   priceCents: number
   soldAt: string
   listingUrl: string
+  condition: string
 }
 
 interface SoldCompsItem {
@@ -17,14 +18,14 @@ interface SoldCompsItem {
   soldPrice?: string | null
   endedAt?: string | null // YYYY-MM-DD
   url?: string | null
+  condition?: string | null
 }
 
 interface SoldCompsResponse {
   items?: SoldCompsItem[]
 }
 
-export async function searchEbaySoldComps(query: string): Promise<SoldListing[]> {
-  const apiKey = process.env.SOLDCOMPS_API_KEY
+export async function searchEbaySoldComps(query: string, apiKey: string): Promise<SoldListing[]> {
   if (!apiKey) return []
 
   try {
@@ -36,7 +37,14 @@ export async function searchEbaySoldComps(query: string): Promise<SoldListing[]>
       signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) {
-      console.warn(`[ebay-soldcomps] HTTP ${res.status} for "${query}"`)
+      // 429/402 specifically means the free-tier 100/month cap is exhausted -- distinct
+      // from a transient failure or an expired/bad key, so operators can tell them apart
+      // instead of both looking like "no comps found" in the logs.
+      if (res.status === 429 || res.status === 402) {
+        console.warn(`[ebay-soldcomps] quota exhausted (HTTP ${res.status}) for "${query}"`)
+      } else {
+        console.warn(`[ebay-soldcomps] HTTP ${res.status} for "${query}"`)
+      }
       return []
     }
 
@@ -54,6 +62,7 @@ export async function searchEbaySoldComps(query: string): Promise<SoldListing[]>
           priceCents: Number.isFinite(price) ? Math.round(price * 100) : 0,
           soldAt,
           listingUrl: it.url ?? '',
+          condition: it.condition ?? 'Not specified',
         }
       })
       .filter((it): it is SoldListing => it.priceCents > 0 && it.soldAt !== null)
