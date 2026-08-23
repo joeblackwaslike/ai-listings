@@ -40,9 +40,11 @@ export async function POST(
   const isActive = body.isActive === true
   const salePriceCents = Math.round(body.salePriceCents)
 
-  // pricing_comps has no owner-scoped RLS policy (authenticated_full_access is open to any
-  // signed-in user), unlike listings -- the ownership check above is what actually gates
-  // this insert to the caller's own listing.
+  // pricing_comps carries its own owner-scoped RLS policy (`owner_access`, migration 0002:
+  // listing_id IN (SELECT id FROM listings WHERE user_id = auth.uid())) -- verified live
+  // against production, not just migration 0001's now-superseded authenticated_full_access.
+  // The listing lookup above is a defense-in-depth 404 for a nonexistent/foreign listing_id,
+  // not the only thing preventing a cross-user insert.
   const { error: insertError } = await supabase.from('pricing_comps').insert({
     listing_id: listingId,
     source: isActive ? 'manual_active' : 'manual',
@@ -63,8 +65,18 @@ export async function POST(
     return NextResponse.json({ error: `Failed to add comp: ${insertError.message}` }, { status: 500 })
   }
 
-  const result = await recalculateListingPrice(listingId)
-  return NextResponse.json({ ok: true, ...result })
+  // The comp is already durably saved at this point -- a recalculation failure here must
+  // not report the whole request as failed (the client re-shows the add form and retries on
+  // any non-OK response, which would insert a second, duplicate comp). Report the comp as
+  // added regardless; recalculated:false tells the client the displayed price may be stale
+  // until the next successful recalc (e.g. deleting and re-adding, or the next automated run).
+  try {
+    const result = await recalculateListingPrice(listingId)
+    return NextResponse.json({ ok: true, recalculated: true, ...result })
+  } catch (err) {
+    console.error(`comps route: recalculateListingPrice failed after successful insert for listing ${listingId}`, err)
+    return NextResponse.json({ ok: true, recalculated: false })
+  }
 }
 
 export async function DELETE(
@@ -100,6 +112,13 @@ export async function DELETE(
     return NextResponse.json({ error: `Failed to remove comp: ${deleteError.message}` }, { status: 500 })
   }
 
-  const result = await recalculateListingPrice(listingId)
-  return NextResponse.json({ ok: true, ...result })
+  // Same reasoning as POST above: the delete already committed, so a recalculation failure
+  // here must not read back as "the comp wasn't removed."
+  try {
+    const result = await recalculateListingPrice(listingId)
+    return NextResponse.json({ ok: true, recalculated: true, ...result })
+  } catch (err) {
+    console.error(`comps route: recalculateListingPrice failed after successful delete for listing ${listingId}`, err)
+    return NextResponse.json({ ok: true, recalculated: false })
+  }
 }

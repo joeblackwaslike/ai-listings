@@ -36,9 +36,10 @@ async function isQuotaExhaustedBody(res: Response): Promise<boolean> {
 
 // Tries each key in order, advancing to the next on a quota/rate-limit response --
 // either a 429/402 status, or a 200 whose body carries SerpAPI's quota-exhausted error
-// message (see isQuotaExhaustedBody above). Any other failure (network error, 5xx,
-// timeout) is thrown immediately rather than masked by a retry -- multiple keys fix
-// quota exhaustion, not a genuinely down/misbehaving upstream.
+// message (see isQuotaExhaustedBody above). A 5xx is returned as-is (not retried against
+// the next key) for the caller's own !response.ok handling -- multiple keys work around
+// quota exhaustion, not a genuinely down/misbehaving upstream. Only a network error,
+// abort, or timeout actually throws (from the underlying fetch() call itself).
 export async function fetchSerpApi(
   buildUrl: (apiKey: string) => URL,
   rawApiKeys: string,
