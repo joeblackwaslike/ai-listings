@@ -153,6 +153,7 @@ async function fetchEbayActiveSerpApi(query: string, apiKey: string): Promise<Ac
         priceCents: Math.round((r.price?.extracted ?? 0) * 100),
         url: r.link ?? '',
         condition: r.condition ?? 'Not specified',
+        provider: 'serpapi' as const,
       }))
   } catch (err) {
     console.warn('fetchEbayActiveSerpApi: failed, returning empty', err instanceof Error ? err.message : String(err))
@@ -715,6 +716,7 @@ export async function runStep3PricingResearch(
     adjusted_price_cents: number
     relevance_score: number | null
     color: string | null
+    provider: string | null
   }> = []
 
   for (const result of serpResults) {
@@ -738,6 +740,7 @@ export async function runStep3PricingResearch(
       adjusted_price_cents: adjustForCondition(priceCents, delta),
       relevance_score: null,
       color: null,
+      provider: 'serpapi',
     })
   }
 
@@ -755,6 +758,7 @@ export async function runStep3PricingResearch(
       adjusted_price_cents: adjustForCondition(comp.sale_price_cents, delta),
       relevance_score: null,
       color: null,
+      provider: 'reddit_claude',
     })
   }
 
@@ -765,7 +769,7 @@ export async function runStep3PricingResearch(
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
       listing_url: item.listingUrl, condition_delta: delta,
       adjusted_price_cents: adjustForCondition(item.priceCents, delta),
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: 'poshmark_direct',
     })
   }
 
@@ -776,7 +780,7 @@ export async function runStep3PricingResearch(
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
       listing_url: item.listingUrl, condition_delta: delta,
       adjusted_price_cents: adjustForCondition(item.priceCents, delta),
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: 'soldcomps',
     })
   }
 
@@ -787,7 +791,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'ebay_active', title: item.title,
       sale_price_cents: item.priceCents, condition: item.condition, sold_at: null,
       listing_url: item.url, condition_delta: 'same', adjusted_price_cents: item.priceCents,
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: item.provider,
     })
   }
   for (const item of poshmarkActive) {
@@ -795,7 +799,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'poshmark_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: 'poshmark_direct',
     })
   }
   for (const item of theRealRealComps) {
@@ -803,7 +807,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'therealreal_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: 'serpapi',
     })
   }
   // Move any _active rows that ended up in compRows (from SerpAPI) into activeRows

@@ -28,6 +28,16 @@ const SOURCE_LABELS: Record<string, string> = {
   google: 'Google',
 }
 
+// Which underlying API/data provider produced the comp -- distinct from the platform
+// (eBay, Poshmark, etc). Lets you see which data sources are actually working.
+const PROVIDER_LABELS: Record<string, string> = {
+  soldcomps: 'SoldComps',
+  ebay_browse: 'eBay Browse API',
+  serpapi: 'SerpAPI',
+  poshmark_direct: 'Poshmark',
+  reddit_claude: 'Reddit',
+}
+
 const EVENT_TYPE_LABELS: Record<string, string> = {
   initial: 'Listed',
   manual_change: 'Repriced',
@@ -108,6 +118,11 @@ export function EvidenceDrawer({
             comps.map((comp) => {
               const delta = DELTA_DISPLAY[comp.condition_delta] ?? DELTA_DISPLAY.same
               const adjustedDiff = comp.adjusted_price_cents - comp.sale_price_cents
+              // Source strings carry a "_active" suffix for live-asking-price comps (e.g.
+              // "ebay_active") -- that suffix isn't in SOURCE_LABELS, so it used to render
+              // literally instead of a clean source name with a separate sold/active signal.
+              const isActive = comp.source.endsWith('_active')
+              const baseSource = isActive ? comp.source.slice(0, -'_active'.length) : comp.source
               return (
                 <div key={comp.id} className="px-5 py-3 space-y-1">
                   <div className="flex items-start justify-between gap-3">
@@ -125,7 +140,19 @@ export function EvidenceDrawer({
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
-                      {SOURCE_LABELS[comp.source] ?? comp.source}
+                      {SOURCE_LABELS[baseSource] ?? baseSource}
+                    </span>
+                    {comp.provider && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800/60 text-gray-500">
+                        {PROVIDER_LABELS[comp.provider] ?? comp.provider}
+                      </span>
+                    )}
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        isActive ? 'bg-blue-900/60 text-blue-300' : 'bg-emerald-900/60 text-emerald-400'
+                      }`}
+                    >
+                      {isActive ? 'Active' : 'Sold'}
                     </span>
                     <span className="text-[10px] text-gray-600">{comp.condition}</span>
                     <span className={`text-[10px] ${delta.color}`}>({delta.label} condition)</span>

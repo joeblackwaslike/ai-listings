@@ -39,6 +39,12 @@ export type CompSource =
   | 'mercari' | 'mercari_active'
   | 'reddit';
 
+// Which underlying API/data provider produced the comp row -- distinct from `source`
+// (which platform it's from). A single source like 'ebay_active' can come from either
+// the official Browse API or the SerpAPI fallback, so `source` alone can't answer
+// "which of our data providers is actually working."
+export type CompProvider = 'soldcomps' | 'ebay_browse' | 'serpapi' | 'poshmark_direct' | 'reddit_claude';
+
 export type ConversationRole = 'user' | 'assistant';
 
 export const CATEGORY_PREFIXES: Record<ListingCategory, string> = {
@@ -288,6 +294,7 @@ export interface PricingComp {
   adjusted_price_cents: number;
   color: string | null;
   relevance_score: number | null;
+  provider: CompProvider | null;
   created_at: string;
 }
 
