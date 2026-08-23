@@ -206,6 +206,8 @@ ${rulesSection}Rules:
   }
 
   await pushPipelineStep(listingId, {
+    // pushPipelineStep floors pipeline_step atomically via a Postgres GREATEST() (migration
+    // 0025) -- see the comment there for why this can't be a read-then-write-max here.
     pipeline_step: 4,
     title: draft.canonical_title,
     description: draft.canonical_description,

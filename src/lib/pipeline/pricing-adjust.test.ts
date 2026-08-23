@@ -187,7 +187,7 @@ function comp(overrides: Partial<PricingComp> = {}): PricingComp {
     id: 'comp-1', listing_id: 'listing-1', source: 'ebay', title: 'Test comp',
     sale_price_cents: 10_000, condition: 'Not specified', sold_at: '2026-01-01T00:00:00Z',
     listing_url: 'https://example.com', condition_delta: 'same', adjusted_price_cents: 10_000,
-    color: null, relevance_score: null, created_at: '2026-01-01T00:00:00Z',
+    color: null, relevance_score: null, provider: null, created_at: '2026-01-01T00:00:00Z',
     ...overrides,
   }
 }

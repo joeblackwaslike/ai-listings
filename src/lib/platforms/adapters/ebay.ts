@@ -10,6 +10,7 @@ import type {
   UnifiedListing,
 } from '../types';
 import { AuthExpiredError, PlatformError, UnsupportedOperationError } from '../errors';
+import { searchEbaySoldComps } from '../ebay-soldcomps';
 import eBayApi from '@hendt/ebay-api';
 
 // ---- Internal eBay API shape types ----------------------------------------
@@ -165,16 +166,25 @@ export class EbayAdapter implements PlatformSDK {
   private _accessToken: string | null = null;
   private _tokenExpiresAt = 0;
 
-  constructor(creds: {
-    clientId: string;
-    clientSecret: string;
-    refreshToken: string;
-    fulfillmentPolicyId: string;
-    paymentPolicyId: string;
-    returnPolicyId: string;
-    merchantLocationKey: string;
-    sandbox: boolean;
-  }) {
+  // Optional, separate from `creds` above: SoldComps is a distinct third-party API with its
+  // own per-user key (src/lib/user-api-keys.ts's `soldcomps` field), not part of eBay's own
+  // OAuth credential set. Defaults to the env var for call sites that construct this adapter
+  // without a per-user key on hand (e.g. sync-platform-* Inngest functions that only need
+  // eBay's own APIs) -- mcp-server.ts's getAdapter is the one call site that has a userId and
+  // passes the real per-user key through.
+  constructor(
+    creds: {
+      clientId: string;
+      clientSecret: string;
+      refreshToken: string;
+      fulfillmentPolicyId: string;
+      paymentPolicyId: string;
+      returnPolicyId: string;
+      merchantLocationKey: string;
+      sandbox: boolean;
+    },
+    private readonly soldcompsApiKey: string = process.env.SOLDCOMPS_API_KEY ?? ''
+  ) {
     this.creds = creds;
     this.baseUrl = creds.sandbox ? 'https://api.sandbox.ebay.com' : 'https://api.ebay.com';
   }
@@ -256,11 +266,17 @@ export class EbayAdapter implements PlatformSDK {
     return res.json() as Promise<T>;
   }
 
-  // ---- Comps ----------------------------------------------------------------
-
-  // SerpAPI in step3-pricing-research.ts handles eBay sold comps.
-  async searchSoldComps(_query: string): Promise<PlatformComp[]> {
-    return [];
+  async searchSoldComps(query: string, options?: { limit?: number }): Promise<PlatformComp[]> {
+    const results = await searchEbaySoldComps(query, this.soldcompsApiKey);
+    const mapped = results.map((r) => ({
+      platform: 'ebay',
+      title: r.title,
+      soldPrice: r.priceCents,
+      condition: r.condition,
+      url: r.listingUrl,
+      soldAt: r.soldAt ? new Date(r.soldAt) : null,
+    }));
+    return options?.limit != null ? mapped.slice(0, options.limit) : mapped;
   }
 
   // ---- Listings -------------------------------------------------------------

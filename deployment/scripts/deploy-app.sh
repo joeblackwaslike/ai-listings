@@ -10,6 +10,8 @@
 #
 # Optional:
 #   EBAY_USER_REFRESH_TOKEN, IMAGE_TAG (default: latest)
+#   SOLDCOMPS_API_KEY (sold-comps.com eBay sold-comps source — unset degrades to no eBay
+#     sold comps, same fail-soft behavior as the other comp sources)
 #   CLAUDE_CODE_OAUTH_TOKEN (Claude Max/Pro subscription token from `claude setup-token` —
 #     when set, src/lib/claude/backend.ts switches pipeline LLM calls to the Agent SDK
 #     instead of ANTHROPIC_API_KEY; unset falls back to the existing api-key path unchanged)
@@ -98,6 +100,7 @@ stringData:
   ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
   CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
   SERPAPI_API_KEY: "${SERPAPI_API_KEY}"
+  SOLDCOMPS_API_KEY: "${SOLDCOMPS_API_KEY:-}"
   WITHOUTBG_API_KEY: "${WITHOUTBG_API_KEY}"
   EBAY_CLIENT_ID: "${EBAY_CLIENT_ID}"
   EBAY_CLIENT_SECRET: "${EBAY_CLIENT_SECRET}"

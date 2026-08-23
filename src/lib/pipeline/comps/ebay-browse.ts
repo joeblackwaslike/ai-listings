@@ -7,6 +7,9 @@ export interface ActiveListing {
   priceCents: number
   url: string
   condition: string
+  // 'serpapi' when produced by the SerpAPI fallback in step3-pricing-research.ts's
+  // fetchEbayActiveSerpApi rather than this file's official Browse API.
+  provider: 'ebay_browse' | 'serpapi'
 }
 
 interface BrowseItemSummary {
@@ -51,6 +54,7 @@ export async function searchEbayActive(query: string, limit = 20): Promise<Activ
           priceCents: Number.isFinite(price) ? Math.round(price * 100) : 0,
           url: it.itemWebUrl ?? '',
           condition: it.condition ?? 'Not specified',
+          provider: 'ebay_browse' as const,
         }
       })
       .filter((it) => it.title && it.priceCents > 0 && it.url)

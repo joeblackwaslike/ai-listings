@@ -2,6 +2,7 @@ import type { ListingCategory } from '@/types/listings'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { toPublicUrl } from './to-public-url'
+import { fetchSerpApi } from './serpapi-client'
 
 interface LensMatch {
   title: string
@@ -90,16 +91,17 @@ export async function runStep1ProductId(
 ): Promise<ProductIdData> {
   const publicPhotoUrl = await toPublicUrl(photoUrl)
 
-  const url = new URL('https://serpapi.com/search')
-  url.searchParams.set('engine', 'google_lens')
-  url.searchParams.set('url', publicPhotoUrl)
-  url.searchParams.set('api_key', apiKeys.serpapi)
-
   console.log(`[step1] calling SerpAPI Google Lens with url=${publicPhotoUrl}`)
-  const response = await fetch(url.toString())
+  const response = await fetchSerpApi((apiKey) => {
+    const url = new URL('https://serpapi.com/search')
+    url.searchParams.set('engine', 'google_lens')
+    url.searchParams.set('url', publicPhotoUrl)
+    url.searchParams.set('api_key', apiKey)
+    return url
+  }, apiKeys.serpapi)
 
-  if (!response.ok) {
-    throw new Error(`step1: SerpAPI returned HTTP ${response.status}`)
+  if (!response || !response.ok) {
+    throw new Error(`step1: SerpAPI returned HTTP ${response?.status ?? '(no response)'}`)
   }
 
   const data = (await response.json()) as SerpApiLensResponse

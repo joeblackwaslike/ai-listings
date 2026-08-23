@@ -2,15 +2,27 @@ import { runText } from '@/lib/claude'
 import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
-import { searchEbayActive } from './comps/ebay-browse'
+import { searchEbayActive, type ActiveListing } from './comps/ebay-browse'
+import { searchEbaySoldComps } from '@/lib/platforms/ebay-soldcomps'
 import { conditionDelta, adjustForCondition, CATEGORY_DISCOUNT } from './pricing-adjust'
+import { fetchSerpApi } from './serpapi-client'
 
 interface SerpShoppingResult {
   title: string
-  link: string
+  // Live-verified 2026-08-23: there's no plain `link` field on google_shopping results --
+  // the URL field is `product_link` (a Google Shopping SERP link, not a direct retailer
+  // URL). `link` was always undefined, which never surfaced because the extracted_price
+  // bug above (fixed same day) meant every result was already filtered out before this
+  // field was ever read.
+  product_link: string
   source?: string
   condition?: string
-  price?: { extracted_value?: number }
+  // Live-verified 2026-08-23: SerpAPI's google_shopping engine returns `price` as a
+  // formatted string ("$266.25") with the numeric value in a separate top-level
+  // `extracted_price` field -- NOT nested as `price.extracted_value`. That wrong shape
+  // meant `result.price?.extracted_value` was undefined for every result, always,
+  // silently dropping 100% of Google Shopping comps and retail-price detection.
+  extracted_price?: number
 }
 
 interface SerpApiShoppingResponse {
@@ -23,143 +35,158 @@ async function fetchSerpComps(
   model: string,
   apiKey: string
 ): Promise<SerpShoppingResult[]> {
-  const query = `${brand} ${model}`
-  const url = new URL('https://serpapi.com/search')
-  url.searchParams.set('engine', 'google_shopping')
-  url.searchParams.set('q', query)
-  url.searchParams.set('api_key', apiKey)
-  url.searchParams.set('num', '10')
-  url.searchParams.set('condition', 'used')
-
-  const response = await fetch(url.toString())
-
-  if (!response.ok) {
-    throw new Error(`step3: SerpAPI shopping returned HTTP ${response.status}`)
-  }
-
-  const data = (await response.json()) as SerpApiShoppingResponse
-  return data.shopping_results ?? []
-}
-
-async function fetchRetailPrice(
-  brand: string,
-  model: string,
-  apiKey: string
-): Promise<{ retailPriceCents: number; source: string; promoNote: string | null } | null> {
   try {
     const query = `${brand} ${model}`
-    const url = new URL('https://serpapi.com/search')
-    url.searchParams.set('engine', 'google_shopping')
-    url.searchParams.set('q', query)
-    url.searchParams.set('api_key', apiKey)
-    url.searchParams.set('num', '5')
-    url.searchParams.set('condition', 'new')
+    const response = await fetchSerpApi((key) => {
+      const url = new URL('https://serpapi.com/search')
+      url.searchParams.set('engine', 'google_shopping')
+      url.searchParams.set('q', query)
+      url.searchParams.set('api_key', key)
+      url.searchParams.set('num', '10')
+      url.searchParams.set('condition', 'used')
+      return url
+    }, apiKey)
 
-    const response = await fetch(url.toString())
-    if (!response.ok) return null
+    if (!response || !response.ok) {
+      console.warn(`fetchSerpComps: HTTP ${response?.status ?? '(no response)'} for query "${brand} ${model}"`)
+      return []
+    }
+
+    const data = (await response.json()) as SerpApiShoppingResponse
+    return data.shopping_results ?? []
+  } catch (err) {
+    // Every other fetcher in this file degrades to an empty/null result on failure
+    // rather than throwing (this one didn't -- a SerpAPI 429 during a batch run
+    // crashed runStep3PricingResearch entirely before any comps/pricing got written,
+    // rather than just missing this one source, confirmed 2026-08-23 during a
+    // 13-listing batch run: 5 listings failed outright on HTTP 429 alone).
+    console.warn('fetchSerpComps: failed, returning empty', err instanceof Error ? err.message : String(err))
+    return []
+  }
+}
+
+interface RetailCandidate {
+  title: string
+  priceCents: number
+  source: string
+}
+
+// Resale/consignment/auction marketplaces -- never a "retail" (MSRP) price even when Google
+// Shopping tags the listing condition=new (sellers self-report condition; a used item resold
+// "like new" on eBay is not a retail price). Live-confirmed 2026-08-23: the original "$81 at
+// Vestiaire Collective" bug and a follow-up "$170 on eBay" both came from marketplace listings
+// slipping past relevance scoring on brand+sub-type match alone. This is a source-type filter,
+// not a relevance one -- a perfectly on-target eBay listing is still a resale price.
+const RESALE_MARKETPLACE_SOURCES = [
+  'ebay', 'vestiaire', 'stockx', 'poshmark', 'therealreal', 'the realreal', 'fashionphile',
+  '1stdibs', 'rebag', 'grailed', 'depop', 'thredup', 'vinted', 'tradesy', 'mercari',
+]
+function isResaleMarketplace(source: string): boolean {
+  const lower = source.toLowerCase()
+  return RESALE_MARKETPLACE_SOURCES.some((s) => lower.includes(s))
+}
+
+// Returns raw candidates only -- no price is picked here. Live-tested 2026-08-23 against
+// "Louis Vuitton Pocket Organizer (Monogram Taurillon Illusion)": a plain keyword search
+// against Google Shopping returns 40 results spanning a dozen *different* LV products
+// (Pocket Agenda Cover $81, Zippy Wallet, Onthego Organizer, Emily Notebook Cover...), not
+// just the target item -- and their prices are all individually legitimate, so IQR/gap-ratio
+// outlier detection can't tell the $81 agenda cover from a genuine cheap Pocket Organizer
+// (q1=$520/q3=$1100 gives an IQR band down to -$350, well past $81). This is a relevance
+// problem, not a statistical one -- the caller runs the same scoreCompRelevance gate already
+// used for lowestActive before picking a price from these candidates.
+async function fetchRetailCandidates(brand: string, model: string, apiKey: string): Promise<RetailCandidate[]> {
+  try {
+    const query = `${brand} ${model}`
+    const response = await fetchSerpApi((key) => {
+      const url = new URL('https://serpapi.com/search')
+      url.searchParams.set('engine', 'google_shopping')
+      url.searchParams.set('q', query)
+      url.searchParams.set('api_key', key)
+      url.searchParams.set('num', '10')
+      url.searchParams.set('condition', 'new')
+      return url
+    }, apiKey)
+    if (!response || !response.ok) {
+      console.warn(`fetchRetailCandidates: HTTP ${response?.status ?? '(no response)'} for query "${query}"`)
+      return []
+    }
 
     const data = (await response.json()) as SerpApiShoppingResponse
     const results = data.shopping_results ?? []
-
-    const prices = results
-      .map((r) => r.price?.extracted_value)
-      .filter((v): v is number => typeof v === 'number' && v > 0)
-
-    if (prices.length === 0) return null
-
-    const sortedPrices = [...prices].sort((a, b) => a - b)
-    const lowestPrice = sortedPrices[0]
-    const retailPriceCents = Math.round(lowestPrice * 100)
-
-    let promoNote: string | null = null
-    if (prices.length >= 2) {
-      const median =
-        prices.length % 2 === 0
-          ? (sortedPrices[Math.floor(prices.length / 2) - 1] + sortedPrices[Math.floor(prices.length / 2)]) / 2
-          : sortedPrices[Math.floor(prices.length / 2)]
-      if (lowestPrice < median * 0.85) {
-        promoNote = 'Appears to be on sale'
-      }
-    }
-
-    const lowestResult = results.find((r) => r.price?.extracted_value === lowestPrice)
-    const source = lowestResult?.source ?? 'Google Shopping'
-
-    return { retailPriceCents, source, promoNote }
-  } catch {
-    return null
+    return results
+      .filter((r): r is SerpShoppingResult & { extracted_price: number } =>
+        typeof r.extracted_price === 'number' && r.extracted_price > 0 && !isResaleMarketplace(r.source ?? '')
+      )
+      .map((r) => ({ title: r.title, priceCents: Math.round(r.extracted_price * 100), source: r.source ?? 'Google Shopping' }))
+  } catch (err) {
+    console.warn('fetchRetailCandidates: failed, returning empty', err instanceof Error ? err.message : String(err))
+    return []
   }
 }
 
-interface SerpApiEbayResult {
+interface SerpApiEbayActiveResult {
   title?: string
-  price?: { extracted_value?: number }
-  sold_date?: string
+  price?: { extracted?: number }
   link?: string
   condition?: string
 }
 
-interface SerpApiEbayResponse {
-  organic_results?: SerpApiEbayResult[]
+interface SerpApiEbayActiveResponse {
+  organic_results?: SerpApiEbayActiveResult[]
   error?: string
 }
 
-// SerpAPI's dedicated eBay engine scrapes eBay's own public "Sold Items" search page
-// (show_only=Sold) -- no OAuth scope needed, unlike Marketplace Insights. Observed
-// flaky in practice (503s, multi-minute timeouts on some queries) -- always resolve
-// to an empty array rather than let a slow/failed scrape block the pipeline.
-async function fetchEbaySoldComps(
-  query: string,
-  apiKey: string
-): Promise<Array<{ title: string; priceCents: number; soldAt: string | null; listingUrl: string }>> {
+// SerpAPI's eBay engine, plain search (no show_only=Sold -- that filter is bot-blocked
+// by eBay as of 2026-08, confirmed live: 90s timeout -> 503, isolated to the Sold filter
+// specifically, while this plain-search form returned well under the 10s timeout below
+// in initial testing). Used only as a fallback
+// when the official Browse API (searchEbayActive) comes back empty -- see
+// searchEbayActiveWithFallback below -- not called on the happy path, so a working
+// Browse API never spends SerpAPI quota on a redundant second active-listings source.
+async function fetchEbayActiveSerpApi(query: string, apiKey: string): Promise<ActiveListing[]> {
   if (!apiKey) return []
   try {
-    const url = new URL('https://serpapi.com/search')
-    url.searchParams.set('engine', 'ebay')
-    url.searchParams.set('_nkw', query)
-    url.searchParams.set('show_only', 'Sold')
-    url.searchParams.set('api_key', apiKey)
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) })
-    if (!res.ok) {
-      console.warn(`fetchEbaySoldComps: HTTP ${res.status} for query "${query}"`)
+    const res = await fetchSerpApi((key) => {
+      const url = new URL('https://serpapi.com/search')
+      url.searchParams.set('engine', 'ebay')
+      url.searchParams.set('_nkw', query)
+      url.searchParams.set('api_key', key)
+      return url
+    }, apiKey, 10_000)
+    if (!res || !res.ok) {
+      console.warn(`fetchEbayActiveSerpApi: HTTP ${res?.status ?? '(no response)'} for query "${query}"`)
       return []
     }
 
-    const data = (await res.json()) as SerpApiEbayResponse
+    const data = (await res.json()) as SerpApiEbayActiveResponse
     if (data.error) {
-      console.warn(`fetchEbaySoldComps: SerpAPI error for query "${query}"`, JSON.stringify(data.error))
+      console.warn(`fetchEbayActiveSerpApi: SerpAPI error for query "${query}"`, JSON.stringify(data.error))
       return []
     }
 
     return (data.organic_results ?? [])
-      .filter((r) => r.title && r.price?.extracted_value && r.sold_date)
-      .map((r) => {
-        // SerpAPI's eBay sold_date is a scraped, human-readable string (e.g.
-        // "Sold  Mar 14, 2024") -- strip a leading "Sold" prefix and validate
-        // the parse before calling toISOString(), which throws RangeError on
-        // an Invalid Date and would otherwise lose the entire batch below.
-        const cleaned = r.sold_date?.replace(/^sold\s*/i, '').trim()
-        const parsedDate = cleaned ? new Date(cleaned) : null
-        const soldAt = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null
-        return {
-          title: r.title ?? '',
-          priceCents: Math.round((r.price?.extracted_value ?? 0) * 100),
-          soldAt,
-          listingUrl: r.link ?? '',
-        }
-      })
-      // soldAt null means the scraped date string didn't parse -- these rows
-      // already passed the r.sold_date-is-truthy filter above, so a null here
-      // is a genuine parse failure, not "no date provided". Drop rather than
-      // insert as unverifiable sold evidence with no confirmable sale date.
-      .filter((c) => c.priceCents > 0 && c.soldAt !== null)
+      .filter((r) => r.title && typeof r.price?.extracted === 'number' && r.price.extracted > 0 && r.link)
+      .map((r) => ({
+        title: r.title ?? '',
+        priceCents: Math.round((r.price?.extracted ?? 0) * 100),
+        url: r.link ?? '',
+        condition: r.condition ?? 'Not specified',
+        provider: 'serpapi' as const,
+      }))
   } catch (err) {
-    // SerpAPI eBay sold is documented as flaky (503s, multi-minute timeouts observed).
-    // Log so operators can distinguish timeout/quota exhaustion from a bug.
-    console.warn('fetchEbaySoldComps: failed, returning empty', err instanceof Error ? err.message : String(err))
+    console.warn('fetchEbayActiveSerpApi: failed, returning empty', err instanceof Error ? err.message : String(err))
     return []
   }
+}
+
+// Browse API (official, structured, free) is the primary active-listings source.
+// SerpAPI's scrape only runs when Browse comes back empty -- token/quota issues, not
+// the common case -- so a healthy Browse API never costs a SerpAPI request.
+async function searchEbayActiveWithFallback(query: string, serpApiKey: string): Promise<ActiveListing[]> {
+  const browseResults = await searchEbayActive(query)
+  if (browseResults.length > 0) return browseResults
+  return fetchEbayActiveSerpApi(query, serpApiKey)
 }
 
 interface SerpApiOrganicResult {
@@ -218,15 +245,16 @@ async function fetchTheRealRealComps(
 ): Promise<Array<{ title: string; priceCents: number; listingUrl: string }>> {
   if (!apiKey) return []
   try {
-    const url = new URL('https://serpapi.com/search')
-    url.searchParams.set('engine', 'google')
-    url.searchParams.set('q', `site:therealreal.com ${query}`)
-    url.searchParams.set('num', '10')
-    url.searchParams.set('api_key', apiKey)
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) })
-    if (!res.ok) {
-      console.warn(`fetchTheRealRealComps: HTTP ${res.status} for query "${query}"`)
+    const res = await fetchSerpApi((key) => {
+      const url = new URL('https://serpapi.com/search')
+      url.searchParams.set('engine', 'google')
+      url.searchParams.set('q', `site:therealreal.com ${query}`)
+      url.searchParams.set('num', '10')
+      url.searchParams.set('api_key', key)
+      return url
+    }, apiKey, 15_000)
+    if (!res || !res.ok) {
+      console.warn(`fetchTheRealRealComps: HTTP ${res?.status ?? '(no response)'} for query "${query}"`)
       return []
     }
 
@@ -682,16 +710,16 @@ export async function runStep3PricingResearch(
 
   const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
   const searchQuery = `${genderPrefix}${step2.brand} ${model}`
-  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, ebaySold, theRealRealComps] = await Promise.all([
-    searchEbayActive(searchQuery),
+  const [ebayActive, serpResults, redditComps, retailCandidates, poshmarkSold, poshmarkActive, ebaySold, theRealRealComps] = await Promise.all([
+    searchEbayActiveWithFallback(searchQuery, apiKeys.serpapi),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, apiKeys.anthropic)
       : Promise.resolve([]),
-    fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
+    fetchRetailCandidates(step2.brand, model, apiKeys.serpapi),
     fetchPoshmarkSoldComps(searchQuery, apiKeys.poshmarkCookies),
     fetchPoshmarkActiveFloor(searchQuery, apiKeys.poshmarkCookies),
-    fetchEbaySoldComps(searchQuery, apiKeys.serpapi),
+    searchEbaySoldComps(searchQuery, apiKeys.soldcomps),
     fetchTheRealRealComps(searchQuery, apiKeys.serpapi),
   ])
 
@@ -707,11 +735,12 @@ export async function runStep3PricingResearch(
     adjusted_price_cents: number
     relevance_score: number | null
     color: string | null
+    provider: string | null
   }> = []
 
   for (const result of serpResults) {
-    if (!result.price?.extracted_value) continue
-    const priceCents = Math.round(result.price.extracted_value * 100)
+    if (!result.extracted_price) continue
+    const priceCents = Math.round(result.extracted_price * 100)
     const source = result.source?.toLowerCase().includes('poshmark')
       ? 'poshmark_active'
       : result.source?.toLowerCase().includes('therealreal')
@@ -725,11 +754,12 @@ export async function runStep3PricingResearch(
       sale_price_cents: priceCents,
       condition: result.condition ?? 'Not specified',
       sold_at: null,
-      listing_url: result.link,
+      listing_url: result.product_link,
       condition_delta: delta,
       adjusted_price_cents: adjustForCondition(priceCents, delta),
       relevance_score: null,
       color: null,
+      provider: 'serpapi',
     })
   }
 
@@ -747,6 +777,7 @@ export async function runStep3PricingResearch(
       adjusted_price_cents: adjustForCondition(comp.sale_price_cents, delta),
       relevance_score: null,
       color: null,
+      provider: 'reddit_claude',
     })
   }
 
@@ -757,7 +788,7 @@ export async function runStep3PricingResearch(
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
       listing_url: item.listingUrl, condition_delta: delta,
       adjusted_price_cents: adjustForCondition(item.priceCents, delta),
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: 'poshmark_direct',
     })
   }
 
@@ -768,7 +799,7 @@ export async function runStep3PricingResearch(
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: item.soldAt,
       listing_url: item.listingUrl, condition_delta: delta,
       adjusted_price_cents: adjustForCondition(item.priceCents, delta),
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: 'soldcomps',
     })
   }
 
@@ -779,7 +810,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'ebay_active', title: item.title,
       sale_price_cents: item.priceCents, condition: item.condition, sold_at: null,
       listing_url: item.url, condition_delta: 'same', adjusted_price_cents: item.priceCents,
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: item.provider,
     })
   }
   for (const item of poshmarkActive) {
@@ -787,7 +818,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'poshmark_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: 'poshmark_direct',
     })
   }
   for (const item of theRealRealComps) {
@@ -795,7 +826,7 @@ export async function runStep3PricingResearch(
       listing_id: listingId, source: 'therealreal_active', title: item.title,
       sale_price_cents: item.priceCents, condition: 'Not specified', sold_at: null,
       listing_url: item.listingUrl, condition_delta: 'same', adjusted_price_cents: item.priceCents,
-      relevance_score: null, color: null,
+      relevance_score: null, color: null, provider: 'serpapi',
     })
   }
   // Move any _active rows that ended up in compRows (from SerpAPI) into activeRows
@@ -827,6 +858,43 @@ export async function runStep3PricingResearch(
   const lowestActive = relevantActive.length > 0
     ? relevantActive.reduce((min, r) => (r.sale_price_cents < min.sale_price_cents ? r : min))
     : null
+
+  // Retail "new" price -- same fail-closed relevance gate as lowestActive above: a raw
+  // keyword search over Google Shopping mixes in different same-brand products (see
+  // fetchRetailCandidates' comment), so the unfiltered minimum is untrustworthy. A wrong
+  // "$81 retail" claim shown on the listing is worse than showing none, so no key / no
+  // score / a failed scoring batch all mean no retail price this run, not a guess.
+  const retailRelevance = apiKeys.anthropic && retailCandidates.length > 0
+    ? await scoreCompRelevance(retailCandidates, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
+    : new Map<number, CompRelevance>()
+  // Luxury houses (LV, Chanel, Hermes, etc.) distribute exclusively through their own
+  // boutiques/site -- there is no legitimate third-party "retail" channel for them, so any
+  // source not carrying the brand's own name is a resale/consignment listing regardless of
+  // what it calls itself. Live-confirmed 2026-08-23: "Lulu Cadieux" (a consignment boutique,
+  // not on the marketplace denylist) passed the relevance gate on a WRONG colorway ("Shadow
+  // Black" vs. the target "Illusion") and still would've been trusted as retail without this.
+  const relevantRetail = retailCandidates
+    .map((c, i) => ({ ...c, adjusted_price_cents: c.priceCents, relevance_score: retailRelevance.get(i)?.score ?? null }))
+    .filter((c) => c.relevance_score !== null && c.relevance_score >= COMP_RELEVANCE_THRESHOLD)
+    .filter((c) => !step2.isLuxury || c.source.toLowerCase().includes(step2.brand.toLowerCase()))
+  const filteredRetail = removeOutlierComps(relevantRetail)
+  let retailResult: { retailPriceCents: number; source: string; promoNote: string | null } | null = null
+  if (filteredRetail.length > 0) {
+    const sortedRetail = [...filteredRetail].sort((a, b) => a.priceCents - b.priceCents)
+    const lowestRetail = sortedRetail[0]
+    let promoNote: string | null = null
+    if (sortedRetail.length >= 2) {
+      const prices = sortedRetail.map((r) => r.priceCents)
+      const median =
+        prices.length % 2 === 0
+          ? (prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2
+          : prices[Math.floor(prices.length / 2)]
+      if (lowestRetail.priceCents < median * 0.85) {
+        promoNote = 'Appears to be on sale'
+      }
+    }
+    retailResult = { retailPriceCents: lowestRetail.priceCents, source: lowestRetail.source, promoNote }
+  }
 
   // Deduplicate same-price clusters before relevance filtering (catches bulk-lot duplicate listings)
   const dedupedRows = deduplicateComps(soldRows)
@@ -910,6 +978,10 @@ export async function runStep3PricingResearch(
         .delete()
         .eq('listing_id', listingId)
         .not('id', 'in', `(${insertedIds.join(',')})`)
+        // Hand-entered comps (POST /api/listings/[id]/comps) aren't something this run
+        // fetched and can't regenerate -- an automated retry must never delete data the
+        // seller typed in themselves, even though it deletes every other prior-run row.
+        .not('source', 'in', '(manual,manual_active)')
       if (deleteError) {
         throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
       }
@@ -956,6 +1028,26 @@ export async function runStep3PricingResearch(
     const existing = (existingRows ?? []) as typeof compRows
     effectiveSoldComps = removeOutlierComps(deduplicateComps(existing.filter((r) => !isActiveSource(r.source))))
     effectiveActiveComps = removeOutlierComps(deduplicateComps(existing.filter((r) => isActiveSource(r.source))))
+  } else {
+    // toInsert.length > 0 means this run's own fresh fetch produced filteredComps/
+    // filteredActive above -- but those come purely from THIS run's external calls and
+    // never touch the DB, so a hand-entered comp (preserved by the delete-old-rows guard's
+    // manual/manual_active exclusion) would otherwise sit in pricing_comps completely
+    // unused by every subsequent automated run. Fold it back in here.
+    const { data: manualRows } = await supabase
+      .from('pricing_comps')
+      .select('*')
+      .eq('listing_id', listingId)
+      .in('source', ['manual', 'manual_active'])
+    if (manualRows && manualRows.length > 0) {
+      const manual = manualRows as typeof compRows
+      effectiveSoldComps = removeOutlierComps(
+        deduplicateComps([...effectiveSoldComps, ...manual.filter((r) => r.source === 'manual')])
+      )
+      effectiveActiveComps = removeOutlierComps(
+        deduplicateComps([...effectiveActiveComps, ...manual.filter((r) => r.source === 'manual_active')])
+      )
+    }
   }
 
   // When there are zero relevant SOLD comps but real active-market data exists
@@ -1025,6 +1117,10 @@ export async function runStep3PricingResearch(
     : null
 
   await pushPipelineStep(listingId, {
+    // pushPipelineStep floors pipeline_step atomically via a Postgres GREATEST() (migration
+    // 0025) -- passing this step's own number is enough; the DB-side floor is what actually
+    // prevents a "retry pricing" on an already-further-along listing from regressing it,
+    // including under concurrent writers (see supabase-push.ts).
     pipeline_step: 3,
     confidence_score: confidenceScore,
     suggested_price_cents: suggestedPriceCents,
@@ -1057,5 +1153,80 @@ export async function runStep3PricingResearch(
     }
   } catch {
     // Informational — never block the pipeline
+  }
+}
+
+/** Re-applies the dedup/outlier/median pricing math over whatever pricing_comps rows are
+ * already persisted for a listing -- no external API calls, so it's safe to run instantly
+ * any time a comp is added/edited/removed by hand (POST /api/listings/[id]/comps). Mirrors
+ * the toInsert.length===0 reload branch in runStep3PricingResearch above, minus the parts
+ * that need fresh external data or a Claude call: retail_price_cents, lowest_active_*, and
+ * pricing_methodology are deliberately left untouched by a manual recalc. */
+export async function recalculateListingPrice(listingId: string): Promise<{
+  suggestedPriceCents: number | null
+  confidenceScore: number
+  compCount: number
+}> {
+  const supabase = getSupabaseAdmin()
+
+  const { data: listing, error: listingError } = await supabase
+    .from('listings')
+    .select('category')
+    .eq('id', listingId)
+    .single()
+  if (listingError || !listing) {
+    throw new Error(`recalculateListingPrice: listing not found — ${listingError?.message ?? listingId}`)
+  }
+
+  const { data: existingRows, error: reloadError } = await supabase
+    .from('pricing_comps')
+    .select('source, title, sale_price_cents, adjusted_price_cents, relevance_score')
+    .eq('listing_id', listingId)
+    .order('created_at', { ascending: false })
+    .limit(200)
+  if (reloadError) {
+    throw new Error(`recalculateListingPrice: pricing_comps reload failed — ${reloadError.message}`)
+  }
+
+  const existing = (existingRows ?? []) as Array<{
+    source: string
+    title: string
+    sale_price_cents: number
+    adjusted_price_cents: number
+    relevance_score: number | null
+  }>
+  const effectiveSoldComps = removeOutlierComps(deduplicateComps(existing.filter((r) => !isActiveSource(r.source))))
+  const effectiveActiveComps = removeOutlierComps(deduplicateComps(existing.filter((r) => isActiveSource(r.source))))
+
+  const usingActiveFallback = effectiveSoldComps.length === 0 && effectiveActiveComps.length > 0
+  const confidenceScore = usingActiveFallback
+    ? Math.min(35, Math.round(calcConfidenceScore(effectiveActiveComps.length) * 0.5))
+    : calcConfidenceScore(effectiveSoldComps.length)
+
+  const prices = usingActiveFallback
+    ? effectiveActiveComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+    : effectiveSoldComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+  const mid = Math.floor(prices.length / 2)
+  const suggestedPriceCents =
+    prices.length === 0
+      ? null
+      : prices.length % 2 === 0
+        ? Math.round((prices[mid - 1] + prices[mid]) / 2)
+        : prices[mid]
+
+  const discountPct = CATEGORY_DISCOUNT[(listing.category as string)?.toLowerCase() ?? ''] ?? 0.18
+  const priceToMoveCents = suggestedPriceCents != null ? Math.round(suggestedPriceCents * (1 - discountPct)) : null
+
+  await pushPipelineStep(listingId, {
+    confidence_score: confidenceScore,
+    suggested_price_cents: suggestedPriceCents,
+    price_to_move_cents: priceToMoveCents,
+    price_to_move_discount_pct: discountPct * 100,
+  })
+
+  return {
+    suggestedPriceCents,
+    confidenceScore,
+    compCount: usingActiveFallback ? effectiveActiveComps.length : effectiveSoldComps.length,
   }
 }

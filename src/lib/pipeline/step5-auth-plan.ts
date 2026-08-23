@@ -111,6 +111,8 @@ Use the generate_auth_plan tool.`
   }))
 
   await pushPipelineStep(listingId, {
+    // pushPipelineStep floors pipeline_step atomically via a Postgres GREATEST() (migration
+    // 0025) -- see the comment there for why this can't be a read-then-write-max here.
     pipeline_step: 5,
     auth_plan: authPlan,
   })
