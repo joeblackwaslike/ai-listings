@@ -3,6 +3,24 @@ name: Build & Deploy
 on:
   push:
     branches: [main]
+    # Rebuilding and restarting the app pods is disruptive to in-flight Inngest pipeline
+    # runs (a redeploy mid-step forces a retry, and enough of them back-to-back pushes retry
+    # backoff out to tens of minutes -- confirmed 2026-08-23: repeated deploys for unrelated
+    # dashboard/settings changes stalled a listing backlog for over an hour). Scope the
+    # trigger to files that actually affect the built image (deployment/ is already excluded
+    # from the Docker build context via .dockerignore) so infra-manifest, docs, and script
+    # commits stop forcing a restart nothing needed.
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - 'tsconfig.json'
+      - 'postcss.config.mjs'
+      - 'deployment/Dockerfile'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 env:
