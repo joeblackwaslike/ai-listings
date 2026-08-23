@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-listings-inngest-ts
+  namespace: ai-listings
+  annotations:
+    tailscale.com/proxy-group: cluster-ingress
+    tailscale.com/hostname: ai-listings-inngest
+spec:
+  ingressClassName: tailscale
+  # Must use defaultBackend — Tailscale ProxyGroup ingress does not support rules.host
+  defaultBackend:
+    service:
+      name: inngest
+      port:
+        number: 8288
+  tls:
+    - hosts:
+        - ai-listings-inngest
