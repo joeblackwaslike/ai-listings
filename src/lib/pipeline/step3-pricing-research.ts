@@ -987,6 +987,10 @@ export async function runStep3PricingResearch(
         .delete()
         .eq('listing_id', listingId)
         .not('id', 'in', `(${insertedIds.join(',')})`)
+        // Hand-entered comps (POST /api/listings/[id]/comps) aren't something this run
+        // fetched and can't regenerate -- an automated retry must never delete data the
+        // seller typed in themselves, even though it deletes every other prior-run row.
+        .not('source', 'in', '(manual,manual_active)')
       if (deleteError) {
         throw new Error(`step3: pricing_comps delete failed — ${deleteError.message}`)
       }
@@ -1033,6 +1037,26 @@ export async function runStep3PricingResearch(
     const existing = (existingRows ?? []) as typeof compRows
     effectiveSoldComps = removeOutlierComps(deduplicateComps(existing.filter((r) => !isActiveSource(r.source))))
     effectiveActiveComps = removeOutlierComps(deduplicateComps(existing.filter((r) => isActiveSource(r.source))))
+  } else {
+    // toInsert.length > 0 means this run's own fresh fetch produced filteredComps/
+    // filteredActive above -- but those come purely from THIS run's external calls and
+    // never touch the DB, so a hand-entered comp (preserved by the delete-old-rows guard's
+    // manual/manual_active exclusion) would otherwise sit in pricing_comps completely
+    // unused by every subsequent automated run. Fold it back in here.
+    const { data: manualRows } = await supabase
+      .from('pricing_comps')
+      .select('*')
+      .eq('listing_id', listingId)
+      .in('source', ['manual', 'manual_active'])
+    if (manualRows && manualRows.length > 0) {
+      const manual = manualRows as typeof compRows
+      effectiveSoldComps = removeOutlierComps(
+        deduplicateComps([...effectiveSoldComps, ...manual.filter((r) => r.source === 'manual')])
+      )
+      effectiveActiveComps = removeOutlierComps(
+        deduplicateComps([...effectiveActiveComps, ...manual.filter((r) => r.source === 'manual_active')])
+      )
+    }
   }
 
   // When there are zero relevant SOLD comps but real active-market data exists
@@ -1134,5 +1158,80 @@ export async function runStep3PricingResearch(
     }
   } catch {
     // Informational — never block the pipeline
+  }
+}
+
+/** Re-applies the dedup/outlier/median pricing math over whatever pricing_comps rows are
+ * already persisted for a listing -- no external API calls, so it's safe to run instantly
+ * any time a comp is added/edited/removed by hand (POST /api/listings/[id]/comps). Mirrors
+ * the toInsert.length===0 reload branch in runStep3PricingResearch above, minus the parts
+ * that need fresh external data or a Claude call: retail_price_cents, lowest_active_*, and
+ * pricing_methodology are deliberately left untouched by a manual recalc. */
+export async function recalculateListingPrice(listingId: string): Promise<{
+  suggestedPriceCents: number | null
+  confidenceScore: number
+  compCount: number
+}> {
+  const supabase = getSupabaseAdmin()
+
+  const { data: listing, error: listingError } = await supabase
+    .from('listings')
+    .select('category')
+    .eq('id', listingId)
+    .single()
+  if (listingError || !listing) {
+    throw new Error(`recalculateListingPrice: listing not found — ${listingError?.message ?? listingId}`)
+  }
+
+  const { data: existingRows, error: reloadError } = await supabase
+    .from('pricing_comps')
+    .select('source, title, sale_price_cents, adjusted_price_cents, relevance_score')
+    .eq('listing_id', listingId)
+    .order('created_at', { ascending: false })
+    .limit(200)
+  if (reloadError) {
+    throw new Error(`recalculateListingPrice: pricing_comps reload failed — ${reloadError.message}`)
+  }
+
+  const existing = (existingRows ?? []) as Array<{
+    source: string
+    title: string
+    sale_price_cents: number
+    adjusted_price_cents: number
+    relevance_score: number | null
+  }>
+  const effectiveSoldComps = removeOutlierComps(deduplicateComps(existing.filter((r) => !isActiveSource(r.source))))
+  const effectiveActiveComps = removeOutlierComps(deduplicateComps(existing.filter((r) => isActiveSource(r.source))))
+
+  const usingActiveFallback = effectiveSoldComps.length === 0 && effectiveActiveComps.length > 0
+  const confidenceScore = usingActiveFallback
+    ? Math.min(35, Math.round(calcConfidenceScore(effectiveActiveComps.length) * 0.5))
+    : calcConfidenceScore(effectiveSoldComps.length)
+
+  const prices = usingActiveFallback
+    ? effectiveActiveComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+    : effectiveSoldComps.map((r) => r.adjusted_price_cents).sort((a, b) => a - b)
+  const mid = Math.floor(prices.length / 2)
+  const suggestedPriceCents =
+    prices.length === 0
+      ? null
+      : prices.length % 2 === 0
+        ? Math.round((prices[mid - 1] + prices[mid]) / 2)
+        : prices[mid]
+
+  const discountPct = CATEGORY_DISCOUNT[(listing.category as string)?.toLowerCase() ?? ''] ?? 0.18
+  const priceToMoveCents = suggestedPriceCents != null ? Math.round(suggestedPriceCents * (1 - discountPct)) : null
+
+  await pushPipelineStep(listingId, {
+    confidence_score: confidenceScore,
+    suggested_price_cents: suggestedPriceCents,
+    price_to_move_cents: priceToMoveCents,
+    price_to_move_discount_pct: discountPct * 100,
+  })
+
+  return {
+    suggestedPriceCents,
+    confidenceScore,
+    compCount: usingActiveFallback ? effectiveActiveComps.length : effectiveSoldComps.length,
   }
 }

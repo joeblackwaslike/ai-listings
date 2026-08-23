@@ -37,13 +37,14 @@ export type CompSource =
   | 'therealreal' | 'therealreal_active'
   | 'google' | 'google_active'
   | 'mercari' | 'mercari_active'
-  | 'reddit';
+  | 'reddit'
+  | 'manual' | 'manual_active';
 
 // Which underlying API/data provider produced the comp row -- distinct from `source`
 // (which platform it's from). A single source like 'ebay_active' can come from either
 // the official Browse API or the SerpAPI fallback, so `source` alone can't answer
 // "which of our data providers is actually working."
-export type CompProvider = 'soldcomps' | 'ebay_browse' | 'serpapi' | 'poshmark_direct' | 'reddit_claude';
+export type CompProvider = 'soldcomps' | 'ebay_browse' | 'serpapi' | 'poshmark_direct' | 'reddit_claude' | 'manual';
 
 export type ConversationRole = 'user' | 'assistant';
 
@@ -289,7 +290,7 @@ export interface PricingComp {
   sale_price_cents: number;
   condition: string;
   sold_at: string;
-  listing_url: string;
+  listing_url: string | null;
   condition_delta: 'same' | 'better' | 'worse';
   adjusted_price_cents: number;
   color: string | null;

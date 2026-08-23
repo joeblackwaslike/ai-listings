@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { X, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { X, ExternalLink, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { relativeDate, formatPrice } from '@/lib/utils'
 import type { PricingComp, ListingPriceEvent } from '@/types/listings'
@@ -9,6 +10,7 @@ import type { PricingComp, ListingPriceEvent } from '@/types/listings'
 interface EvidenceDrawerProps {
   open: boolean
   onClose: () => void
+  listingId: string
   comps: PricingComp[]
   suggestedPriceCents: number | null
   confidenceScore: number | null
@@ -26,6 +28,7 @@ const SOURCE_LABELS: Record<string, string> = {
   poshmark: 'Poshmark',
   therealreal: 'TRR',
   google: 'Google',
+  manual: 'Manual',
 }
 
 // Which underlying API/data provider produced the comp -- distinct from the platform
@@ -54,6 +57,7 @@ const DELTA_DISPLAY: Record<string, { label: string; color: string }> = {
 export function EvidenceDrawer({
   open,
   onClose,
+  listingId,
   comps,
   suggestedPriceCents,
   confidenceScore,
@@ -65,11 +69,69 @@ export function EvidenceDrawer({
   pricingMethodology,
   priceHistory,
 }: EvidenceDrawerProps) {
+  const router = useRouter()
   const [methodologyOpen, setMethodologyOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [addTitle, setAddTitle] = useState('')
+  const [addPrice, setAddPrice] = useState('')
+  const [addUrl, setAddUrl] = useState('')
+  const [addActive, setAddActive] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   if (!open) return null
 
   const isUrl = (s: string) => /^https?:\/\//.test(s)
+
+  async function submitManualComp() {
+    const priceDollars = parseFloat(addPrice)
+    if (!addTitle.trim() || !Number.isFinite(priceDollars) || priceDollars <= 0) {
+      setAddError('Title and a positive price are required.')
+      return
+    }
+    setSubmitting(true)
+    setAddError(null)
+    try {
+      const res = await fetch(`/api/listings/${listingId}/comps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: addTitle.trim(),
+          salePriceCents: Math.round(priceDollars * 100),
+          listingUrl: addUrl.trim() || null,
+          isActive: addActive,
+        }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        setAddError(body?.error ?? 'Failed to add comp.')
+        return
+      }
+      setAddTitle('')
+      setAddPrice('')
+      setAddUrl('')
+      setAddActive(false)
+      setAddOpen(false)
+      router.refresh()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function deleteManualComp(compId: string) {
+    setDeletingId(compId)
+    try {
+      const res = await fetch(`/api/listings/${listingId}/comps`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ compId }),
+      })
+      if (res.ok) router.refresh()
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -163,16 +225,87 @@ export function EvidenceDrawer({
                         href={comp.listing_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="ml-auto text-gray-600 hover:text-gray-400"
+                        className={baseSource === 'manual' ? 'text-gray-600 hover:text-gray-400' : 'ml-auto text-gray-600 hover:text-gray-400'}
                       >
                         <ExternalLink className="w-3 h-3" />
                       </a>
+                    )}
+                    {baseSource === 'manual' && (
+                      <button
+                        onClick={() => void deleteManualComp(comp.id)}
+                        disabled={deletingId === comp.id}
+                        className="ml-auto text-gray-600 hover:text-red-400 disabled:opacity-40"
+                        title="Remove this comp"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     )}
                   </div>
                 </div>
               )
             })
           )}
+
+          <div className="px-5 py-3">
+            {addOpen ? (
+              <div className="space-y-2 rounded bg-gray-900/60 border border-gray-800 p-3">
+                <input
+                  value={addTitle}
+                  onChange={(e) => setAddTitle(e.target.value)}
+                  placeholder="Title (e.g. what you sold, or found elsewhere)"
+                  className="w-full bg-transparent text-xs text-gray-300 placeholder-gray-700 outline-none border-b border-gray-800 focus:border-gray-600 pb-1 transition-colors"
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    value={addPrice}
+                    onChange={(e) => setAddPrice(e.target.value)}
+                    placeholder="Price"
+                    inputMode="decimal"
+                    className="w-24 bg-transparent text-xs text-gray-300 placeholder-gray-700 outline-none border-b border-gray-800 focus:border-gray-600 pb-1 transition-colors"
+                  />
+                  <input
+                    value={addUrl}
+                    onChange={(e) => setAddUrl(e.target.value)}
+                    placeholder="URL (optional)"
+                    className="flex-1 bg-transparent text-xs text-gray-300 placeholder-gray-700 outline-none border-b border-gray-800 focus:border-gray-600 pb-1 transition-colors"
+                  />
+                </div>
+                <label className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                  <input
+                    type="checkbox"
+                    checked={addActive}
+                    onChange={(e) => setAddActive(e.target.checked)}
+                    className="accent-emerald-500"
+                  />
+                  This is an active/asking price, not a sold price
+                </label>
+                {addError && <p className="text-[10px] text-red-400">{addError}</p>}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => void submitManualComp()}
+                    disabled={submitting}
+                    className="text-[10px] px-2.5 py-1 rounded bg-emerald-900/60 text-emerald-300 hover:bg-emerald-900/80 transition-colors disabled:opacity-40"
+                  >
+                    {submitting ? 'Adding…' : 'Add & recalculate'}
+                  </button>
+                  <button
+                    onClick={() => { setAddOpen(false); setAddError(null) }}
+                    className="text-[10px] px-2.5 py-1 rounded text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddOpen(true)}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                Add a comp manually
+              </button>
+            )}
+          </div>
 
           {priceHistory != null && priceHistory.length > 0 && (
             <div className="px-5 py-3 space-y-2">

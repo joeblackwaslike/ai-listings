@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { ChevronRight, Check, CheckCircle2, Circle, AlertCircle, Plus, SkipForward, X, Pencil } from 'lucide-react'
 import { formatPrice, getMeasurementFields } from '@/lib/utils'
@@ -79,7 +80,11 @@ function QaChecklistRow({ photo, onRetake, onUseAsIs }: Readonly<QaChecklistRowP
 }
 
 export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<FieldsPanelProps>) {
+  const router = useRouter()
   const [evidenceOpen, setEvidenceOpen] = useState(false)
+  const [priceOverrideOpen, setPriceOverrideOpen] = useState(false)
+  const [priceOverrideInput, setPriceOverrideInput] = useState('')
+  const [savingPriceOverride, setSavingPriceOverride] = useState(false)
   const [authSteps, setAuthSteps] = useState<AuthStep[]>(listing.auth_plan ?? [])
   const [saving, setSaving] = useState(false)
   const [inclusions, setInclusions] = useState<Inclusion[]>(listing.inclusions ?? [])
@@ -210,6 +215,24 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
     return { ...c, condition_delta: delta, adjusted_price_cents: adjustForCondition(c.sale_price_cents, delta) }
   })
 
+  async function savePriceOverride(finalPriceCents: number | null) {
+    setSavingPriceOverride(true)
+    try {
+      const res = await fetch(`/api/listings/${listing.id}/price-override`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ finalPriceCents }),
+      })
+      if (res.ok) {
+        setPriceOverrideOpen(false)
+        setPriceOverrideInput('')
+        router.refresh()
+      }
+    } finally {
+      setSavingPriceOverride(false)
+    }
+  }
+
   async function saveAuthPlan(updated: AuthStep[]) {
     setSaving(true)
     await fetch(`/api/listings/${listing.id}/auth-plan`, {
@@ -328,6 +351,60 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
               <p className="text-[10px] text-amber-500/80">
                 Provisional — will be refined once condition and inclusions are confirmed.
               </p>
+            )}
+            {priceOverrideOpen ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={priceOverrideInput}
+                  onChange={(e) => setPriceOverrideInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const n = parseFloat(priceOverrideInput)
+                      if (!isNaN(n) && n > 0) void savePriceOverride(Math.round(n * 100))
+                    }
+                    if (e.key === 'Escape') setPriceOverrideOpen(false)
+                  }}
+                  placeholder="Override price"
+                  inputMode="decimal"
+                  className="w-24 bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs text-gray-300 outline-none focus:border-gray-600 transition-colors"
+                />
+                <button
+                  onClick={() => {
+                    const n = parseFloat(priceOverrideInput)
+                    if (!isNaN(n) && n > 0) void savePriceOverride(Math.round(n * 100))
+                  }}
+                  disabled={savingPriceOverride}
+                  className="text-[10px] px-2 py-1 rounded bg-emerald-900/60 text-emerald-300 hover:bg-emerald-900/80 transition-colors disabled:opacity-40"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => setPriceOverrideOpen(false)}
+                  className="text-[10px] text-gray-600 hover:text-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setPriceOverrideInput(listing.final_price_cents != null ? String(listing.final_price_cents / 100) : '')
+                  setPriceOverrideOpen(true)
+                }}
+                className="text-[10px] text-gray-600 hover:text-gray-300 transition-colors"
+              >
+                {listing.final_price_cents != null ? 'Edit override' : 'Override price'}
+              </button>
+            )}
+            {listing.final_price_cents != null && !priceOverrideOpen && (
+              <button
+                onClick={() => void savePriceOverride(null)}
+                disabled={savingPriceOverride}
+                className="text-[10px] text-gray-600 hover:text-red-400 transition-colors ml-2 disabled:opacity-40"
+              >
+                Clear override
+              </button>
             )}
             {comps.length > 0 ? (
               <button
@@ -698,6 +775,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
       <EvidenceDrawer
         open={evidenceOpen}
         onClose={() => setEvidenceOpen(false)}
+        listingId={listing.id}
         comps={currentComps}
         suggestedPriceCents={resolvedPriceCents}
         confidenceScore={listing.confidence_score}
