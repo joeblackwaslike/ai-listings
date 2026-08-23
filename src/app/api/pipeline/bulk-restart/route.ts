@@ -63,7 +63,7 @@ export async function POST() {
   )
 
   // Clear blocked state before re-firing so onFailure doesn't double-write. status is left
-  // alone -- 'processing' isn't a value listings_status_check allows, so setting it here
+  // alone here -- 'processing' isn't a value listings_status_check allows, so setting it here
   // always failed the whole UPDATE (agent_blocked included) with no error surfaced, meaning
   // a restart never actually cleared the blocked UI state even when the re-fired pipeline
   // run succeeded (ai-listings-0d6). The pipeline's own steps set status as they progress.
@@ -73,6 +73,23 @@ export async function POST() {
     .in('id', listingIds)
 
   if (clearError) return Response.json({ error: clearError.message }, { status: 500 })
+
+  // fullRestartIds re-fires photo/uploaded, which re-runs step1 (id-gate) through step2
+  // (vision-analysis) from scratch. Leaving status at its stale pre-restart value (in_loop,
+  // from the original onFailure write) let both the dashboard card and the listing detail
+  // page's inLoopContext() treat the listing as if the automated pipeline had already
+  // finished -- the card skipped its processing spinner and showed the raw photo undimmed,
+  // and the detail page greeted with "automated analysis is done, upload your studio
+  // photos" while step1/step2 were silently re-running in the background (OT-0048, 2026-08-23).
+  // Resetting to 'intake' here matches what a brand-new upload gets in upload/route.ts.
+  if (fullRestartIds.length > 0) {
+    const { error: statusResetError } = await admin
+      .from('listings')
+      .update({ status: 'intake' })
+      .in('id', fullRestartIds)
+
+    if (statusResetError) return Response.json({ error: statusResetError.message }, { status: 500 })
+  }
 
   const fullRestartEvents = fullRestartIds
     .filter((id: string) => photoByListing[id])
