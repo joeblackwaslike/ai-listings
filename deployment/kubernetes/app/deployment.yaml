@@ -7,11 +7,6 @@ spec:
   replicas: 2
   # maxUnavailable: 0 / maxSurge: 1 is already k8s's default rounding for 2
   # replicas -- made explicit here so it stays true if replicas ever changes.
-  # The 2026-08-23 incident (Inngest stuck retrying "Unable to reach SDK URL"
-  # for ~55min across three back-to-back rollouts) wasn't caused by dropping
-  # below 2 ready pods -- it was old pods still receiving traffic for a moment
-  # after SIGTERM, before kube-proxy finished removing them from the Service's
-  # endpoints. The container's preStop hook below closes that gap.
   strategy:
     rollingUpdate:
       maxUnavailable: 0
@@ -24,6 +19,18 @@ spec:
       labels:
         app: ai-listings
     spec:
+      # 2026-08-23 incident: Inngest's SDK callbacks (including the pipeline's Claude
+      # Vision calls, which can run well past the default 30s grace period) started
+      # erroring "Unable to reach SDK URL" / "EOF writing request to SDK" during
+      # rollouts. Next.js App Router's `next start` already drains in-flight requests
+      # gracefully on SIGTERM by default (no custom signal handler needed --
+      # node_modules/next/dist/docs/01-app/02-guides/self-hosting.md, "When stopping
+      # the server... The Next.js server will finish in-flight requests... Platforms
+      # should allow a configurable drain period (10-30 seconds is recommended)").
+      # What was missing was the budget: the 5s preStop sleep (below, for kube-proxy
+      # endpoint propagation) was eating into the default 30s terminationGracePeriodSeconds,
+      # so a slow in-flight request could still get SIGKILLed before Next finished it.
+      terminationGracePeriodSeconds: 60
       # Soft preference to land replicas on different nodes -- gives real
       # node-failure redundancy on this 3-node cluster when there's room, but
       # won't block scheduling (e.g. during a node drain) if there isn't.
