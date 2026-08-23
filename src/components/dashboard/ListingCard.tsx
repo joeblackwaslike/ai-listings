@@ -183,8 +183,19 @@ function GenderGatePhoto({
       ) : (
         <div className="absolute inset-0 bg-gray-900" />
       )}
-      {/* stopPropagation keeps chip/field clicks from bubbling to the card's wrapping Link */}
-      <div className="absolute inset-0 bg-gray-950/88 flex flex-col" onClick={(e) => e.stopPropagation()}>
+      {/* preventDefault is the one that actually matters here -- stopPropagation alone stops
+          other React handlers from firing but does nothing to the wrapping Link's native
+          anchor navigation, which fires once the click's default isn't prevented regardless
+          of where propagation was stopped. Without it, every chip/field click here fell
+          through to the card's link instead of picking a gender or submitting measurements
+          (ai-listings dashboard report, 2026-08-23). Matches handleConfirmId's pattern below. */}
+      <div
+        className="absolute inset-0 bg-gray-950/88 flex flex-col"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+        }}
+      >
         <div className="relative flex-1 min-h-0">
           <div className="absolute inset-0 overflow-y-auto px-3 pt-2.5 pb-2 space-y-2">
             <p className="text-[11px] font-semibold text-white leading-tight capitalize">{category.replaceAll('_', ' ')}</p>
