@@ -82,16 +82,32 @@ export async function POST() {
   // and the detail page greeted with "automated analysis is done, upload your studio
   // photos" while step1/step2 were silently re-running in the background (OT-0048, 2026-08-23).
   // Resetting to 'intake' here matches what a brand-new upload gets in upload/route.ts.
+  //
+  // `.lt('pipeline_step', 2)` re-checks the live row instead of trusting the fullRestartIds
+  // snapshot from the SELECT above: the pipeline_step read there can go stale by the time this
+  // UPDATE runs (photo fetch + agent_blocked clear happen in between), and a listing whose
+  // in-flight run finishes step2 in that window already has the status/brand/category/etc it
+  // needs -- writing status='intake' over it here would erase that and strand it (no gate card
+  // renders for status='intake', only for 'id_gate'/'gender_gate') until its now-redundant
+  // re-fired photo/uploaded run works back through step1/step2 again (2026-08-23 incident: 14
+  // listings stuck with populated vision data but status wiped back to 'intake').
+  // Only actually-reset ids (still <2 at write time) get re-fired below -- a listing that
+  // finished step2 in the race window keeps its now-correct status and is left alone instead
+  // of getting a redundant duplicate photo/uploaded run.
+  let confirmedFullRestartIds: string[] = []
   if (fullRestartIds.length > 0) {
-    const { error: statusResetError } = await admin
+    const { data: resetRows, error: statusResetError } = await admin
       .from('listings')
       .update({ status: 'intake' })
       .in('id', fullRestartIds)
+      .lt('pipeline_step', 2)
+      .select('id')
 
     if (statusResetError) return Response.json({ error: statusResetError.message }, { status: 500 })
+    confirmedFullRestartIds = (resetRows ?? []).map((r: { id: string }) => r.id)
   }
 
-  const fullRestartEvents = fullRestartIds
+  const fullRestartEvents = confirmedFullRestartIds
     .filter((id: string) => photoByListing[id])
     .map((id: string) => ({
       name: 'photo/uploaded' as const,
