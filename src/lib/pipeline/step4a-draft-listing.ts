@@ -31,6 +31,16 @@ export async function runStep4aDraftListing(
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
 
+  // Re-running draft generation must not regress the pipeline_step counter below
+  // wherever the listing already is (e.g. a listing that already completed step5)
+  // -- same class of bug as step3-pricing-research.ts, fixed there 2026-08-23.
+  const { data: currentListing } = await supabase
+    .from('listings')
+    .select('pipeline_step')
+    .eq('id', listingId)
+    .single()
+  const pipelineStepFloor = Math.max((currentListing?.pipeline_step as number | null) ?? 0, 4)
+
   // Fetch listing's user_id for rules lookup
   let rulesSection = ''
   try {
@@ -206,7 +216,7 @@ ${rulesSection}Rules:
   }
 
   await pushPipelineStep(listingId, {
-    pipeline_step: 4,
+    pipeline_step: pipelineStepFloor,
     title: draft.canonical_title,
     description: draft.canonical_description,
     // step3's comps-derived price is authoritative whenever it exists (including a

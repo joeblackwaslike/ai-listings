@@ -687,6 +687,19 @@ export async function runStep3PricingResearch(
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
 
+  // Re-running pricing research (e.g. a manual "retry pricing" on a listing that already
+  // finished step4a/4b/5) must not regress the pipeline_step counter -- confirmed
+  // 2026-08-23: an unconditional pipeline_step:3 write below knocked every one of 16
+  // already-completed listings back to "Processing" on the dashboard, even though their
+  // draft/photos/auth-plan were untouched and still valid. Only step3's own actual
+  // progress (>= 3) is this call's business; never move the counter backward.
+  const { data: currentListing } = await supabase
+    .from('listings')
+    .select('pipeline_step')
+    .eq('id', listingId)
+    .single()
+  const pipelineStepFloor = Math.max((currentListing?.pipeline_step as number | null) ?? 0, 3)
+
   const isKeyboard = step2.category?.toLowerCase() === 'keyboards'
 
   const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
@@ -1037,7 +1050,7 @@ export async function runStep3PricingResearch(
     : null
 
   await pushPipelineStep(listingId, {
-    pipeline_step: 3,
+    pipeline_step: pipelineStepFloor,
     confidence_score: confidenceScore,
     suggested_price_cents: suggestedPriceCents,
     price_to_move_cents: priceToMoveCents,
