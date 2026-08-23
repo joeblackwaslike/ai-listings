@@ -5,6 +5,17 @@ metadata:
   namespace: ai-listings
 spec:
   replicas: 2
+  # maxUnavailable: 0 / maxSurge: 1 is already k8s's default rounding for 2
+  # replicas -- made explicit here so it stays true if replicas ever changes.
+  # The 2026-08-23 incident (Inngest stuck retrying "Unable to reach SDK URL"
+  # for ~55min across three back-to-back rollouts) wasn't caused by dropping
+  # below 2 ready pods -- it was old pods still receiving traffic for a moment
+  # after SIGTERM, before kube-proxy finished removing them from the Service's
+  # endpoints. The container's preStop hook below closes that gap.
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: ai-listings
@@ -33,6 +44,14 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
+          lifecycle:
+            preStop:
+              exec:
+                # Gives kube-proxy time to remove this pod from the Service's endpoints
+                # before the container actually stops accepting connections -- without
+                # this, SIGTERM and endpoint removal race, and in-flight requests
+                # (including Inngest's SDK callbacks) can hit a pod that's already gone.
+                command: ["sh", "-c", "sleep 5"]
           envFrom:
             - configMapRef:
                 name: ai-listings-config
