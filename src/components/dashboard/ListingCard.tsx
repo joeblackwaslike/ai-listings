@@ -207,10 +207,17 @@ export function ListingCard({
           />
         )}
         {isProcessing && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-            <Loader2 className="w-5 h-5 text-gray-500 animate-spin" />
-            <span className="text-[10px] text-gray-600">Processing…</span>
-          </div>
+          <>
+            {photoUrl ? (
+              <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-40" />
+            ) : (
+              <div className="absolute inset-0 bg-gray-900" />
+            )}
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-950/40">
+              <Loader2 className="w-5 h-5 text-gray-300 animate-spin" />
+              <span className="text-[10px] text-gray-300">Processing…</span>
+            </div>
+          </>
         )}
         {!isBlocked && !isIdGate && !isProcessing && photoUrl && (
           <Image
