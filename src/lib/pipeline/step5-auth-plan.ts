@@ -1,5 +1,5 @@
 import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
-import { pushPipelineStep } from './supabase-push'
+import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { AuthStep } from '@/types/listings'
 import type { ApiKeys } from '@/lib/user-api-keys'
@@ -19,6 +19,17 @@ export async function runStep5AuthPlan(
   suggestedPriceCents: number | null,
   apiKeys: ApiKeys
 ): Promise<void> {
+  // Same class of bug as step3-pricing-research.ts / step4a-draft-listing.ts, fixed
+  // 2026-08-23: don't let a re-run regress pipeline_step below wherever the listing
+  // already is.
+  const supabase = getSupabaseAdmin()
+  const { data: currentListing } = await supabase
+    .from('listings')
+    .select('pipeline_step')
+    .eq('id', listingId)
+    .single()
+  const pipelineStepFloor = Math.max((currentListing?.pipeline_step as number | null) ?? 0, 5)
+
   const priceNote =
     suggestedPriceCents && suggestedPriceCents >= 50000
       ? `Item is priced at ~$${(suggestedPriceCents / 100).toFixed(0)}, which is ≥$500. eBay Authenticity Guarantee and Poshmark Posh Authenticate handle authentication as part of the sale for items at this price point — the platform bears the cost.`
@@ -111,7 +122,7 @@ Use the generate_auth_plan tool.`
   }))
 
   await pushPipelineStep(listingId, {
-    pipeline_step: 5,
+    pipeline_step: pipelineStepFloor,
     auth_plan: authPlan,
   })
 }
