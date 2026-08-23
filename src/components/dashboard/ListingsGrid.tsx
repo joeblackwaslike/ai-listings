@@ -20,6 +20,15 @@ export function ListingsGrid({ initialListings }: Readonly<{ initialListings: Li
   const listingsRef = useRef(listings)
   listingsRef.current = listings
 
+  // AutoRefresh's router.refresh() re-fetches this data on the server and passes a new
+  // initialListings prop, but useState only reads its initializer on mount -- without this,
+  // every non-realtime, non-polled transition (gender_gate, in_loop, finalizing, published,
+  // photo URLs) was invisible until a hard browser reload (ai-listings dashboard report,
+  // 2026-08-23).
+  useEffect(() => {
+    setListings(initialListings)
+  }, [initialListings])
+
   // Poll every 5s while any listing is actively processing.
   useEffect(() => {
     const supabase = createClient()
