@@ -21,14 +21,13 @@ export const intakePipeline = inngest.createFunction(
     name: 'Intake Pipeline',
     triggers: [{ event: 'photo/uploaded' }],
     retries: 5,
-    // Capped at 1: each concurrent run does Claude Vision + image handling for a
-    // single item, which is memory-heavy on this cluster's resource-constrained
-    // Pi node. Was limit:2 after a 2026-08-15 incident with the old per-call HTTP
-    // Claude backend; since being patched to the subscription/Agent-SDK backend
-    // (spawns a real `claude` subprocess per call, ~36-50k tokens of system-prompt
-    // cache overhead, 8.5-12s latency -- see oauth-backend.ts), even 2 concurrent
-    // runs was enough to OOM the 1Gi-limited pod again (ai-listings-2k0).
-    concurrency: { limit: 1 },
+    // No function-level concurrency cap -- the actual memory-heavy resource is the `claude`
+    // CLI subprocess the oauth backend spawns per call, not this function's other work (DB
+    // writes, gate waits, SerpAPI calls, pricing research). That's now constrained directly by
+    // a per-process mutex in oauth-concurrency.ts, so it no longer serializes everything else
+    // in the pipeline behind Claude Vision specifically (ai-listings dashboard report,
+    // 2026-08-23: a listing's already-answered id-gate sat unprocessed for 35+ minutes because
+    // this cap queued its trivial gate-resume step behind unrelated listings' vision calls).
     onFailure: async ({ error, event }) => {
       const { listingId } = (
         event as unknown as { data: { event: PhotoUploadedEvent } }
@@ -91,12 +90,6 @@ export const intakePipeline = inngest.createFunction(
     let step2Result = await step.run('vision-analysis', () =>
       runStep2VisionAnalysis(listingId, photoUrl, step1Result, apiKeys, null)
     )
-    // The oauth Claude backend spawns a real subprocess per call; back-to-back vision-analysis
-    // calls across queued listings (even at concurrency:{limit:1}) OOM'd the pod because memory
-    // from one subprocess hadn't settled before the next started (ai-listings-2k0). This sleep
-    // keeps the concurrency slot held so the next queued listing's vision-analysis can't start
-    // immediately after this one's.
-    await step.sleep('cooldown-after-vision', '15s')
 
     let gateAttempt = 0
     while (gateAttempt < 3) {
@@ -121,7 +114,6 @@ export const intakePipeline = inngest.createFunction(
       step2Result = await step.run(`re-identify-${gateAttempt}`, () =>
         runStep2VisionAnalysis(listingId, photoUrl, step1Result, apiKeys, corrections)
       )
-      await step.sleep(`cooldown-after-reidentify-${gateAttempt}`, '15s')
 
       gateAttempt++
     }

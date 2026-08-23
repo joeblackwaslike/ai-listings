@@ -11,6 +11,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { ClaudeImageInput, StructuredCallParams, TextCallParams } from './types'
 import { ClaudeStructuredOutputError } from './types'
+import { withOauthConcurrencyLimit } from './oauth-concurrency'
 
 // The Agent SDK's `env` option REPLACES the subprocess environment entirely when set — when
 // omitted, the subprocess inherits process.env as-is. Claude Code's own auth precedence ranks
@@ -70,66 +71,70 @@ async function* buildImagesPromptStream(
 }
 
 export async function runStructuredOauth<T>(params: StructuredCallParams): Promise<T> {
-  const images = params.images && params.images.length > 0 ? params.images : params.image ? [params.image] : []
-  const prompt = images.length > 0 ? buildImagesPromptStream(params.prompt, images) : params.prompt
+  return withOauthConcurrencyLimit(async () => {
+    const images = params.images && params.images.length > 0 ? params.images : params.image ? [params.image] : []
+    const prompt = images.length > 0 ? buildImagesPromptStream(params.prompt, images) : params.prompt
 
-  let structuredOutput: unknown
+    let structuredOutput: unknown
 
-  for await (const message of query({
-    prompt,
-    options: {
-      tools: [],
-      // maxTurns:1 shipped as an unverified placeholder (see this file's top comment) and was
-      // never exercised against a real image + our actual nested schema (inclusions/photo_plan
-      // arrays). That combination needs a turn to reason + call the structured-output tool and
-      // a second to return the result -- maxTurns:1 cut it off every time with error_max_turns,
-      // which step2/step4a/step5/photo-quality-gate's callers then saw as "did not return a
-      // tool_use block". Confirmed maxTurns:3 completes (num_turns:4 in the result) against a
-      // real stuck listing's photo; tested off the resource-constrained prod pod first because
-      // maxTurns:4 alone was enough to OOM it before returning (ai-listings-2k0).
-      maxTurns: 3,
-      model: params.model,
-      outputFormat: { type: 'json_schema', schema: params.jsonSchema },
-      env: subprocessEnv(),
-    },
-  })) {
-    if (message.type === 'result') {
-      if (message.subtype === 'success') {
-        structuredOutput = message.structured_output
+    for await (const message of query({
+      prompt,
+      options: {
+        tools: [],
+        // maxTurns:1 shipped as an unverified placeholder (see this file's top comment) and was
+        // never exercised against a real image + our actual nested schema (inclusions/photo_plan
+        // arrays). That combination needs a turn to reason + call the structured-output tool and
+        // a second to return the result -- maxTurns:1 cut it off every time with error_max_turns,
+        // which step2/step4a/step5/photo-quality-gate's callers then saw as "did not return a
+        // tool_use block". Confirmed maxTurns:3 completes (num_turns:4 in the result) against a
+        // real stuck listing's photo; tested off the resource-constrained prod pod first because
+        // maxTurns:4 alone was enough to OOM it before returning (ai-listings-2k0).
+        maxTurns: 3,
+        model: params.model,
+        outputFormat: { type: 'json_schema', schema: params.jsonSchema },
+        env: subprocessEnv(),
+      },
+    })) {
+      if (message.type === 'result') {
+        if (message.subtype === 'success') {
+          structuredOutput = message.structured_output
+        }
+        break
       }
-      break
     }
-  }
 
-  if (structuredOutput === undefined) {
-    throw new ClaudeStructuredOutputError(
-      'claude/oauth-backend: Agent SDK query did not return a structured_output result'
-    )
-  }
+    if (structuredOutput === undefined) {
+      throw new ClaudeStructuredOutputError(
+        'claude/oauth-backend: Agent SDK query did not return a structured_output result'
+      )
+    }
 
-  return structuredOutput as T
+    return structuredOutput as T
+  })
 }
 
 export async function runTextOauth(params: TextCallParams): Promise<string> {
-  const textChunks: string[] = []
+  return withOauthConcurrencyLimit(async () => {
+    const textChunks: string[] = []
 
-  for await (const message of query({
-    prompt: params.prompt,
-    options: {
-      tools: [],
-      maxTurns: 1,
-      model: params.model,
-      env: subprocessEnv(),
-    },
-  })) {
-    if (message.type === 'assistant') {
-      for (const block of message.message.content) {
-        if (block.type === 'text') {
-          textChunks.push(block.text)
+    for await (const message of query({
+      prompt: params.prompt,
+      options: {
+        tools: [],
+        maxTurns: 1,
+        model: params.model,
+        env: subprocessEnv(),
+      },
+    })) {
+      if (message.type === 'assistant') {
+        for (const block of message.message.content) {
+          if (block.type === 'text') {
+            textChunks.push(block.text)
+          }
         }
       }
     }
-  }
 
-  return textChunks.join('')
+    return textChunks.join('')
+  })
 }
