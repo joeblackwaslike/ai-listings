@@ -1,17 +1,36 @@
 'use client'
 
-import { useState } from 'react'
+import { forwardRef, useImperativeHandle, useState } from 'react'
 import type { MeasurementField, Measurements } from '@/types/listings'
 import { mmToInches, isPhysicalLengthField } from '@/lib/units'
+
+export interface MeasurementFieldsHandle {
+  submit: () => void
+}
 
 interface MeasurementFieldsProps {
   fields: MeasurementField[]
   inputUnit: 'imperial' | 'metric'
   onSubmit: (measurements: Partial<Measurements>) => void
   defaultValues?: Partial<Record<string, string | number>>
+  // Label-above-input costs a full row per field -- fine on the workspace page's wide column,
+  // but inside the dashboard card's cramped gate overlay it pushed Continue below the fold for
+  // any category needing 2+ fields (width/height/depth, sneaker size) even though single-field
+  // categories (ring size, chain length) fit -- had to scroll to find the button (ai-listings
+  // dashboard report, 2026-08-23). Puts label and input on one row instead, opt-in so the
+  // workspace page's layout is untouched.
+  compact?: boolean
+  // Sneakers' 6-field form is tall regardless of layout -- compact alone doesn't guarantee
+  // Continue stays on-screen. The dashboard card hides this internal button and renders its
+  // own outside the scrollable region instead (same fixed-footer pattern as the id-gate card),
+  // triggering submission through the ref below.
+  hideButton?: boolean
 }
 
-export function MeasurementFields({ fields, inputUnit, onSubmit, defaultValues }: Readonly<MeasurementFieldsProps>) {
+export const MeasurementFields = forwardRef<MeasurementFieldsHandle, MeasurementFieldsProps>(function MeasurementFields(
+  { fields, inputUnit, onSubmit, defaultValues, compact = false, hideButton = false },
+  ref
+) {
   // Partial<Record<...>> so callers can omit keys, but internal state never needs to
   // distinguish "absent" from "undefined" — every read goes through `values[key] ?? ''`
   // or the `raw === undefined` guard in handleSubmit, so treating it as fully-populated
@@ -45,11 +64,18 @@ export function MeasurementFields({ fields, inputUnit, onSubmit, defaultValues }
     onSubmit(result)
   }
 
+  useImperativeHandle(ref, () => ({ submit: handleSubmit }))
+
   return (
     <div className="flex flex-col gap-3 p-3 rounded-lg border border-gray-700 bg-gray-900">
       {fields.map((field) => (
-        <div key={field.key} className="flex flex-col gap-1">
-          <label htmlFor={`measurement-${field.key}`} className="text-xs text-gray-400">{field.label}</label>
+        <div key={field.key} className={compact ? 'flex flex-row items-center gap-2' : 'flex flex-col gap-1'}>
+          <label
+            htmlFor={`measurement-${field.key}`}
+            className={compact ? 'w-20 flex-none text-xs text-gray-400' : 'text-xs text-gray-400'}
+          >
+            {field.label}
+          </label>
           {field.useChips && field.chipOptions ? (
             <div className="flex gap-1.5 flex-wrap">
               {field.chipOptions.map((opt) => {
@@ -93,13 +119,15 @@ export function MeasurementFields({ fields, inputUnit, onSubmit, defaultValues }
           )}
         </div>
       ))}
-      <button
-        type="button"
-        onClick={handleSubmit}
-        className="self-start mt-1 px-4 py-1.5 text-xs rounded-full border border-emerald-600 text-emerald-300 hover:bg-emerald-950 transition-colors"
-      >
-        Continue →
-      </button>
+      {!hideButton && (
+        <button
+          type="button"
+          onClick={handleSubmit}
+          className="self-start mt-1 px-4 py-1.5 text-xs rounded-full border border-emerald-600 text-emerald-300 hover:bg-emerald-950 transition-colors"
+        >
+          Continue →
+        </button>
+      )}
     </div>
   )
-}
+})

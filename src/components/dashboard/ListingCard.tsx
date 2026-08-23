@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Archive, ImageOff, Loader2 } from 'lucide-react'
 import { StatusBadge } from './StatusBadge'
 import { formatPrice, getMeasurementFields, detectClothingSubType } from '@/lib/utils'
 import { detectJewelrySubType } from '@/lib/jewelry-detection'
-import { MeasurementFields } from '@/components/workspace/MeasurementFields'
+import { MeasurementFields, type MeasurementFieldsHandle } from '@/components/workspace/MeasurementFields'
 import type { ListingStatus, Measurements } from '@/types/listings'
 
 interface CardListing {
@@ -153,6 +153,7 @@ function GenderGatePhoto({
 
   const [gender, setGender] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const measurementFieldsRef = useRef<MeasurementFieldsHandle>(null)
 
   async function submit(measurements: Partial<Measurements> | null) {
     setSubmitting(true)
@@ -219,13 +220,37 @@ function GenderGatePhoto({
             )}
             {showMeasurements && (
               <MeasurementFields
+                ref={measurementFieldsRef}
                 fields={measurementFields}
                 inputUnit="imperial"
                 onSubmit={(m) => void submit(m)}
+                compact
+                hideButton
               />
             )}
           </div>
         </div>
+        {showMeasurements && (
+          // Sneakers' 6-field form (sizing system, size, US size, length, width, height) is
+          // tall regardless of the compact layout above -- Continue lives outside the
+          // scrollable region, same fixed-footer pattern as IdGatePhoto's buttons, so it's
+          // never scrolled out of view no matter how many fields a category needs
+          // (ai-listings dashboard report, 2026-08-23).
+          <div className="flex-none px-3 py-2.5">
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                measurementFieldsRef.current?.submit()
+              }}
+              className="w-full py-1.5 text-[11px] font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-50 transition-colors"
+            >
+              {submitting ? '…' : 'Continue →'}
+            </button>
+          </div>
+        )}
       </div>
     </>
   )
