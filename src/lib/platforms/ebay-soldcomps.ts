@@ -25,24 +25,47 @@ interface SoldCompsResponse {
   items?: SoldCompsItem[]
 }
 
-export async function searchEbaySoldComps(query: string, apiKey: string): Promise<SoldListing[]> {
-  if (!apiKey) return []
+// SOLDCOMPS_API_KEY can hold multiple comma-separated keys, same convention as
+// SERPAPI_API_KEY (serpapi-client.ts) -- so one account's exhausted free-tier 100/month
+// cap doesn't take down every SoldComps-dependent pricing lookup (ai-listings, 2026-08-23).
+function parseSoldCompsKeys(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean)
+}
+
+async function fetchSoldComps(query: string, apiKey: string): Promise<Response> {
+  const url = new URL(SOLDCOMPS_API_URL)
+  url.searchParams.set('keyword', query)
+  return fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(15_000),
+  })
+}
+
+export async function searchEbaySoldComps(query: string, rawApiKey: string): Promise<SoldListing[]> {
+  const keys = parseSoldCompsKeys(rawApiKey)
+  if (keys.length === 0) return []
 
   try {
-    const url = new URL(SOLDCOMPS_API_URL)
-    url.searchParams.set('keyword', query)
-
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!res.ok) {
+    let res: Response | null = null
+    for (const key of keys) {
+      res = await fetchSoldComps(query, key)
       // 429/402 specifically means the free-tier 100/month cap is exhausted -- distinct
       // from a transient failure or an expired/bad key, so operators can tell them apart
-      // instead of both looking like "no comps found" in the logs.
+      // instead of both looking like "no comps found" in the logs. Try the next key on
+      // quota exhaustion; any other non-ok status is returned as-is below.
       if (res.status === 429 || res.status === 402) {
         console.warn(`[ebay-soldcomps] quota exhausted (HTTP ${res.status}) for "${query}"`)
-      } else {
+        continue
+      }
+      break
+    }
+    if (!res) return []
+
+    if (!res.ok) {
+      if (res.status !== 429 && res.status !== 402) {
         console.warn(`[ebay-soldcomps] HTTP ${res.status} for "${query}"`)
       }
       return []
