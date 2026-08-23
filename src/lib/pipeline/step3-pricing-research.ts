@@ -5,6 +5,7 @@ import type { ApiKeys } from '@/lib/user-api-keys'
 import { searchEbayActive, type ActiveListing } from './comps/ebay-browse'
 import { searchEbaySoldComps } from '@/lib/platforms/ebay-soldcomps'
 import { conditionDelta, adjustForCondition, CATEGORY_DISCOUNT } from './pricing-adjust'
+import { fetchSerpApi } from './serpapi-client'
 
 interface SerpShoppingResult {
   title: string
@@ -26,17 +27,18 @@ async function fetchSerpComps(
 ): Promise<SerpShoppingResult[]> {
   try {
     const query = `${brand} ${model}`
-    const url = new URL('https://serpapi.com/search')
-    url.searchParams.set('engine', 'google_shopping')
-    url.searchParams.set('q', query)
-    url.searchParams.set('api_key', apiKey)
-    url.searchParams.set('num', '10')
-    url.searchParams.set('condition', 'used')
+    const response = await fetchSerpApi((key) => {
+      const url = new URL('https://serpapi.com/search')
+      url.searchParams.set('engine', 'google_shopping')
+      url.searchParams.set('q', query)
+      url.searchParams.set('api_key', key)
+      url.searchParams.set('num', '10')
+      url.searchParams.set('condition', 'used')
+      return url
+    }, apiKey)
 
-    const response = await fetch(url.toString())
-
-    if (!response.ok) {
-      console.warn(`fetchSerpComps: HTTP ${response.status} for query "${brand} ${model}"`)
+    if (!response || !response.ok) {
+      console.warn(`fetchSerpComps: HTTP ${response?.status ?? '(no response)'} for query "${brand} ${model}"`)
       return []
     }
 
@@ -60,15 +62,16 @@ async function fetchRetailPrice(
 ): Promise<{ retailPriceCents: number; source: string; promoNote: string | null } | null> {
   try {
     const query = `${brand} ${model}`
-    const url = new URL('https://serpapi.com/search')
-    url.searchParams.set('engine', 'google_shopping')
-    url.searchParams.set('q', query)
-    url.searchParams.set('api_key', apiKey)
-    url.searchParams.set('num', '5')
-    url.searchParams.set('condition', 'new')
-
-    const response = await fetch(url.toString())
-    if (!response.ok) return null
+    const response = await fetchSerpApi((key) => {
+      const url = new URL('https://serpapi.com/search')
+      url.searchParams.set('engine', 'google_shopping')
+      url.searchParams.set('q', query)
+      url.searchParams.set('api_key', key)
+      url.searchParams.set('num', '5')
+      url.searchParams.set('condition', 'new')
+      return url
+    }, apiKey)
+    if (!response || !response.ok) return null
 
     const data = (await response.json()) as SerpApiShoppingResponse
     const results = data.shopping_results ?? []
@@ -124,14 +127,15 @@ interface SerpApiEbayActiveResponse {
 async function fetchEbayActiveSerpApi(query: string, apiKey: string): Promise<ActiveListing[]> {
   if (!apiKey) return []
   try {
-    const url = new URL('https://serpapi.com/search')
-    url.searchParams.set('engine', 'ebay')
-    url.searchParams.set('_nkw', query)
-    url.searchParams.set('api_key', apiKey)
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
-    if (!res.ok) {
-      console.warn(`fetchEbayActiveSerpApi: HTTP ${res.status} for query "${query}"`)
+    const res = await fetchSerpApi((key) => {
+      const url = new URL('https://serpapi.com/search')
+      url.searchParams.set('engine', 'ebay')
+      url.searchParams.set('_nkw', query)
+      url.searchParams.set('api_key', key)
+      return url
+    }, apiKey, 10_000)
+    if (!res || !res.ok) {
+      console.warn(`fetchEbayActiveSerpApi: HTTP ${res?.status ?? '(no response)'} for query "${query}"`)
       return []
     }
 
@@ -220,15 +224,16 @@ async function fetchTheRealRealComps(
 ): Promise<Array<{ title: string; priceCents: number; listingUrl: string }>> {
   if (!apiKey) return []
   try {
-    const url = new URL('https://serpapi.com/search')
-    url.searchParams.set('engine', 'google')
-    url.searchParams.set('q', `site:therealreal.com ${query}`)
-    url.searchParams.set('num', '10')
-    url.searchParams.set('api_key', apiKey)
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) })
-    if (!res.ok) {
-      console.warn(`fetchTheRealRealComps: HTTP ${res.status} for query "${query}"`)
+    const res = await fetchSerpApi((key) => {
+      const url = new URL('https://serpapi.com/search')
+      url.searchParams.set('engine', 'google')
+      url.searchParams.set('q', `site:therealreal.com ${query}`)
+      url.searchParams.set('num', '10')
+      url.searchParams.set('api_key', key)
+      return url
+    }, apiKey, 15_000)
+    if (!res || !res.ok) {
+      console.warn(`fetchTheRealRealComps: HTTP ${res?.status ?? '(no response)'} for query "${query}"`)
       return []
     }
 
