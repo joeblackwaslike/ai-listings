@@ -65,11 +65,37 @@ async function fetchSerpComps(
   }
 }
 
-async function fetchRetailPrice(
-  brand: string,
-  model: string,
-  apiKey: string
-): Promise<{ retailPriceCents: number; source: string; promoNote: string | null } | null> {
+interface RetailCandidate {
+  title: string
+  priceCents: number
+  source: string
+}
+
+// Resale/consignment/auction marketplaces -- never a "retail" (MSRP) price even when Google
+// Shopping tags the listing condition=new (sellers self-report condition; a used item resold
+// "like new" on eBay is not a retail price). Live-confirmed 2026-08-23: the original "$81 at
+// Vestiaire Collective" bug and a follow-up "$170 on eBay" both came from marketplace listings
+// slipping past relevance scoring on brand+sub-type match alone. This is a source-type filter,
+// not a relevance one -- a perfectly on-target eBay listing is still a resale price.
+const RESALE_MARKETPLACE_SOURCES = [
+  'ebay', 'vestiaire', 'stockx', 'poshmark', 'therealreal', 'the realreal', 'fashionphile',
+  '1stdibs', 'rebag', 'grailed', 'depop', 'thredup', 'vinted', 'tradesy', 'mercari',
+]
+function isResaleMarketplace(source: string): boolean {
+  const lower = source.toLowerCase()
+  return RESALE_MARKETPLACE_SOURCES.some((s) => lower.includes(s))
+}
+
+// Returns raw candidates only -- no price is picked here. Live-tested 2026-08-23 against
+// "Louis Vuitton Pocket Organizer (Monogram Taurillon Illusion)": a plain keyword search
+// against Google Shopping returns 40 results spanning a dozen *different* LV products
+// (Pocket Agenda Cover $81, Zippy Wallet, Onthego Organizer, Emily Notebook Cover...), not
+// just the target item -- and their prices are all individually legitimate, so IQR/gap-ratio
+// outlier detection can't tell the $81 agenda cover from a genuine cheap Pocket Organizer
+// (q1=$520/q3=$1100 gives an IQR band down to -$350, well past $81). This is a relevance
+// problem, not a statistical one -- the caller runs the same scoreCompRelevance gate already
+// used for lowestActive before picking a price from these candidates.
+async function fetchRetailCandidates(brand: string, model: string, apiKey: string): Promise<RetailCandidate[]> {
   try {
     const query = `${brand} ${model}`
     const response = await fetchSerpApi((key) => {
@@ -77,42 +103,21 @@ async function fetchRetailPrice(
       url.searchParams.set('engine', 'google_shopping')
       url.searchParams.set('q', query)
       url.searchParams.set('api_key', key)
-      url.searchParams.set('num', '5')
+      url.searchParams.set('num', '10')
       url.searchParams.set('condition', 'new')
       return url
     }, apiKey)
-    if (!response || !response.ok) return null
+    if (!response || !response.ok) return []
 
     const data = (await response.json()) as SerpApiShoppingResponse
     const results = data.shopping_results ?? []
-
-    const prices = results
-      .map((r) => r.extracted_price)
-      .filter((v): v is number => typeof v === 'number' && v > 0)
-
-    if (prices.length === 0) return null
-
-    const sortedPrices = [...prices].sort((a, b) => a - b)
-    const lowestPrice = sortedPrices[0]
-    const retailPriceCents = Math.round(lowestPrice * 100)
-
-    let promoNote: string | null = null
-    if (prices.length >= 2) {
-      const median =
-        prices.length % 2 === 0
-          ? (sortedPrices[Math.floor(prices.length / 2) - 1] + sortedPrices[Math.floor(prices.length / 2)]) / 2
-          : sortedPrices[Math.floor(prices.length / 2)]
-      if (lowestPrice < median * 0.85) {
-        promoNote = 'Appears to be on sale'
-      }
-    }
-
-    const lowestResult = results.find((r) => r.extracted_price === lowestPrice)
-    const source = lowestResult?.source ?? 'Google Shopping'
-
-    return { retailPriceCents, source, promoNote }
+    return results
+      .filter((r): r is SerpShoppingResult & { extracted_price: number } =>
+        typeof r.extracted_price === 'number' && r.extracted_price > 0 && !isResaleMarketplace(r.source ?? '')
+      )
+      .map((r) => ({ title: r.title, priceCents: Math.round(r.extracted_price * 100), source: r.source ?? 'Google Shopping' }))
   } catch {
-    return null
+    return []
   }
 }
 
@@ -714,13 +719,13 @@ export async function runStep3PricingResearch(
 
   const genderPrefix = gender === 'mens' ? "men's " : gender === 'womens' ? "women's " : ''
   const searchQuery = `${genderPrefix}${step2.brand} ${model}`
-  const [ebayActive, serpResults, redditComps, retailResult, poshmarkSold, poshmarkActive, ebaySold, theRealRealComps] = await Promise.all([
+  const [ebayActive, serpResults, redditComps, retailCandidates, poshmarkSold, poshmarkActive, ebaySold, theRealRealComps] = await Promise.all([
     searchEbayActiveWithFallback(searchQuery, apiKeys.serpapi),
     fetchSerpComps(step2.brand, model, apiKeys.serpapi),
     isKeyboard && apiKeys.anthropic
       ? fetchRedditMechmarketComps(step2.brand, model, apiKeys.anthropic)
       : Promise.resolve([]),
-    fetchRetailPrice(step2.brand, model, apiKeys.serpapi),
+    fetchRetailCandidates(step2.brand, model, apiKeys.serpapi),
     fetchPoshmarkSoldComps(searchQuery, apiKeys.poshmarkCookies),
     fetchPoshmarkActiveFloor(searchQuery, apiKeys.poshmarkCookies),
     searchEbaySoldComps(searchQuery, apiKeys.soldcomps),
@@ -862,6 +867,43 @@ export async function runStep3PricingResearch(
   const lowestActive = relevantActive.length > 0
     ? relevantActive.reduce((min, r) => (r.sale_price_cents < min.sale_price_cents ? r : min))
     : null
+
+  // Retail "new" price -- same fail-closed relevance gate as lowestActive above: a raw
+  // keyword search over Google Shopping mixes in different same-brand products (see
+  // fetchRetailCandidates' comment), so the unfiltered minimum is untrustworthy. A wrong
+  // "$81 retail" claim shown on the listing is worse than showing none, so no key / no
+  // score / a failed scoring batch all mean no retail price this run, not a guess.
+  const retailRelevance = apiKeys.anthropic && retailCandidates.length > 0
+    ? await scoreCompRelevance(retailCandidates, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
+    : new Map<number, CompRelevance>()
+  // Luxury houses (LV, Chanel, Hermes, etc.) distribute exclusively through their own
+  // boutiques/site -- there is no legitimate third-party "retail" channel for them, so any
+  // source not carrying the brand's own name is a resale/consignment listing regardless of
+  // what it calls itself. Live-confirmed 2026-08-23: "Lulu Cadieux" (a consignment boutique,
+  // not on the marketplace denylist) passed the relevance gate on a WRONG colorway ("Shadow
+  // Black" vs. the target "Illusion") and still would've been trusted as retail without this.
+  const relevantRetail = retailCandidates
+    .map((c, i) => ({ ...c, adjusted_price_cents: c.priceCents, relevance_score: retailRelevance.get(i)?.score ?? null }))
+    .filter((c) => c.relevance_score !== null && c.relevance_score >= COMP_RELEVANCE_THRESHOLD)
+    .filter((c) => !step2.isLuxury || c.source.toLowerCase().includes(step2.brand.toLowerCase()))
+  const filteredRetail = removeOutlierComps(relevantRetail)
+  let retailResult: { retailPriceCents: number; source: string; promoNote: string | null } | null = null
+  if (filteredRetail.length > 0) {
+    const sortedRetail = [...filteredRetail].sort((a, b) => a.priceCents - b.priceCents)
+    const lowestRetail = sortedRetail[0]
+    let promoNote: string | null = null
+    if (sortedRetail.length >= 2) {
+      const prices = sortedRetail.map((r) => r.priceCents)
+      const median =
+        prices.length % 2 === 0
+          ? (prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2
+          : prices[Math.floor(prices.length / 2)]
+      if (lowestRetail.priceCents < median * 0.85) {
+        promoNote = 'Appears to be on sale'
+      }
+    }
+    retailResult = { retailPriceCents: lowestRetail.priceCents, source: lowestRetail.source, promoNote }
+  }
 
   // Deduplicate same-price clusters before relevance filtering (catches bulk-lot duplicate listings)
   const dedupedRows = deduplicateComps(soldRows)
