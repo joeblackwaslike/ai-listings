@@ -5,8 +5,10 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Archive, ImageOff, Loader2 } from 'lucide-react'
 import { StatusBadge } from './StatusBadge'
-import { formatPrice } from '@/lib/utils'
-import type { ListingStatus } from '@/types/listings'
+import { formatPrice, getMeasurementFields, detectClothingSubType } from '@/lib/utils'
+import { detectJewelrySubType } from '@/lib/jewelry-detection'
+import { MeasurementFields } from '@/components/workspace/MeasurementFields'
+import type { ListingStatus, Measurements } from '@/types/listings'
 
 interface CardListing {
   id: string
@@ -120,6 +122,104 @@ function IdGatePhoto({
   )
 }
 
+const GENDER_OPTIONS: { value: string; label: string }[] = [
+  { value: 'mens', label: "Men's" },
+  { value: 'womens', label: "Women's" },
+  { value: 'unisex', label: 'Unisex' },
+]
+
+// Mirrors gate-messages.ts's GENDER_CATEGORIES -- kept in sync manually since that module
+// pulls in server-oriented gate-building helpers this client component doesn't need.
+const CATEGORIES_NEEDING_GENDER = new Set(['watches', 'clothing', 'sneakers'])
+
+function GenderGatePhoto({
+  listing,
+  photoUrl,
+  onSubmitted,
+}: Readonly<{
+  listing: CardListing
+  photoUrl?: string
+  onSubmitted: () => void
+}>) {
+  const category = listing.category ?? 'item'
+  const notableFeatures = (listing.intake_meta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
+  const subTypeHint =
+    category === 'clothing' ? detectClothingSubType(notableFeatures)
+    : category === 'jewelry' ? detectJewelrySubType(notableFeatures)
+    : null
+  const measurementFields = getMeasurementFields(category, subTypeHint, notableFeatures)
+  const needsGender = CATEGORIES_NEEDING_GENDER.has(category.toLowerCase())
+  const needsMeasurements = measurementFields.length > 0
+
+  const [gender, setGender] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit(measurements: Partial<Measurements> | null) {
+    setSubmitting(true)
+    try {
+      await fetch('/api/pipeline/confirm-gender', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId: listing.id, gender, measurements }),
+      })
+      onSubmitted()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  function pickGender(value: string) {
+    setGender(value)
+    if (!needsMeasurements) void submit(null)
+  }
+
+  const showGenderPicker = needsGender && !gender
+  const showMeasurements = needsMeasurements && (!needsGender || gender)
+
+  return (
+    <>
+      {photoUrl ? (
+        <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-40" />
+      ) : (
+        <div className="absolute inset-0 bg-gray-900" />
+      )}
+      {/* stopPropagation keeps chip/field clicks from bubbling to the card's wrapping Link */}
+      <div className="absolute inset-0 bg-gray-950/88 flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="relative flex-1 min-h-0">
+          <div className="absolute inset-0 overflow-y-auto px-3 pt-2.5 pb-2 space-y-2">
+            <p className="text-[11px] font-semibold text-white leading-tight capitalize">{category.replaceAll('_', ' ')}</p>
+            <p className="text-[10px] text-amber-400 font-medium">
+              {submitting ? 'Saving…' : 'Needs a couple details before pricing'}
+            </p>
+            {showGenderPicker && (
+              <div className="flex gap-1.5 flex-wrap">
+                {GENDER_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => pickGender(opt.value)}
+                    className="px-3 py-1 text-[11px] rounded-full border border-gray-700 text-gray-300 hover:border-emerald-500 hover:text-emerald-300 transition-colors disabled:opacity-50"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {showMeasurements && (
+              <MeasurementFields
+                fields={measurementFields}
+                inputUnit="imperial"
+                onSubmit={(m) => void submit(m)}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export function ListingCard({
   listing,
   onArchive,
@@ -130,12 +230,17 @@ export function ListingCard({
   const [isArchiving, setIsArchiving] = useState(false)
   const [idConfirmed, setIdConfirmed] = useState(false)
   const [idConfirming, setIdConfirming] = useState(false)
+  const [genderGateSubmitted, setGenderGateSubmitted] = useState(false)
   const [skipBg, setSkipBg] = useState(listing.skip_background_removal)
   const [isTogglingSkip, setIsTogglingSkip] = useState(false)
 
   const isBlocked = listing.agent_blocked && listing.status === 'in_loop'
   const isIdGate = listing.status === 'id_gate' && !idConfirmed
-  const isProcessing = listing.status === 'intake' || (listing.status === 'id_gate' && idConfirmed)
+  const isGenderGate = listing.status === 'gender_gate' && !genderGateSubmitted
+  const isProcessing =
+    listing.status === 'intake' ||
+    (listing.status === 'id_gate' && idConfirmed) ||
+    (listing.status === 'gender_gate' && genderGateSubmitted)
   const photoUrl = skipBg
     ? listing.coverPhoto?.raw_url
     : (listing.coverPhoto?.processed_url ?? listing.coverPhoto?.raw_url)
@@ -191,7 +296,7 @@ export function ListingCard({
 
   let borderClass = 'border-gray-800 hover:border-gray-700'
   if (isBlocked) borderClass = 'border-red-900/60 hover:border-red-800/60'
-  else if (isIdGate) borderClass = 'border-amber-800/60 hover:border-amber-700/60'
+  else if (isIdGate || isGenderGate) borderClass = 'border-amber-800/60 hover:border-amber-700/60'
 
   const inner = (
     <div className={`bg-gray-900 rounded-xl overflow-hidden border transition-colors group ${borderClass}`}>
@@ -204,6 +309,13 @@ export function ListingCard({
             features={features}
             idConfirming={idConfirming}
             onConfirm={handleConfirmId}
+          />
+        )}
+        {isGenderGate && (
+          <GenderGatePhoto
+            listing={listing}
+            photoUrl={photoUrl}
+            onSubmitted={() => setGenderGateSubmitted(true)}
           />
         )}
         {isProcessing && (
@@ -219,7 +331,7 @@ export function ListingCard({
             </div>
           </>
         )}
-        {!isBlocked && !isIdGate && !isProcessing && photoUrl && (
+        {!isBlocked && !isIdGate && !isGenderGate && !isProcessing && photoUrl && (
           <Image
             src={photoUrl}
             alt={listing.title ?? 'Listing'}
@@ -227,7 +339,7 @@ export function ListingCard({
             className="object-cover group-hover:scale-[1.02] transition-transform duration-200"
           />
         )}
-        {!isBlocked && !isIdGate && !isProcessing && !photoUrl && (
+        {!isBlocked && !isIdGate && !isGenderGate && !isProcessing && !photoUrl && (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-gray-700 text-xs">No photo</span>
           </div>
