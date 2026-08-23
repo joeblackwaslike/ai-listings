@@ -10,43 +10,39 @@ export interface ApiKeys {
   soldcomps: string
 }
 
+// anthropic/serpapi/withoutbg/soldcomps used to be overridable per-user via the user_api_keys
+// table and a Settings > API Keys panel -- removed (single-tenant app, no near-term plan to
+// support other users' own keys; the panel only ever exposed 3 of these 4 providers anyway).
+// They're always the deployment's own env-configured keys now, same as every other pipeline
+// credential that was never per-user in the first place.
 export async function getUserApiKeys(userId: string | null | undefined): Promise<ApiKeys> {
-  const isDev = process.env.NODE_ENV !== 'production'
-
-  if (!userId) {
-    return {
-      anthropic:       isDev ? (process.env.ANTHROPIC_API_KEY   ?? '') : '',
-      serpapi:         isDev ? (process.env.SERPAPI_API_KEY      ?? '') : '',
-      withoutbg:       isDev ? (process.env.WITHOUTBG_API_KEY    ?? '') : '',
-      ebayAppId:       isDev ? (process.env.EBAY_APP_ID          ?? '') : '',
-      poshmarkCookies: isDev ? (process.env.POSHMARK_COOKIES     ?? '') : '',
-      mercariToken:    isDev ? (process.env.MERCARI_API_TOKEN     ?? '') : '',
-      soldcomps:       isDev ? (process.env.SOLDCOMPS_API_KEY     ?? '') : '',
-    }
+  const envKeys: ApiKeys = {
+    anthropic:       process.env.ANTHROPIC_API_KEY   ?? '',
+    serpapi:         process.env.SERPAPI_API_KEY      ?? '',
+    withoutbg:       process.env.WITHOUTBG_API_KEY    ?? '',
+    ebayAppId:       process.env.EBAY_APP_ID          ?? '',
+    poshmarkCookies: process.env.POSHMARK_COOKIES     ?? '',
+    mercariToken:    process.env.MERCARI_API_TOKEN     ?? '',
+    soldcomps:       process.env.SOLDCOMPS_API_KEY     ?? '',
   }
 
+  if (!userId) return envKeys
+
   const supabase = getSupabaseAdmin()
-  const [{ data: apiKeyRows, error }, { data: settingRows }] = await Promise.all([
-    supabase.from('user_api_keys').select('provider, api_key').eq('user_id', userId),
-    supabase.from('user_settings').select('setting_key, setting_value').eq('user_id', userId).in('setting_key', ['ebay_client_id', 'poshmark_cookies', 'mercari_api_token']),
-  ])
+  const { data: settingRows } = await supabase
+    .from('user_settings')
+    .select('setting_key, setting_value')
+    .eq('user_id', userId)
+    .in('setting_key', ['ebay_client_id', 'poshmark_cookies', 'mercari_api_token'])
 
-  if (error) throw new Error(`Failed to fetch API keys for user ${userId}: ${error.message}`)
-
-  const keys = Object.fromEntries(
-    (apiKeyRows ?? []).map((r) => [r.provider, r.api_key as string])
-  )
   const ebayAppId       = (settingRows ?? []).find((r) => r.setting_key === 'ebay_client_id')?.setting_value as string ?? ''
   const poshmarkCookies = (settingRows ?? []).find((r) => r.setting_key === 'poshmark_cookies')?.setting_value as string ?? ''
   const mercariToken    = (settingRows ?? []).find((r) => r.setting_key === 'mercari_api_token')?.setting_value as string ?? ''
 
   return {
-    anthropic:       keys.anthropic ?? (isDev ? (process.env.ANTHROPIC_API_KEY   ?? '') : ''),
-    serpapi:         keys.serpapi   ?? (isDev ? (process.env.SERPAPI_API_KEY      ?? '') : ''),
-    withoutbg:       keys.withoutbg ?? (isDev ? (process.env.WITHOUTBG_API_KEY    ?? '') : ''),
-    ebayAppId:       ebayAppId      || (isDev ? (process.env.EBAY_APP_ID          ?? '') : ''),
-    poshmarkCookies: poshmarkCookies || (isDev ? (process.env.POSHMARK_COOKIES    ?? '') : ''),
-    mercariToken:    mercariToken    || (isDev ? (process.env.MERCARI_API_TOKEN    ?? '') : ''),
-    soldcomps:       keys.soldcomps  ?? (isDev ? (process.env.SOLDCOMPS_API_KEY    ?? '') : ''),
+    ...envKeys,
+    ebayAppId:       ebayAppId       || envKeys.ebayAppId,
+    poshmarkCookies: poshmarkCookies || envKeys.poshmarkCookies,
+    mercariToken:    mercariToken    || envKeys.mercariToken,
   }
 }

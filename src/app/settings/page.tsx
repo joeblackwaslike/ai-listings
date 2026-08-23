@@ -20,19 +20,6 @@ export default async function SettingsPage() {
         <h1 className="text-lg font-semibold text-gray-100 mb-6">Settings</h1>
 
         <a
-          href="/settings/api-keys"
-          className="flex items-center justify-between rounded-xl border border-gray-800 px-5 py-4 hover:border-gray-700 transition-colors group"
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-200">API Keys</p>
-            <p className="text-[11px] text-gray-600 mt-0.5">
-              Anthropic, SerpAPI, WithoutBG and other service keys
-            </p>
-          </div>
-          <span className="text-gray-700 group-hover:text-gray-500 transition-colors">→</span>
-        </a>
-
-        <a
           href="/settings/platforms"
           className="flex items-center justify-between rounded-xl border border-gray-800 px-5 py-4 hover:border-gray-700 transition-colors group"
         >
