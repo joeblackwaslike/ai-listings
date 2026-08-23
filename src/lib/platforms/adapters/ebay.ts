@@ -10,6 +10,7 @@ import type {
   UnifiedListing,
 } from '../types';
 import { AuthExpiredError, PlatformError, UnsupportedOperationError } from '../errors';
+import { searchEbaySoldComps } from '../ebay-soldcomps';
 import eBayApi from '@hendt/ebay-api';
 
 // ---- Internal eBay API shape types ----------------------------------------
@@ -256,11 +257,16 @@ export class EbayAdapter implements PlatformSDK {
     return res.json() as Promise<T>;
   }
 
-  // ---- Comps ----------------------------------------------------------------
-
-  // SerpAPI in step3-pricing-research.ts handles eBay sold comps.
-  async searchSoldComps(_query: string): Promise<PlatformComp[]> {
-    return [];
+  async searchSoldComps(query: string): Promise<PlatformComp[]> {
+    const results = await searchEbaySoldComps(query);
+    return results.map((r) => ({
+      platform: 'ebay',
+      title: r.title,
+      soldPrice: r.priceCents,
+      condition: 'Not specified',
+      url: r.listingUrl,
+      soldAt: r.soldAt ? new Date(r.soldAt) : null,
+    }));
   }
 
   // ---- Listings -------------------------------------------------------------
