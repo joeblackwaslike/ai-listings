@@ -93,5 +93,23 @@ jobs:
       - name: Wait for rollout
         run: kubectl rollout status deployment/ai-listings -n ai-listings --timeout=300s
 
+      # `--sdk-url` on the Inngest server only registers the app once, at Inngest's own
+      # startup -- it does NOT re-sync on every app deploy, so a function added/changed here
+      # silently never reaches Inngest until something re-triggers the sync. This used to be a
+      # postStart hook on the Inngest deployment itself, but that hook (and any other exec into
+      # that container) hard-fails with "exec format error" -- its image has no working shell
+      # for this architecture. PUTing the app's own /api/inngest endpoint triggers the same
+      # sync from a container that does have a working shell (this one). Confirmed missing
+      # 2026-08-24: auto-recover-pipeline.ts shipped and rolled out clean but never appeared in
+      # Inngest's function list until this exact call was run by hand.
+      - name: Sync Inngest functions
+        run: |
+          POD=$(kubectl get pods -n ai-listings -l app=ai-listings -o jsonpath='{.items[0].metadata.name}')
+          kubectl exec -n ai-listings "${POD}" -- node -e "
+            fetch('http://localhost:3000/api/inngest', { method: 'PUT' })
+              .then(r => r.text().then(t => { console.log('status:', r.status, t); if (!r.ok) process.exit(1) }))
+              .catch(e => { console.error('error:', e); process.exit(1) })
+          "
+
       - name: Show running pods
         run: kubectl get pods -n ai-listings
