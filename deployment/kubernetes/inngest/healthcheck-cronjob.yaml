@@ -11,8 +11,25 @@
 # StepStarted (we told it to run a step and heard nothing back -- not StepCompleted, not
 # StepErrored, and critically not StepWaiting/StepSleeping, which are legitimate multi-day
 # waits on user gate confirmations and must NOT trigger a restart), and that event is more
-# than 5 minutes old. Restarting is safe even mid-stall: nothing in that state is actually
-# mid-execution (the step never started), and durable state lives in the mounted PVC +
+# than 25 minutes old.
+#
+# 5 minutes shipped first and was wrong -- every Claude call in the pipeline funnels through
+# a single per-pod mutex (oauth-concurrency.ts) that serializes them, and each call can
+# legitimately take up to 3 minutes (see oauth-backend.ts's OAUTH_CALL_TIMEOUT_MS). Firing
+# resume-pipeline for several listings at once (exactly what recovering a backlog looks like)
+# queues them all behind that one mutex -- listing #4 in line can sit at StepStarted for
+# 10-15+ real, legitimate minutes just waiting its turn, not stuck at all. At 5 minutes this
+# cronjob was restarting Inngest mid-backlog on almost every recovery attempt, killing
+# whatever else was genuinely in-flight at that instant -- confirmed 2026-08-24: repeated
+# restarts kept orphaning newly-fired resume runs before they ever got a turn at the mutex,
+# turning a single slow-but-working queue into an unbounded whack-a-mole. 25 minutes clears a
+# worst-case queue of several listings x several calls each with margin, while still catching
+# a truly wedged run (which sits forever, not just a while) well before "someone notices by
+# hand" territory.
+#
+# Restarting is safe even for a real stall: nothing in that state is actually mid-execution
+# (the step never started, or its call is one of the ones this cronjob is specifically
+# choosing NOT to kill by waiting this long), and durable state lives in the mounted PVC +
 # Postgres, not in the pod's memory -- unlike a restart that lands on a genuinely in-flight
 # step transition (see deployment.yaml's comment on why this pairing matters).
 apiVersion: v1
@@ -123,7 +140,7 @@ spec:
                     join latest_event le on le.run_id = fr.run_id
                     where ff.run_id is null
                       and le.type = 'StepStarted'
-                      and le.created_at < now() - interval '5 minutes'
+                      and le.created_at < now() - interval '25 minutes'
                       and le.created_at > '${POD_START}'::timestamptz;
                   ")
 
