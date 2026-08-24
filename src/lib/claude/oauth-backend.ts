@@ -25,6 +25,42 @@ function subprocessEnv(): Record<string, string | undefined> {
   return rest
 }
 
+// query() has no built-in timeout -- if the spawned `claude` subprocess hangs (bad/expired
+// CLAUDE_CODE_OAUTH_TOKEN, network stall, subprocess never starts), the for-await loop below
+// waits forever. Because every call funnels through withOauthConcurrencyLimit's single-file
+// mutex, one hung call blocks every subsequent queued call behind it forever too -- a
+// queue-wide deadlock that looks identical to an Inngest scheduler stall from the outside
+// (step sits "Started", never completes) but has nothing to do with Inngest. Confirmed
+// 2026-08-24: 8 resume-pipeline runs fired at once all wedged on the first call in the queue,
+// survived two full Inngest pod restarts unchanged (steps re-entered the same hang), and the
+// app logs showed no oauth-backend result or error at all after the fallback kicked in --
+// just silence. Normal latency is 8.5-12s per this file's top comment; 90s is a wide margin.
+const OAUTH_CALL_TIMEOUT_MS = 90_000
+
+class OauthCallTimeoutError extends Error {
+  constructor() {
+    super(`claude/oauth-backend: query() did not complete within ${OAUTH_CALL_TIMEOUT_MS}ms`)
+    this.name = 'OauthCallTimeoutError'
+  }
+}
+
+async function withOauthTimeout<T>(run: (abortController: AbortController) => Promise<T>): Promise<T> {
+  const abortController = new AbortController()
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      abortController.abort()
+      reject(new OauthCallTimeoutError())
+    }, OAUTH_CALL_TIMEOUT_MS)
+  })
+
+  try {
+    return await Promise.race([run(abortController), timeout])
+  } finally {
+    clearTimeout(timer!)
+  }
+}
+
 async function fetchImageAsBase64(image: ClaudeImageInput): Promise<{ base64: string; mediaType: string }> {
   if ('base64' in image) return { base64: image.base64, mediaType: image.mediaType }
 
@@ -71,70 +107,76 @@ async function* buildImagesPromptStream(
 }
 
 export async function runStructuredOauth<T>(params: StructuredCallParams): Promise<T> {
-  return withOauthConcurrencyLimit(async () => {
-    const images = params.images && params.images.length > 0 ? params.images : params.image ? [params.image] : []
-    const prompt = images.length > 0 ? buildImagesPromptStream(params.prompt, images) : params.prompt
+  return withOauthConcurrencyLimit(() =>
+    withOauthTimeout(async (abortController) => {
+      const images = params.images && params.images.length > 0 ? params.images : params.image ? [params.image] : []
+      const prompt = images.length > 0 ? buildImagesPromptStream(params.prompt, images) : params.prompt
 
-    let structuredOutput: unknown
+      let structuredOutput: unknown
 
-    for await (const message of query({
-      prompt,
-      options: {
-        tools: [],
-        // maxTurns:1 shipped as an unverified placeholder (see this file's top comment) and was
-        // never exercised against a real image + our actual nested schema (inclusions/photo_plan
-        // arrays). That combination needs a turn to reason + call the structured-output tool and
-        // a second to return the result -- maxTurns:1 cut it off every time with error_max_turns,
-        // which step2/step4a/step5/photo-quality-gate's callers then saw as "did not return a
-        // tool_use block". Confirmed maxTurns:3 completes (num_turns:4 in the result) against a
-        // real stuck listing's photo; tested off the resource-constrained prod pod first because
-        // maxTurns:4 alone was enough to OOM it before returning (ai-listings-2k0).
-        maxTurns: 3,
-        model: params.model,
-        outputFormat: { type: 'json_schema', schema: params.jsonSchema },
-        env: subprocessEnv(),
-      },
-    })) {
-      if (message.type === 'result') {
-        if (message.subtype === 'success') {
-          structuredOutput = message.structured_output
+      for await (const message of query({
+        prompt,
+        options: {
+          tools: [],
+          // maxTurns:1 shipped as an unverified placeholder (see this file's top comment) and was
+          // never exercised against a real image + our actual nested schema (inclusions/photo_plan
+          // arrays). That combination needs a turn to reason + call the structured-output tool and
+          // a second to return the result -- maxTurns:1 cut it off every time with error_max_turns,
+          // which step2/step4a/step5/photo-quality-gate's callers then saw as "did not return a
+          // tool_use block". Confirmed maxTurns:3 completes (num_turns:4 in the result) against a
+          // real stuck listing's photo; tested off the resource-constrained prod pod first because
+          // maxTurns:4 alone was enough to OOM it before returning (ai-listings-2k0).
+          maxTurns: 3,
+          model: params.model,
+          outputFormat: { type: 'json_schema', schema: params.jsonSchema },
+          env: subprocessEnv(),
+          abortController,
+        },
+      })) {
+        if (message.type === 'result') {
+          if (message.subtype === 'success') {
+            structuredOutput = message.structured_output
+          }
+          break
         }
-        break
       }
-    }
 
-    if (structuredOutput === undefined) {
-      throw new ClaudeStructuredOutputError(
-        'claude/oauth-backend: Agent SDK query did not return a structured_output result'
-      )
-    }
+      if (structuredOutput === undefined) {
+        throw new ClaudeStructuredOutputError(
+          'claude/oauth-backend: Agent SDK query did not return a structured_output result'
+        )
+      }
 
-    return structuredOutput as T
-  })
+      return structuredOutput as T
+    })
+  )
 }
 
 export async function runTextOauth(params: TextCallParams): Promise<string> {
-  return withOauthConcurrencyLimit(async () => {
-    const textChunks: string[] = []
+  return withOauthConcurrencyLimit(() =>
+    withOauthTimeout(async (abortController) => {
+      const textChunks: string[] = []
 
-    for await (const message of query({
-      prompt: params.prompt,
-      options: {
-        tools: [],
-        maxTurns: 1,
-        model: params.model,
-        env: subprocessEnv(),
-      },
-    })) {
-      if (message.type === 'assistant') {
-        for (const block of message.message.content) {
-          if (block.type === 'text') {
-            textChunks.push(block.text)
+      for await (const message of query({
+        prompt: params.prompt,
+        options: {
+          tools: [],
+          maxTurns: 1,
+          model: params.model,
+          env: subprocessEnv(),
+          abortController,
+        },
+      })) {
+        if (message.type === 'assistant') {
+          for (const block of message.message.content) {
+            if (block.type === 'text') {
+              textChunks.push(block.text)
+            }
           }
         }
       }
-    }
 
-    return textChunks.join('')
-  })
+      return textChunks.join('')
+    })
+  )
 }
