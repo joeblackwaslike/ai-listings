@@ -34,8 +34,17 @@ function subprocessEnv(): Record<string, string | undefined> {
 // 2026-08-24: 8 resume-pipeline runs fired at once all wedged on the first call in the queue,
 // survived two full Inngest pod restarts unchanged (steps re-entered the same hang), and the
 // app logs showed no oauth-backend result or error at all after the fallback kicked in --
-// just silence. Normal latency is 8.5-12s per this file's top comment; 90s is a wide margin.
-const OAUTH_CALL_TIMEOUT_MS = 90_000
+// just silence.
+//
+// First shipped at 90s based on this file's top-comment latency figure (8.5-12s) -- wrong
+// reference point. That figure is from a single verification call with a trivial prompt and
+// tiny schema; runText/index.ts's own top comment documents realistic call latency for this
+// backend as "~30s-2min/call" (full Claude Code system-prompt reload every time, no cache
+// warm-up). 90s was killing real in-flight calls before they'd have completed, which is worse
+// than the deadlock it was meant to fix -- every scoreCompRelevance batch during the 2026-08-24
+// incident logged OauthCallTimeoutError back-to-back instead of ever succeeding. 180s clears
+// the documented 2min ceiling with margin while still bounding the queue-wide-deadlock case.
+const OAUTH_CALL_TIMEOUT_MS = 180_000
 
 class OauthCallTimeoutError extends Error {
   constructor() {
