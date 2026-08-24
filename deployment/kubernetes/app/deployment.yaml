@@ -66,14 +66,20 @@ spec:
                 name: ai-listings-secret
           resources:
             # Bumped for the Agent SDK's per-call `claude` CLI subprocess (only spawned when
-            # CLAUDE_CODE_OAUTH_TOKEN is set — the api-key backend path is unchanged). This is
-            # a conservative estimate, not a measured one — watch `kubectl top pod` under real
-            # pipeline load after enabling the OAuth backend and adjust if it's OOM-killing.
+            # CLAUDE_CODE_OAUTH_TOKEN is set — the api-key backend path is unchanged).
+            #
+            # Raised again 2026-08-24 alongside oauth-concurrency.ts's MAX_CONCURRENT going
+            # 1 -> 2: two `claude` subprocesses can now be resident at once instead of one.
+            # Measured peak under MAX_CONCURRENT=1 was 429Mi against the previous 1Gi limit
+            # (`kubectl top pod`, 2026-08-24) — comfortable headroom, not a crisis, but two
+            # concurrent subprocesses justify keeping that same margin rather than assuming
+            # it halves. Cluster has room: each of the 3 Pi nodes had 1.3-2.7Gi allocatable
+            # free at the time of this change.
             requests:
-              memory: "256Mi"
+              memory: "384Mi"
               cpu: "150m"
             limits:
-              memory: "1Gi"
+              memory: "1536Mi"
               cpu: "750m"
           livenessProbe:
             httpGet:

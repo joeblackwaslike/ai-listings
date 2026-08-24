@@ -7,24 +7,56 @@
 // work for tens of minutes even after a listing's gate had already been answered (ai-listings
 // dashboard report, 2026-08-23: HB-0122's id-gate confirm sat unprocessed for 35+ minutes).
 //
-// This constrains the actual scarce resource directly: a per-process (per-pod) mutex around
-// just the subprocess spawn, with a cooldown before releasing to the next queued caller so
-// memory has time to settle. Every runStructured/runText caller across the app is protected
-// transparently, since they all funnel through oauth-backend.ts when the api-key backend isn't
-// configured -- no per-function concurrency setting needs to know about this.
+// This constrains the actual scarce resource directly: a small semaphore around just the
+// subprocess spawn, with a cooldown before releasing a slot so memory has time to settle.
+// Every runStructured/runText caller across the app is protected transparently, since they
+// all funnel through oauth-backend.ts when the api-key backend isn't configured -- no
+// per-function concurrency setting needs to know about this.
+//
+// Shipped at MAX_CONCURRENT=1 (a plain serial queue) through 2026-08-24. Raised to 2 the same
+// day after that setting turned into its own bottleneck: recovering a backlog of several
+// stuck listings means firing resume-pipeline for all of them at once, and with a hard
+// serial queue plus oauth-backend.ts's up-to-3-minutes-per-call ceiling, a listing at
+// position 4+ could legitimately sit mid-queue for 10-15+ minutes doing nothing wrong --
+// just waiting its turn. Confirmed pod memory had real headroom for it (429Mi peak against a
+// 1Gi limit under MAX_CONCURRENT=1); the app deployment's memory limit was raised alongside
+// this change (deployment.yaml) specifically to keep that margin once two subprocesses can
+// be resident at once instead of one.
+const MAX_CONCURRENT = 2
 const COOLDOWN_MS = 15_000
 
-let queue: Promise<void> = Promise.resolve()
+let activeCount = 0
+const waiters: Array<() => void> = []
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export function withOauthConcurrencyLimit<T>(fn: () => Promise<T>): Promise<T> {
-  const turn = queue.then(fn, fn)
-  queue = turn.then(
-    () => sleep(COOLDOWN_MS),
-    () => sleep(COOLDOWN_MS)
-  )
-  return turn
+function acquire(): Promise<void> {
+  if (activeCount < MAX_CONCURRENT) {
+    activeCount++
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    waiters.push(() => {
+      activeCount++
+      resolve()
+    })
+  })
+}
+
+async function release(): Promise<void> {
+  await sleep(COOLDOWN_MS)
+  activeCount--
+  const next = waiters.shift()
+  if (next) next()
+}
+
+export async function withOauthConcurrencyLimit<T>(fn: () => Promise<T>): Promise<T> {
+  await acquire()
+  try {
+    return await fn()
+  } finally {
+    void release()
+  }
 }
