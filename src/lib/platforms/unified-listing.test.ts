@@ -29,6 +29,7 @@ function fixtureListing(overrides: Partial<Listing> = {}): Listing {
     price_to_move_discount_pct: null,
     retail_price_cents: null,
     retail_price_source: null,
+    retail_price_url: null,
     retail_promo_note: null,
     lowest_active_price_cents: null,
     lowest_active_url: null,

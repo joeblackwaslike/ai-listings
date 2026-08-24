@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseRelevanceScores, extractPriceFromSnippet } from './step3-pricing-research'
+import { parseRelevanceScores, extractPriceFromSnippet, retailTitleMatchesModel } from './step3-pricing-research'
 
 test('parseRelevanceScores: parses every valid entry with its score and color', () => {
   const text = '{"0":{"score":8,"color":"black leather"},"1":{"score":3,"color":"tan canvas"}}'
@@ -112,4 +112,28 @@ test('extractPriceFromSnippet: returns null when every dollar match is a referen
 
 test('extractPriceFromSnippet: returns null when the snippet has no dollar amount', () => {
   assert.equal(extractPriceFromSnippet('Hermes Bangle Bracelet, gently used'), null)
+})
+
+test('retailTitleMatchesModel: rejects a different same-brand product (the Pocket Organizer / Agenda Cover case)', () => {
+  assert.equal(
+    retailTitleMatchesModel('Louis Vuitton Agenda Cover Monogram', 'Pocket Organizer Taurillon Illusion'),
+    false
+  )
+})
+
+test('retailTitleMatchesModel: accepts the same product with a reordered/partial title', () => {
+  assert.equal(
+    retailTitleMatchesModel('LV Taurillon Pocket Organizer - Illusion', 'Pocket Organizer Taurillon Illusion'),
+    true
+  )
+})
+
+test('retailTitleMatchesModel: an empty/near-empty model string matches anything (nothing distinctive to check)', () => {
+  assert.equal(retailTitleMatchesModel('Some Random Item', ''), true)
+})
+
+test('retailTitleMatchesModel: stopwords in the model string do not count toward the match requirement', () => {
+  // "the", "new" are stopwords -- only "Zippy" and "Wallet" are real tokens, and the title
+  // has neither, so this must reject despite both stopwords trivially "matching" any title.
+  assert.equal(retailTitleMatchesModel('Completely Unrelated Item', 'the new Zippy Wallet'), false)
 })

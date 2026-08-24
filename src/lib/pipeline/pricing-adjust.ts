@@ -210,7 +210,11 @@ export function computeAdjustedPricing(
   comps: PricingComp[],
   opts: { includePremiums: boolean }
 ): AdjustedPricing {
-  const soldComps = comps.filter((c) => !c.source.endsWith('_active'))
+  // 'retail' comps are brand-new MSRP-equivalent prices, not sold-item evidence -- since
+  // step3-pricing-research.ts started storing them as regular pricing_comps rows (2026-08-24,
+  // for user visibility/verification) they'd otherwise blend brand-new prices into a used-item
+  // median here, same class of bug '_active' rows already needed excluding for.
+  const soldComps = comps.filter((c) => !c.source.endsWith('_active') && c.source !== 'retail')
   const adjustedCompPrices = soldComps
     .map((c) => adjustForCondition(c.sale_price_cents, conditionDelta(listing.condition ?? '', c.condition)))
     .sort((a, b) => a - b)

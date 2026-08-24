@@ -38,6 +38,7 @@ export type CompSource =
   | 'google' | 'google_active'
   | 'mercari' | 'mercari_active'
   | 'reddit'
+  | 'retail'
   | 'manual' | 'manual_active';
 
 // Which underlying API/data provider produced the comp row -- distinct from `source`
@@ -243,6 +244,7 @@ export interface Listing {
   price_to_move_discount_pct: number | null;
   retail_price_cents: number | null;
   retail_price_source: string | null;
+  retail_price_url: string | null;
   retail_promo_note: string | null;
   lowest_active_price_cents: number | null;
   lowest_active_url: string | null;

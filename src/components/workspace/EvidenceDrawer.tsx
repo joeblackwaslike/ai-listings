@@ -18,6 +18,7 @@ interface EvidenceDrawerProps {
   priceToMoveDiscountPct?: number | null
   retailPriceCents?: number | null
   retailPriceSource?: string | null
+  retailPriceUrl?: string | null
   retailPromoNote?: string | null
   pricingMethodology?: string | null
   priceHistory?: ListingPriceEvent[]
@@ -29,6 +30,7 @@ const SOURCE_LABELS: Record<string, string> = {
   therealreal: 'TRR',
   google: 'Google',
   manual: 'Manual',
+  retail: 'Retail',
 }
 
 // Which underlying API/data provider produced the comp -- distinct from the platform
@@ -65,6 +67,7 @@ export function EvidenceDrawer({
   priceToMoveDiscountPct,
   retailPriceCents,
   retailPriceSource,
+  retailPriceUrl,
   retailPromoNote,
   pricingMethodology,
   priceHistory,
@@ -81,8 +84,6 @@ export function EvidenceDrawer({
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   if (!open) return null
-
-  const isUrl = (s: string) => /^https?:\/\//.test(s)
 
   async function submitManualComp() {
     const priceDollars = parseFloat(addPrice)
@@ -184,6 +185,7 @@ export function EvidenceDrawer({
               // "ebay_active") -- that suffix isn't in SOURCE_LABELS, so it used to render
               // literally instead of a clean source name with a separate sold/active signal.
               const isActive = comp.source.endsWith('_active')
+              const isRetail = comp.source === 'retail'
               const baseSource = isActive ? comp.source.slice(0, -'_active'.length) : comp.source
               return (
                 <div key={comp.id} className="px-5 py-3 space-y-1">
@@ -211,11 +213,28 @@ export function EvidenceDrawer({
                     )}
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded ${
-                        isActive ? 'bg-blue-900/60 text-blue-300' : 'bg-emerald-900/60 text-emerald-400'
+                        isRetail
+                          ? 'bg-purple-900/60 text-purple-300'
+                          : isActive
+                            ? 'bg-blue-900/60 text-blue-300'
+                            : 'bg-emerald-900/60 text-emerald-400'
                       }`}
                     >
-                      {isActive ? 'Active' : 'Sold'}
+                      {isRetail ? 'Retail' : isActive ? 'Active' : 'Sold'}
                     </span>
+                    {/* Relevance scoring (LLM-judged match against brand/model/attributes) was
+                        computed for every comp all along but never shown -- a comp with no
+                        score at all (Claude call failed/timed out) is silently treated as
+                        pass-through evidence for the sold-comp median (see step3's fail-open
+                        comment), so flagging it as unverified lets the user judge it
+                        themselves instead of trusting it blindly (2026-08-24, user report). */}
+                    {comp.relevance_score === null ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-400">
+                        Unverified
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-gray-600">match {comp.relevance_score}/10</span>
+                    )}
                     <span className="text-[10px] text-gray-600">{comp.condition}</span>
                     <span className={`text-[10px] ${delta.color}`}>({delta.label} condition)</span>
                     <span className="text-[10px] text-gray-700">·</span>
@@ -331,9 +350,13 @@ export function EvidenceDrawer({
                 {retailPriceSource && (
                   <>
                     {' '}at{' '}
-                    {isUrl(retailPriceSource) ? (
+                    {/* retailPriceUrl is the actual product page (2026-08-24) -- the old check
+                        here tested whether retailPriceSource itself looked like a URL, which
+                        it never did (it's a bare merchant name like "Nordstrom.com"), so this
+                        never linked out despite looking like it should. */}
+                    {retailPriceUrl ? (
                       <a
-                        href={retailPriceSource}
+                        href={retailPriceUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300 underline"

@@ -238,6 +238,18 @@ test('computeAdjustedPricing: active-market comps are excluded from the sold-pri
   assert.equal(result.compCount, 1)
 })
 
+test('computeAdjustedPricing: retail (brand-new MSRP) comps are excluded from the sold-price median', () => {
+  const listing: PricingListing =
+    { condition: 'good', category: 'jewelry' as const, sub_type: null, inclusions: [] }
+  const comps = [
+    comp({ sale_price_cents: 12_000, source: 'ebay' }),
+    comp({ sale_price_cents: 99_999, source: 'retail' }), // would wreck the median if included
+  ]
+  const result = computeAdjustedPricing(listing, comps, { includePremiums: false })
+  assert.equal(result.basePriceCents, 12_000)
+  assert.equal(result.compCount, 1)
+})
+
 test('computeAdjustedPricing: recomputes against the listing\'s CURRENT condition, not any cached comp delta (staleness fix)', () => {
   const comps = [comp({ sale_price_cents: 10_000, condition: 'Like new', condition_delta: 'better', adjusted_price_cents: 99_999 })]
 

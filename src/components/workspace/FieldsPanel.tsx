@@ -784,6 +784,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
         priceToMoveDiscountPct={listing.price_to_move_discount_pct}
         retailPriceCents={listing.retail_price_cents}
         retailPriceSource={listing.retail_price_source}
+        retailPriceUrl={listing.retail_price_url}
         retailPromoNote={listing.retail_promo_note}
         pricingMethodology={listing.pricing_methodology}
         priceHistory={priceHistory}

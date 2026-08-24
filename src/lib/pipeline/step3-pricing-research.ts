@@ -69,6 +69,31 @@ interface RetailCandidate {
   title: string
   priceCents: number
   source: string
+  link: string | null
+}
+
+// Deterministic pre-filter, cheaper and stricter than the LLM relevance gate below for this
+// specific failure mode: a raw Google Shopping keyword search returns loosely-related
+// same-brand products (fetchRetailCandidates' own comment documents a Louis Vuitton search
+// returning a dozen different LV products, prices all individually legitimate), and the LLM
+// scorer works from title text alone with a rubric built for sub-type/generation/color -- not
+// "is this literally the same product line." Requiring the model string's own distinguishing
+// words to actually appear in the candidate title catches "Pocket Organizer" vs. "Agenda
+// Cover" directly, before spending an LLM call on it. Confirmed necessary 2026-08-24: user
+// report that "almost all" retail comps looked wrong, traced to this exact class of mismatch.
+const RETAIL_TITLE_STOPWORDS = new Set([
+  'the', 'and', 'with', 'for', 'new', 'small', 'large', 'medium', 'mini', 'women', 'womens',
+  "women's", 'men', 'mens', "men's", 'in',
+])
+export function retailTitleMatchesModel(title: string, model: string): boolean {
+  const modelTokens = model
+    .toLowerCase()
+    .split(/[\s,()/-]+/)
+    .filter((t) => t.length >= 3 && !RETAIL_TITLE_STOPWORDS.has(t))
+  if (modelTokens.length === 0) return true // nothing distinctive to check against
+  const lowerTitle = title.toLowerCase()
+  const matched = modelTokens.filter((t) => lowerTitle.includes(t)).length
+  return matched >= Math.max(1, Math.ceil(modelTokens.length / 2))
 }
 
 // Resale/consignment/auction marketplaces -- never a "retail" (MSRP) price even when Google
@@ -118,7 +143,12 @@ async function fetchRetailCandidates(brand: string, model: string, apiKey: strin
       .filter((r): r is SerpShoppingResult & { extracted_price: number } =>
         typeof r.extracted_price === 'number' && r.extracted_price > 0 && !isResaleMarketplace(r.source ?? '')
       )
-      .map((r) => ({ title: r.title, priceCents: Math.round(r.extracted_price * 100), source: r.source ?? 'Google Shopping' }))
+      .map((r) => ({
+        title: r.title,
+        priceCents: Math.round(r.extracted_price * 100),
+        source: r.source ?? 'Google Shopping',
+        link: r.product_link || null,
+      }))
   } catch (err) {
     console.warn('fetchRetailCandidates: failed, returning empty', err instanceof Error ? err.message : String(err))
     return []
@@ -864,8 +894,13 @@ export async function runStep3PricingResearch(
   // fetchRetailCandidates' comment), so the unfiltered minimum is untrustworthy. A wrong
   // "$81 retail" claim shown on the listing is worse than showing none, so no key / no
   // score / a failed scoring batch all mean no retail price this run, not a guess.
-  const retailRelevance = apiKeys.anthropic && retailCandidates.length > 0
-    ? await scoreCompRelevance(retailCandidates, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
+  //
+  // The deterministic title/model pre-filter runs BEFORE the LLM call, not just alongside it
+  // -- catches the "different product, same brand" case directly (see
+  // retailTitleMatchesModel's comment) and cuts down what the LLM even has to judge.
+  const retailPrefiltered = retailCandidates.filter((c) => retailTitleMatchesModel(c.title, model))
+  const retailRelevance = apiKeys.anthropic && retailPrefiltered.length > 0
+    ? await scoreCompRelevance(retailPrefiltered, step2.brand, model, step2.category, step2.notableFeatures, apiKeys.anthropic)
     : new Map<number, CompRelevance>()
   // Luxury houses (LV, Chanel, Hermes, etc.) distribute exclusively through their own
   // boutiques/site -- there is no legitimate third-party "retail" channel for them, so any
@@ -873,28 +908,44 @@ export async function runStep3PricingResearch(
   // what it calls itself. Live-confirmed 2026-08-23: "Lulu Cadieux" (a consignment boutique,
   // not on the marketplace denylist) passed the relevance gate on a WRONG colorway ("Shadow
   // Black" vs. the target "Illusion") and still would've been trusted as retail without this.
-  const relevantRetail = retailCandidates
+  const relevantRetail = retailPrefiltered
     .map((c, i) => ({ ...c, adjusted_price_cents: c.priceCents, relevance_score: retailRelevance.get(i)?.score ?? null }))
     .filter((c) => c.relevance_score !== null && c.relevance_score >= COMP_RELEVANCE_THRESHOLD)
     .filter((c) => !step2.isLuxury || c.source.toLowerCase().includes(step2.brand.toLowerCase()))
   const filteredRetail = removeOutlierComps(relevantRetail)
-  let retailResult: { retailPriceCents: number; source: string; promoNote: string | null } | null = null
+  let retailResult: { retailPriceCents: number; source: string; url: string | null } | null = null
   if (filteredRetail.length > 0) {
+    // Median, not minimum -- picking the cheapest candidate that merely passed relevance
+    // scoring means a single wrongly-matched cheap item beats every correctly-matched one,
+    // every time (a "winner's curse": even a small false-positive rate in relevance scoring
+    // compounds when the selection rule is always "take the lowest price that passed").
+    // Lower-median (not an averaged synthetic price) so the picked value still has a real
+    // source/link to show and link to. Confirmed necessary 2026-08-24: user report that
+    // "almost all" retail comps looked wrong traced back to exactly this selection bias.
     const sortedRetail = [...filteredRetail].sort((a, b) => a.priceCents - b.priceCents)
-    const lowestRetail = sortedRetail[0]
-    let promoNote: string | null = null
-    if (sortedRetail.length >= 2) {
-      const prices = sortedRetail.map((r) => r.priceCents)
-      const median =
-        prices.length % 2 === 0
-          ? (prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2
-          : prices[Math.floor(prices.length / 2)]
-      if (lowestRetail.priceCents < median * 0.85) {
-        promoNote = 'Appears to be on sale'
-      }
-    }
-    retailResult = { retailPriceCents: lowestRetail.priceCents, source: lowestRetail.source, promoNote }
+    const medianRetail = sortedRetail[Math.floor((sortedRetail.length - 1) / 2)]
+    retailResult = { retailPriceCents: medianRetail.priceCents, source: medianRetail.source, url: medianRetail.link }
   }
+
+  // Every candidate that passed the pre-filter + relevance gate + luxury check gets stored
+  // and shown, not just the one picked as retailResult -- the point of this fix is letting the
+  // user see and verify what was actually considered, not just trust one auto-picked number
+  // (2026-08-24, user report).
+  const retailComplDelta = conditionDelta(step2.condition, 'New')
+  const filteredRetailRows: typeof compRows = filteredRetail.map((c) => ({
+    listing_id: listingId,
+    source: 'retail',
+    title: c.title,
+    sale_price_cents: c.priceCents,
+    condition: 'New',
+    sold_at: null,
+    listing_url: c.link ?? '',
+    condition_delta: retailComplDelta,
+    adjusted_price_cents: adjustForCondition(c.priceCents, retailComplDelta),
+    relevance_score: c.relevance_score,
+    color: null,
+    provider: 'serpapi',
+  }))
 
   // Deduplicate same-price clusters before relevance filtering (catches bulk-lot duplicate listings)
   const dedupedRows = deduplicateComps(soldRows)
@@ -956,7 +1007,7 @@ export async function runStep3PricingResearch(
   // signal and no replacement data -- ai-listings-drz confirmed this exact scenario (a step3
   // retry that found zero comps cleared suggested_price_cents, leaving the listing with no
   // price at all). Skip both operations together in that case, leaving existing data untouched.
-  const toInsert = [...filteredComps, ...filteredActive]
+  const toInsert = [...filteredComps, ...filteredActive, ...filteredRetailRows]
   const insertedIds: string[] = []
   if (toInsert.length > 0) {
     const { data: inserted, error } = await supabase.from('pricing_comps').insert(toInsert).select('id')
@@ -1128,7 +1179,13 @@ export async function runStep3PricingResearch(
     price_to_move_discount_pct: discountPct * 100,
     retail_price_cents: retailResult?.retailPriceCents ?? null,
     retail_price_source: retailResult?.source ?? null,
-    retail_promo_note: retailResult?.promoNote ?? null,
+    retail_price_url: retailResult?.url ?? null,
+    // The "on sale" promo-note heuristic compared the picked (formerly minimum) price against
+    // the candidate-set median -- meaningless now that the picked price IS the median (see
+    // filteredRetail selection above), so it's dropped rather than left comparing a value to
+    // itself. retail_promo_note stays in the schema (harmless if always null; EvidenceDrawer
+    // already renders it conditionally) rather than a separate column-removal migration.
+    retail_promo_note: null,
     lowest_active_price_cents: lowestActive?.sale_price_cents ?? null,
     lowest_active_url: lowestActive?.listing_url ?? null,
     lowest_active_source: lowestActive ? lowestActive.source.replace(/_active$/, '') : null,
