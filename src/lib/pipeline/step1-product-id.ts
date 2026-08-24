@@ -131,15 +131,33 @@ export async function runStep1ProductId(
   console.log(`[step1] identified: title="${title}" brand="${brand}" category="${category}" hasLensMatch=${hasLensMatch}`)
 
   const supabase = getSupabaseAdmin()
-  const prefix = {
-    handbag: 'HB', small_leather_goods: 'SL', clothing: 'CL', sneakers: 'SN',
-    electronics: 'EL', jewelry: 'JW', collectibles: 'CO',
-    watches: 'WA', keyboards: 'KB', other: 'OT',
-  }[category]
 
-  const { data: skuData, error: skuError } = await supabase.rpc('generate_sku', { prefix })
-  if (skuError) throw new Error(`step1: generate_sku failed — ${skuError.message}`)
-  const sku = skuData as string
+  // Re-running this step (a restart re-fires photo/uploaded against the same listingId rather
+  // than creating a new one -- see auto-recover-pipeline.ts) used to call generate_sku
+  // unconditionally every time, silently burning a new SKU on top of the listing's existing
+  // one and leaving the old number permanently unused. Confirmed 2026-08-24: an auto-recovery
+  // restart turned OT-0053 into OT-0055, with OT-0053 simply vanishing. Reuse the existing SKU
+  // if the listing already has one.
+  const { data: existingListing } = await supabase
+    .from('listings')
+    .select('sku')
+    .eq('id', listingId)
+    .single()
+  const existingSku = existingListing?.sku as string | null | undefined
+
+  let sku: string
+  if (existingSku) {
+    sku = existingSku
+  } else {
+    const prefix = {
+      handbag: 'HB', small_leather_goods: 'SL', clothing: 'CL', sneakers: 'SN',
+      electronics: 'EL', jewelry: 'JW', collectibles: 'CO',
+      watches: 'WA', keyboards: 'KB', other: 'OT',
+    }[category]
+    const { data: skuData, error: skuError } = await supabase.rpc('generate_sku', { prefix })
+    if (skuError) throw new Error(`step1: generate_sku failed — ${skuError.message}`)
+    sku = skuData as string
+  }
 
   await pushPipelineStep(listingId, {
     pipeline_step: 1,
