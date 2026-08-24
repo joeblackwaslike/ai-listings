@@ -10,6 +10,7 @@ import { syncPlatformOrders } from '@/lib/inngest/functions/sync-platform-orders
 import { textIntakePipeline } from '@/lib/inngest/functions/text-intake-pipeline'
 import { autoDiscountCron } from '@/lib/inngest/functions/auto-discount-cron'
 import { conditionReassessment } from '@/lib/inngest/functions/condition-reassessment'
+import { autoRecoverPipeline } from '@/lib/inngest/functions/auto-recover-pipeline'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -24,5 +25,6 @@ export const { GET, POST, PUT } = serve({
     textIntakePipeline,
     autoDiscountCron,
     conditionReassessment,
+    autoRecoverPipeline,
   ],
 })
