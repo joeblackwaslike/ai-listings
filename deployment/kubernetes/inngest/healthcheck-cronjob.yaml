@@ -1,0 +1,144 @@
+# Restarts the inngest Deployment automatically when its queue stalls -- confirmed via the
+# self-hosted dashboard's run-detail trace on 2026-08-24: a step can sit "Queued" with
+# "Started at: -" indefinitely, growing delay forever, without erroring or showing up as
+# unhealthy on any liveness/readiness probe (the HTTP server keeps responding fine; it's the
+# internal executor/queue dispatch that's wedged). Every pipeline function (intake, resume,
+# retry-step, gates, cron syncs) shares this one Inngest instance, so a stall here silently
+# freezes the entire app's background processing until someone notices and restarts it by
+# hand -- which is what happened before this existed.
+#
+# Detection query: a run is "stalled" when it's unfinished, its most recent history event is
+# StepStarted (we told it to run a step and heard nothing back -- not StepCompleted, not
+# StepErrored, and critically not StepWaiting/StepSleeping, which are legitimate multi-day
+# waits on user gate confirmations and must NOT trigger a restart), and that event is more
+# than 5 minutes old. Restarting is safe even mid-stall: nothing in that state is actually
+# mid-execution (the step never started), and durable state lives in the mounted PVC +
+# Postgres, not in the pod's memory -- unlike a restart that lands on a genuinely in-flight
+# step transition (see deployment.yaml's comment on why this pairing matters).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: inngest-healthcheck
+  namespace: ai-listings
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: inngest-restarter
+  namespace: ai-listings
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["inngest"]
+    verbs: ["get", "patch"]
+  # Needed to find the current inngest pod's start time, so the detection query below can
+  # ignore stalls from before the last restart -- not resourceName-scoped because label
+  # selectors on list/get don't work with RBAC resourceNames.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: inngest-restarter
+  namespace: ai-listings
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: inngest-restarter
+subjects:
+  - kind: ServiceAccount
+    name: inngest-healthcheck
+    namespace: ai-listings
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: inngest-healthcheck
+  namespace: ai-listings
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 60
+      template:
+        spec:
+          serviceAccountName: inngest-healthcheck
+          restartPolicy: Never
+          containers:
+            - name: healthcheck
+              image: postgres:17-alpine
+              env:
+                - name: INNGEST_POSTGRES_URI
+                  valueFrom:
+                    secretKeyRef:
+                      name: ai-listings-secret
+                      key: INNGEST_POSTGRES_URI
+              resources:
+                requests:
+                  memory: "32Mi"
+                  cpu: "10m"
+                limits:
+                  memory: "64Mi"
+                  cpu: "100m"
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  apk add --no-cache curl jq >/dev/null
+
+                  TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                  CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                  API="https://kubernetes.default.svc"
+
+                  # A run stuck from BEFORE the current pod started will never complete --
+                  # nothing restarts it into existence -- so counting it here would flag a
+                  # "stall" every single cycle forever, restarting a perfectly healthy inngest
+                  # on a loop (confirmed happening on this job's first manual test run,
+                  # 2026-08-24, against leftover dead runs from that day's actual incident).
+                  # Only stalls that started after the last restart are real, current problems.
+                  POD_START=$(curl -sS --fail --cacert "${CACERT}" \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    "${API}/api/v1/namespaces/ai-listings/pods?labelSelector=app%3Dinngest" \
+                    | jq -r '.items[0].status.startTime')
+
+                  echo "current inngest pod started at: ${POD_START}"
+
+                  STALLED=$(psql "${INNGEST_POSTGRES_URI}" -tAc "
+                    with latest_event as (
+                      select distinct on (run_id) run_id, type, created_at
+                      from history
+                      order by run_id, created_at desc
+                    )
+                    select count(*)
+                    from function_runs fr
+                    left join function_finishes ff on fr.run_id = ff.run_id
+                    join latest_event le on le.run_id = fr.run_id
+                    where ff.run_id is null
+                      and le.type = 'StepStarted'
+                      and le.created_at < now() - interval '5 minutes'
+                      and le.created_at > '${POD_START}'::timestamptz;
+                  ")
+
+                  echo "stalled steps since last restart: ${STALLED}"
+
+                  if [ "${STALLED}" -gt 0 ]; then
+                    echo "stall detected -- restarting inngest deployment"
+                    NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                    curl -sS --fail -o /dev/null --cacert "${CACERT}" \
+                      -H "Authorization: Bearer ${TOKEN}" \
+                      -H "Content-Type: application/strategic-merge-patch+json" \
+                      -X PATCH \
+                      "${API}/apis/apps/v1/namespaces/ai-listings/deployments/inngest" \
+                      -d "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"${NOW}\"}}}}}"
+                    echo "restart triggered at ${NOW}"
+                  else
+                    echo "healthy -- no action"
+                  fi

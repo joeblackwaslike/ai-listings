@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# Deploy the self-hosted Inngest dev-server in the k3s cluster. It's the durable-execution
+# Deploy the self-hosted Inngest server in the k3s cluster. It's the durable-execution
 # engine behind every pipeline background job (intake, resume, retry-step, condition
-# reassessment, photo-quality-gate, cron jobs) -- a single-replica `inngest dev` process
-# with local SQLite storage (--sqlite-dir /data, no persistent volume: run history is lost
-# on pod restart, in-flight function state is not -- Inngest's SDK-side step memoization
-# lives in the app's own DB writes, not here).
+# reassessment, photo-quality-gate, cron jobs) -- a single-replica `inngest start` process
+# with SQLite queue/executor state on a PVC (inngest-data, survives pod restarts) and
+# run/event history in Postgres (INNGEST_POSTGRES_URI). Also applies
+# healthcheck-cronjob.yaml, which restarts this deployment automatically if its queue ever
+# stalls (steps that started but never progressed for 5+ minutes) -- see that file for the
+# detection query and 2026-08-24's incident writeup for why it exists.
 #
 # Depends on deploy-app.sh having already run in this cluster: reuses its ghcr-credentials
-# imagePullSecret and reads INNGEST_SIGNING_KEY/INNGEST_EVENT_KEY out of its ai-listings-secret
-# (see deployment/kubernetes/inngest/deployment.yaml) rather than provisioning its own.
+# imagePullSecret and reads INNGEST_SIGNING_KEY/INNGEST_EVENT_KEY/INNGEST_POSTGRES_URI out of
+# its ai-listings-secret (see deployment/kubernetes/inngest/deployment.yaml) rather than
+# provisioning its own.
 #
 # Usage: bash deployment/scripts/deploy-inngest.sh
 set -euo pipefail
@@ -24,6 +27,7 @@ kubectl get secret ai-listings-secret -n "${NAMESPACE}" >/dev/null 2>&1 || {
 
 kubectl apply -f "${MANIFESTS}/deployment.yaml"
 kubectl apply -f "${MANIFESTS}/ingress.yaml"
+kubectl apply -f "${MANIFESTS}/healthcheck-cronjob.yaml"
 
 echo "→ Waiting for inngest pod..."
 kubectl rollout status deployment/inngest -n "${NAMESPACE}" --timeout=120s

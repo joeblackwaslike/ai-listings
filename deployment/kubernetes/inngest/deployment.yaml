@@ -1,3 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: inngest-data
+  namespace: ai-listings
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,35 +30,65 @@ spec:
       enableServiceLinks: false
       imagePullSecrets:
         - name: ghcr-credentials
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: inngest-data
       containers:
         - name: inngest
           image: ghcr.io/joeblackwaslike/inngest:latest
           command: ["inngest"]
+          # `start` (not `dev`) + --sqlite-dir on the PVC above is what actually runs in
+          # production -- queue/executor state persists across pod restarts instead of
+          # resetting to a blank slate every time, which matters a lot once an automated
+          # healthcheck (healthcheck-cronjob.yaml) can restart this pod on its own. This
+          # manifest had drifted from that live config (still said `dev --no-discovery`,
+          # no PVC, no INNGEST_POSTGRES_URI) after an earlier out-of-band `kubectl apply`
+          # upgraded it directly -- fixed here so `deploy-inngest.sh` stops being a landmine
+          # that would silently revert prod back to ephemeral dev-server state on next run
+          # (2026-08-24, discovered while chasing a stalled-queue incident).
           args:
-            - dev
-            - --no-discovery
-            - -u
+            - start
+            - --sdk-url
             - http://ai-listings.ai-listings.svc.cluster.local:3000/api/inngest
+            - --sqlite-dir
+            - /data
           ports:
             - containerPort: 8288
+          volumeMounts:
+            - name: data
+              mountPath: /data
           env:
+            # The inngest SERVER (this container, `start` mode) wants the bare hex signing
+            # key and fails startup validation ("signing-key must be hex string with even
+            # number of chars") on the `signkey-prod-`-prefixed value that INNGEST_SIGNING_KEY
+            # holds for app-side SDK clients -- _RAW is the same key without that prefix,
+            # added to the secret for exactly this. Discovered 2026-08-24: this manifest still
+            # referenced the prefixed key from `dev` mode (which didn't validate this), and the
+            # live deployment's out-of-band upgrade to `start` mode had already switched to
+            # _RAW -- applying this file reverted that and crash-looped the server until fixed.
             - name: INNGEST_SIGNING_KEY
               valueFrom:
                 secretKeyRef:
                   name: ai-listings-secret
-                  key: INNGEST_SIGNING_KEY
+                  key: INNGEST_SIGNING_KEY_RAW
             - name: INNGEST_EVENT_KEY
               valueFrom:
                 secretKeyRef:
                   name: ai-listings-secret
                   key: INNGEST_EVENT_KEY
-          lifecycle:
-            postStart:
-              exec:
-                command:
-                  - sh
-                  - -c
-                  - sleep 15 && wget -qO- --post-data='{"url":"http://ai-listings.ai-listings.svc.cluster.local:3000/api/inngest"}' --header='Content-Type:application/json' http://localhost:8288/fn/register || true
+            - name: INNGEST_POSTGRES_URI
+              valueFrom:
+                secretKeyRef:
+                  name: ai-listings-secret
+                  key: INNGEST_POSTGRES_URI
+          # No postStart /fn/register hook -- `--sdk-url` above already registers the app on
+          # startup, making the hook redundant, and a failing postStart hook kills the
+          # container outright (not just a warning), which is exactly backwards for a
+          # deployment an automated healthcheck (healthcheck-cronjob.yaml) restarts on its
+          # own. Removed after it deterministically hit "exec format error" on every fresh
+          # pod during this manifest's first real `kubectl apply` in months (2026-08-24) --
+          # root cause not chased further since removing it is strictly safer either way.
           resources:
             requests:
               memory: "128Mi"
