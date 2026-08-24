@@ -9,10 +9,14 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 // listing that day needed someone watching the dashboard and firing pipeline/resume by hand.
 // This does that on a schedule instead.
 //
-// See migration 0029_auto_recover_pipeline.sql for the detection query and why the staleness
-// window has to be this wide (a single legitimately-slow-but-working listing can take well
-// over 10 minutes with the current oauth-backend concurrency limit).
-const STALENESS_MINUTES = 30
+// See migration 0029_auto_recover_pipeline.sql for the detection query. Sized off real
+// worst-case per-call latency: oauth-backend.ts's 180s timeout + oauth-concurrency.ts's 15s
+// cooldown ≈ 3.25 min per Claude call, and a single listing's remaining steps typically need
+// 3-4 calls (step3's comp-scoring batches, step4a, step5 if luxury) -- ~13 min worst case with
+// no queue contention at all. 15 min covers that with margin without making a genuinely dead
+// run wait half an hour to recover (30 min shipped first, sized for a rare mass-recovery burst
+// instead of the common single-listing case -- tightened 2026-08-24 after review).
+const STALENESS_MINUTES = 15
 
 export const autoRecoverPipeline = inngest.createFunction(
   {
