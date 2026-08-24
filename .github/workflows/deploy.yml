@@ -99,17 +99,15 @@ jobs:
       # postStart hook on the Inngest deployment itself, but that hook (and any other exec into
       # that container) hard-fails with "exec format error" -- its image has no working shell
       # for this architecture. PUTing the app's own /api/inngest endpoint triggers the same
-      # sync from a container that does have a working shell (this one). Confirmed missing
-      # 2026-08-24: auto-recover-pipeline.ts shipped and rolled out clean but never appeared in
-      # Inngest's function list until this exact call was run by hand.
+      # sync. Called directly over cluster DNS, not via `kubectl exec` into the app pod --
+      # the github-runner service account has RBAC for managing Deployments but not
+      # pods/exec (confirmed 2026-08-24: "cannot create resource pods/exec"), and this runner
+      # already lives inside the cluster with normal pod networking, so there's no need for
+      # exec at all. Confirmed missing the same day: auto-recover-pipeline.ts deployed clean
+      # but never appeared in Inngest's function list until this exact call was run by hand.
       - name: Sync Inngest functions
         run: |
-          POD=$(kubectl get pods -n ai-listings -l app=ai-listings -o jsonpath='{.items[0].metadata.name}')
-          kubectl exec -n ai-listings "${POD}" -- node -e "
-            fetch('http://localhost:3000/api/inngest', { method: 'PUT' })
-              .then(r => r.text().then(t => { console.log('status:', r.status, t); if (!r.ok) process.exit(1) }))
-              .catch(e => { console.error('error:', e); process.exit(1) })
-          "
+          curl -sS -X PUT --fail http://ai-listings.ai-listings.svc.cluster.local:3000/api/inngest
 
       - name: Show running pods
         run: kubectl get pods -n ai-listings
