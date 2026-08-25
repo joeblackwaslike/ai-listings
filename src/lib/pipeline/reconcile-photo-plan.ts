@@ -16,7 +16,7 @@ function keywords(text: string): Set<string> {
 
 function hasMatchingShot(authStep: AuthStep, photoPlan: PhotoShot[]): boolean {
   const authKeywords = keywords(`${authStep.step} ${authStep.guidance}`)
-  if (authKeywords.size === 0) return false
+  if (authKeywords.size < 2) return false
   const requiredOverlap = Math.min(2, authKeywords.size)
   return photoPlan.some((shot) => {
     const shotKeywords = keywords(`${shot.shot} ${shot.description}`)

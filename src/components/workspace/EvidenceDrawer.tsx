@@ -338,7 +338,8 @@ export function EvidenceDrawer({
               {/* The real external data point: what price was actually posted live on a
                   platform (e.g. eBay) at publish time -- sourced from platform_price_events
                   (migration 0033), written at the actual publish call site
-                  (publishListingToEbay). This is genuine sold/listed-comp evidence, unlike
+                  (publishListingToEbay). This is posted/listed price evidence, not confirmed
+                  sold-price evidence -- it's written at publish time, not sale time -- unlike
                   the internal-only history below. */}
               <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Posted on Platform</p>
               <ul className="space-y-1">

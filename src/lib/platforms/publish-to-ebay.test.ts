@@ -86,6 +86,7 @@ function stubSupabase() {
   const insertCalls: Array<{ table: string; row: unknown }> = []
   let updateError: { message: string } | null = null
   let insertError: { message: string } | null = null
+  let insertRejection: Error | null = null
 
   const supabase = {
     from: (table: string) => ({
@@ -97,6 +98,7 @@ function stubSupabase() {
       }),
       insert: (row: unknown) => {
         insertCalls.push({ table, row })
+        if (insertRejection) return Promise.reject(insertRejection)
         return Promise.resolve({ error: insertError })
       },
     }),
@@ -108,6 +110,7 @@ function stubSupabase() {
     insertCalls,
     setUpdateError: (err: { message: string } | null) => { updateError = err },
     setInsertError: (err: { message: string } | null) => { insertError = err },
+    setInsertRejection: (err: Error | null) => { insertRejection = err },
   }
 }
 
@@ -179,4 +182,14 @@ test('publishListingToEbay still returns the publish result when recording the p
   const result = await publishListingToEbay(supabase, fixtureListing(), [], [fixtureComp()], adapter)
 
   assert.equal(result.platformId, 'ebay-item-5')
+})
+
+test('publishListingToEbay still returns the publish result when the price event insert call itself rejects', async () => {
+  const { supabase, setInsertRejection } = stubSupabase()
+  setInsertRejection(new Error('transport failure'))
+  const adapter = fakeAdapter({ platformId: 'ebay-item-6', offerId: 'offer-6', url: 'https://ebay.com/itm/6' })
+
+  const result = await publishListingToEbay(supabase, fixtureListing(), [], [fixtureComp()], adapter)
+
+  assert.equal(result.platformId, 'ebay-item-6')
 })

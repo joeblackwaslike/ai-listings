@@ -80,3 +80,18 @@ test('reconcilePhotoPlan can append multiple gaps and skip multiple matches in t
   assert.equal(result.length, 2)
   assert.match(result[1].shot + ' ' + result[1].description, /date code/i)
 })
+
+test('reconcilePhotoPlan always adds a gap for an auth item with only one keyword, even when a shot contains that keyword', () => {
+  const authPlan = [fixtureAuthStep({ step: 'Hologram', guidance: 'Check hologram' })]
+  const photoPlan = [
+    fixtureShot({
+      shot: 'Hologram sticker close-up',
+      description: 'Unrelated close-up that happens to mention hologram in passing',
+    }),
+  ]
+
+  const result = reconcilePhotoPlan(authPlan, photoPlan)
+
+  assert.equal(result.length, 2)
+  assert.match(result[1].shot + ' ' + result[1].description, /hologram/i)
+})

@@ -65,14 +65,18 @@ export async function publishListingToEbay(
     throw new Error(`publishListingToEbay: failed to update listing — ${updateError.message}`)
   }
 
-  const { error: priceEventError } = await supabase.from('platform_price_events').insert({
-    listing_id: listing.id,
-    platform: 'ebay',
-    event_type: 'published',
-    price_cents: unifiedListing.price,
-  })
-  if (priceEventError) {
-    console.error(`publishListingToEbay: failed to record platform_price_events — ${priceEventError.message}`)
+  try {
+    const { error: priceEventError } = await supabase.from('platform_price_events').insert({
+      listing_id: listing.id,
+      platform: 'ebay',
+      event_type: 'published',
+      price_cents: unifiedListing.price,
+    })
+    if (priceEventError) {
+      console.error(`publishListingToEbay: failed to record platform_price_events — ${priceEventError.message}`)
+    }
+  } catch (err) {
+    console.error('publishListingToEbay: failed to record platform_price_events', err)
   }
 
   return result
