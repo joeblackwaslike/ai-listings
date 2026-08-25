@@ -68,6 +68,7 @@ export function UploadZone({ onUpload }: Readonly<{ onUpload?: (listing: Listing
             condition_notes: null,
             intake_meta: null,
             suggested_price_cents: null,
+            final_price_cents: null,
             agent_blocked: false,
             agent_blocked_reason: null,
             pipeline_step: 0,

@@ -21,6 +21,7 @@ interface CardListing {
   condition_notes: string | null
   intake_meta: Record<string, unknown> | null
   suggested_price_cents: number | null
+  final_price_cents: number | null
   agent_blocked: boolean
   agent_blocked_reason: string | null
   pipeline_step: number
@@ -35,6 +36,18 @@ interface CoverPhoto {
 
 export interface ListingWithCover extends CardListing {
   coverPhoto?: CoverPhoto
+}
+
+// A human-set override always wins over the pipeline's own suggestion once one exists --
+// resolveFinalPriceCents (pricing-adjust.ts) is the full precedence chain used at publish
+// time, but the dashboard card doesn't load pricing_comps to compute the adjusted-comps term
+// in the middle of that chain, so this is deliberately just the two fields the card actually
+// has: final_price_cents ?? suggested_price_cents. Don't re-derive resolveFinalPriceCents'
+// full chain inline here -- it needs `adjusted.priceCents`, which this component never fetches.
+export function resolveDisplayPriceCents(
+  listing: Pick<CardListing, 'final_price_cents' | 'suggested_price_cents'>
+): number | null {
+  return listing.final_price_cents ?? listing.suggested_price_cents
 }
 
 function BlockedPhoto({ photoUrl, reason }: Readonly<{ photoUrl?: string; reason: string | null }>) {
@@ -413,9 +426,9 @@ export function ListingCard({
         <p className="text-xs font-medium text-gray-200 line-clamp-2 leading-snug">
           {listing.title ?? listing.brand ?? 'Untitled'}
         </p>
-        {listing.suggested_price_cents != null && (
+        {resolveDisplayPriceCents(listing) != null && (
           <p className="text-xs text-emerald-400 font-semibold">
-            {formatPrice(listing.suggested_price_cents)}
+            {formatPrice(resolveDisplayPriceCents(listing) as number)}
           </p>
         )}
       </div>
