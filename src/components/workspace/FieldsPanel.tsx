@@ -13,13 +13,14 @@ import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { getInclusionChecklist } from '@/lib/inclusions'
 import { adjustForCondition, computeAdjustedPricing, conditionDelta, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
-import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent } from '@/types/listings'
+import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
   listing: Listing
   photos: Photo[]
   comps: PricingComp[]
   priceHistory: ListingPriceEvent[]
+  platformPriceHistory: PlatformPriceEvent[]
 }
 
 const CONDITION_LABELS: Record<string, string> = {
@@ -79,7 +80,7 @@ function QaChecklistRow({ photo, onRetake, onUseAsIs }: Readonly<QaChecklistRowP
   )
 }
 
-export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<FieldsPanelProps>) {
+export function FieldsPanel({ listing, photos, comps, priceHistory, platformPriceHistory }: Readonly<FieldsPanelProps>) {
   const router = useRouter()
   const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [priceOverrideOpen, setPriceOverrideOpen] = useState(false)
@@ -788,6 +789,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory }: Readonly<F
         retailPromoNote={listing.retail_promo_note}
         pricingMethodology={listing.pricing_methodology}
         priceHistory={priceHistory}
+        platformPriceHistory={platformPriceHistory}
       />
     </>
   )
