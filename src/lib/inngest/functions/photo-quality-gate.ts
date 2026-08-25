@@ -4,6 +4,7 @@ import type { StudioUploadedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { toPublicUrl } from '@/lib/pipeline/to-public-url'
 import { removeBackground } from '@/lib/pipeline/remove-background'
+import { processRawPhoto } from '@/lib/pipeline/process-raw-photo'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import { getInclusionChecklist, mergeDetectedInclusions } from '@/lib/inclusions'
 import { detectInclusionsFromPhoto } from '@/lib/pipeline/step2-vision-analysis'
@@ -182,13 +183,6 @@ export const photoQualityGate = inngest.createFunction(
       .eq('id', listingId)
       .single()
 
-    if (listingRow?.skip_background_removal) {
-      await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
-      await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
-
-      return { ok: true, listingId, photoId, skipped: true }
-    }
-
     const { data: photoRow } = await supabase
       .from('photos')
       .select('raw_url')
@@ -199,8 +193,22 @@ export const photoQualityGate = inngest.createFunction(
       throw new Error(`photo-quality-gate: photo ${photoId} has no raw_url`)
     }
 
-    const apiKeys = await getUserApiKeys(listingRow?.user_id ?? null)
     const storagePath = `studio/${listingId}/processed-${photoId}.png`
+
+    if (listingRow?.skip_background_removal) {
+      // Studio uploads get the same crop/denoise treatment as intake photos when background
+      // removal is skipped -- previously this branch returned without processing at all, so
+      // skip-bg studio photos never got a processed_url and consumers fell back to the
+      // un-cropped, un-denoised raw upload.
+      await processRawPhoto(photoId, photoRow.raw_url as string, storagePath)
+
+      await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
+      await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
+
+      return { ok: true, listingId, photoId, skipped: true }
+    }
+
+    const apiKeys = await getUserApiKeys(listingRow?.user_id ?? null)
     await removeBackground(photoId, photoRow.raw_url as string, storagePath, apiKeys)
 
     await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
