@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { X, ExternalLink, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { relativeDate, formatPrice } from '@/lib/utils'
-import type { PricingComp, ListingPriceEvent } from '@/types/listings'
+import type { PricingComp, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
 
 interface EvidenceDrawerProps {
   open: boolean
@@ -22,6 +22,7 @@ interface EvidenceDrawerProps {
   retailPromoNote?: string | null
   pricingMethodology?: string | null
   priceHistory?: ListingPriceEvent[]
+  platformPriceHistory?: PlatformPriceEvent[]
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -50,6 +51,11 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   relist: 'Relisted',
 }
 
+const PLATFORM_LABELS: Record<string, string> = {
+  ebay: 'eBay',
+  poshmark: 'Poshmark',
+}
+
 const DELTA_DISPLAY: Record<string, { label: string; color: string }> = {
   same: { label: 'same', color: 'text-gray-400' },
   better: { label: 'better', color: 'text-emerald-400' },
@@ -71,6 +77,7 @@ export function EvidenceDrawer({
   retailPromoNote,
   pricingMethodology,
   priceHistory,
+  platformPriceHistory,
 }: EvidenceDrawerProps) {
   const router = useRouter()
   const [methodologyOpen, setMethodologyOpen] = useState(false)
@@ -326,9 +333,33 @@ export function EvidenceDrawer({
             )}
           </div>
 
+          {platformPriceHistory != null && platformPriceHistory.length > 0 && (
+            <div className="px-5 py-3 space-y-2">
+              {/* The real external data point: what price was actually posted live on a
+                  platform (e.g. eBay) at publish time -- sourced from platform_price_events
+                  (migration 0033), written at the actual publish call site
+                  (publishListingToEbay). This is genuine sold/listed-comp evidence, unlike
+                  the internal-only history below. */}
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Posted on Platform</p>
+              <ul className="space-y-1">
+                {platformPriceHistory.map((event) => (
+                  <li key={event.id} className="text-xs text-gray-400">
+                    {formatPrice(event.price_cents)}
+                    <span className="text-gray-600"> · {PLATFORM_LABELS[event.platform] ?? event.platform}</span>
+                    <span className="text-gray-600"> · {relativeDate(event.recorded_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {priceHistory != null && priceHistory.length > 0 && (
             <div className="px-5 py-3 space-y-2">
-              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Price History</p>
+              {/* Internal-only: logs changes to OUR suggested_price_cents/final_price_cents
+                  fields (step3-pricing-research.ts, auto-discount-cron.ts). Never reflects
+                  what was actually posted live on a platform -- see "Posted on Platform"
+                  above for that. Labeled explicitly so the two aren't confused. */}
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Internal Price Changes</p>
               <ul className="space-y-1">
                 {priceHistory.map((event) => (
                   <li key={event.id} className="text-xs text-gray-400">

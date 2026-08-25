@@ -2,10 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getEbayCreds } from '@/lib/platforms/credentials'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
-import { buildUnifiedListingForEbay } from '@/lib/platforms/unified-listing'
+import { publishListingToEbay } from '@/lib/platforms/publish-to-ebay'
 import { mapPostToEbayError } from '@/lib/platforms/post-to-ebay-error'
 import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
-import type { Listing, Photo, PlatformFields, ListingUrls, PricingComp } from '@/types/listings'
+import type { Listing, Photo, PricingComp } from '@/types/listings'
 
 export async function POST(
   _req: Request,
@@ -101,32 +101,7 @@ export async function POST(
   const comps = (compRows ?? []) as unknown as PricingComp[]
 
   try {
-    const unifiedListing = await buildUnifiedListingForEbay(listing, photos, comps)
-    const result = await new EbayAdapter(creds).createListing(unifiedListing)
-
-    const currentPlatformFields = listing.platform_fields as PlatformFields
-    const updatedPlatformFields: PlatformFields = {
-      ...currentPlatformFields,
-      ebay: {
-        ...currentPlatformFields.ebay!,
-        ebay_listing_id: result.platformId,
-        ebay_offer_id: result.offerId,
-      },
-    }
-    const updatedListingUrls: ListingUrls = { ...(listing.listing_urls ?? {}), ebay: result.url }
-
-    const { error: updateError } = await supabase
-      .from('listings')
-      .update({
-        listing_urls: updatedListingUrls,
-        status: 'published',
-        platform_fields: updatedPlatformFields,
-      })
-      .eq('id', id)
-
-    if (updateError) {
-      return Response.json({ error: updateError.message }, { status: 500 })
-    }
+    const result = await publishListingToEbay(supabase, listing, photos, comps, new EbayAdapter(creds))
 
     return Response.json({
       ok: true,

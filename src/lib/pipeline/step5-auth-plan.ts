@@ -1,5 +1,6 @@
 import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { pushPipelineStep } from './supabase-push'
+import { reconcilePhotoPlan } from './reconcile-photo-plan'
 import type { VisionAnalysis } from './step2-vision-analysis'
 import type { AuthStep } from '@/types/listings'
 import type { ApiKeys } from '@/lib/user-api-keys'
@@ -110,10 +111,18 @@ Use the generate_auth_plan tool.`
     photo_required: s.photo_required,
   }))
 
+  // step2's photo_plan and this step's auth_plan come from two separate LLM calls with no
+  // cross-reference -- reconcile here so every auth item that needs a photo is guaranteed a
+  // matching studio shot, instead of leaving that coverage coincidental. step2.photoPlan is
+  // safe to use directly: nothing else writes photo_plan between step2 and step5 within a
+  // single intake-pipeline run (see intake-pipeline.ts).
+  const reconciledPhotoPlan = reconcilePhotoPlan(authPlan, step2.photoPlan)
+
   await pushPipelineStep(listingId, {
     // pushPipelineStep floors pipeline_step atomically via a Postgres GREATEST() (migration
     // 0025) -- see the comment there for why this can't be a read-then-write-max here.
     pipeline_step: 5,
     auth_plan: authPlan,
+    photo_plan: reconciledPhotoPlan,
   })
 }

@@ -337,6 +337,18 @@ export interface ListingPriceEvent {
   created_at: string;
 }
 
+// The actual price posted live on an external marketplace (e.g. eBay) at publish time --
+// a genuine external data point, distinct from ListingPriceEvent above (which only tracks
+// changes to our own suggested_price_cents/final_price_cents fields).
+export interface PlatformPriceEvent {
+  id: string;
+  listing_id: string;
+  platform: string;
+  event_type: 'published';
+  price_cents: number;
+  recorded_at: string;
+}
+
 export interface AuthChecklist {
   ok: true;
   passed: boolean;

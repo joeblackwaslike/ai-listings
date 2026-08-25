@@ -7,7 +7,7 @@ import { FinalizeButton } from '@/components/workspace/FinalizeButton'
 import { PhotoSection } from '@/components/workspace/PhotoSection'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
-import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent } from '@/types/listings'
+import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
 import { studioPhotosReady } from '@/lib/utils'
 import { buildGenderGatePrompt, buildIdGatePrompt, isGenderGateAnswered, shouldAttemptPersistGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
 import { getSetting } from '@/lib/user-settings'
@@ -174,7 +174,7 @@ export default async function WorkspacePage({
     }
   }
 
-  const [listingResult, photosResult, compsResult, historyResult, priceHistoryResult] = await Promise.all([
+  const [listingResult, photosResult, compsResult, historyResult, priceHistoryResult, platformPriceHistoryResult] = await Promise.all([
     supabase.from('listings').select('*').eq('id', id).single(),
     supabase
       .from('photos')
@@ -197,6 +197,11 @@ export default async function WorkspacePage({
       .select('id, listing_id, event_type, price_cents, note, created_at')
       .eq('listing_id', id)
       .order('created_at', { ascending: true }),
+    supabase
+      .from('platform_price_events')
+      .select('id, listing_id, platform, event_type, price_cents, recorded_at')
+      .eq('listing_id', id)
+      .order('recorded_at', { ascending: true }),
   ])
 
   if (listingResult.error || !listingResult.data) {
@@ -214,6 +219,7 @@ export default async function WorkspacePage({
   const comps = (compsResult.data ?? []) as unknown as PricingComp[]
   const history = historyResult.data ?? []
   const priceHistory = (priceHistoryResult.data ?? []) as unknown as ListingPriceEvent[]
+  const platformPriceHistory = (platformPriceHistoryResult.data ?? []) as unknown as PlatformPriceEvent[]
 
   const hasHistory = history.length > 0
   const genderGateAnswered = listing.status === 'gender_gate' && isGenderGateAnswered(history)
@@ -257,7 +263,7 @@ export default async function WorkspacePage({
         <div className="overflow-y-auto border-r border-gray-800">
           <div className="flex flex-col gap-6 p-6">
             <PhotoSection photos={photos} listingId={id} initialSkip={listing.skip_background_removal} />
-            <FieldsPanel listing={listing} photos={photos} comps={comps} priceHistory={priceHistory} />
+            <FieldsPanel listing={listing} photos={photos} comps={comps} priceHistory={priceHistory} platformPriceHistory={platformPriceHistory} />
           </div>
         </div>
 
