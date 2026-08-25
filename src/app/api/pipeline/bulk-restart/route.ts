@@ -1,5 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 
+type BulkRestartSupabaseClient = {
+  auth: {
+    getUser: () => Promise<{ data: { user: { id: string } | null } }>
+  }
+}
+
 // This endpoint used to select every agent_blocked=true listing for the user and re-fire its
 // pipeline (photo/uploaded or pipeline/resume), on the theory that agent_blocked meant a
 // failed/stuck run. It doesn't -- agent_blocked is a deliberate hold for human review (e.g.
@@ -13,12 +19,19 @@ import { createClient } from '@/lib/supabase/server'
 // explicit, individual, per-card action (ListingCard.tsx / StatusBadge.tsx's "Needs you"
 // state), never a bulk one. Kept as an authenticated no-op rather than removed outright so a
 // stale client still gets a clean response instead of a 404.
-export async function POST() {
-  const supabase = await createClient()
+//
+// Exported separately from POST() so it can be exercised directly in tests against a stub
+// Supabase client, without needing a Next.js request context or a real Supabase connection.
+export async function handleBulkRestart(supabase: BulkRestartSupabaseClient) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   return Response.json({ restarted: 0 })
+}
+
+export async function POST() {
+  const supabase = await createClient()
+  return handleBulkRestart(supabase)
 }

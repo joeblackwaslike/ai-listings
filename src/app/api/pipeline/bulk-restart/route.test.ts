@@ -1,7 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { handleBulkRestart } from './route'
 
 // agent_blocked = true means a listing is deliberately held for human review (e.g. suspected
 // counterfeit pending professional authentication) -- it is NOT a stuck/crashed pipeline run.
@@ -13,19 +12,44 @@ import { fileURLToPath } from 'node:url'
 // failed/error state), so the only correct fix is that this route never queries listings by, or
 // otherwise acts on, agent_blocked at all -- unblocking stays an explicit, individual, per-card
 // action (ListingCard.tsx / StatusBadge.tsx's "Needs you" state).
-const routeSource = readFileSync(fileURLToPath(new URL('./route.ts', import.meta.url)), 'utf8')
+//
+// These tests exercise the handler's actual runtime behavior against a stub Supabase client
+// (rather than checking the source text for banned substrings), so they still fail if the
+// listings-querying/pipeline-firing behavior comes back under a renamed variable, an
+// indirected helper, or an aliased import.
 
-test('bulk-restart route: never filters, selects, or writes the agent_blocked column', () => {
-  // Matches actual code usage (a query filter, a select-list entry, or an object key) rather
-  // than banning the bare word -- the file is allowed to explain in prose why agent_blocked
-  // is off limits here without failing this guard.
-  assert.equal(/['"`]agent_blocked['"`]|agent_blocked\s*:/.test(routeSource), false)
+function stubSupabase(user: { id: string } | null) {
+  const calls = { from: 0 }
+  return {
+    client: {
+      auth: {
+        getUser: async () => ({ data: { user } }),
+      },
+      from(...args: unknown[]) {
+        calls.from += 1
+        throw new Error(`unexpected listings query: from(${args.join(', ')})`)
+      },
+    },
+    calls,
+  }
+}
+
+test('bulk-restart: unauthenticated request is rejected with 401 and never queries listings', async () => {
+  const { client, calls } = stubSupabase(null)
+
+  const res = await handleBulkRestart(client)
+
+  assert.equal(res.status, 401)
+  assert.deepEqual(await res.json(), { error: 'Unauthorized' })
+  assert.equal(calls.from, 0)
 })
 
-test('bulk-restart route: never queries the listings table', () => {
-  assert.equal(/\.from\(\s*['"]listings['"]\s*\)/.test(routeSource), false)
-})
+test('bulk-restart: authenticated request is a no-op -- {restarted: 0}, no listings query', async () => {
+  const { client, calls } = stubSupabase({ id: 'user-1' })
 
-test('bulk-restart route: never fires an Inngest pipeline event', () => {
-  assert.equal(/inngest\.send/.test(routeSource), false)
+  const res = await handleBulkRestart(client)
+
+  assert.equal(res.status, 200)
+  assert.deepEqual(await res.json(), { restarted: 0 })
+  assert.equal(calls.from, 0)
 })
