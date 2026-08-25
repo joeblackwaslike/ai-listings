@@ -7,6 +7,12 @@ import { getSupabaseAdmin } from './supabase-push'
 // Categories where background removal makes the item look worse (chains, delicate jewelry)
 const SKIP_BG_REMOVAL = new Set(['jewelry'])
 
+// Shared with skip-bg/route.ts so the category-based exclusion can't be bypassed by toggling
+// skip_background_removal -- jewelry always gets the crop/denoise-only path regardless of flag.
+export function categorySkipsBackgroundRemoval(category?: string | null): boolean {
+  return !!category && SKIP_BG_REMOVAL.has(category.toLowerCase())
+}
+
 export interface PhotoRoomDeps {
   supabase?: SupabaseClient
   processRaw?: typeof processRawPhoto
@@ -29,7 +35,7 @@ export async function runStep4bPhotoRoom(
 
   // Background removal is skipped for these cases, but the photo still needs its raw borders
   // cropped and noise reduced before it becomes processed_url.
-  if (category && SKIP_BG_REMOVAL.has(category.toLowerCase())) {
+  if (categorySkipsBackgroundRemoval(category)) {
     await processRaw(intakePhotoId, photoUrl, storagePath)
     return
   }

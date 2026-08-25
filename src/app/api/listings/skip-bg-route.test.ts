@@ -21,8 +21,9 @@ import type { ApiKeys } from '@/lib/user-api-keys'
 const apiKeys = {} as ApiKeys
 
 interface StubOpts {
-  listing: { user_id: string; skip_background_removal: boolean } | null
+  listing: { user_id: string; skip_background_removal: boolean; category?: string } | null
   photo?: { id: string; raw_url: string; processed_url: string | null } | null
+  photoError?: { message: string } | null
   updateError?: { message: string } | null
 }
 
@@ -36,7 +37,10 @@ function stubSupabase(opts: StubOpts) {
         const chain = {
           eq: (_col: string, _val: string) => chain,
           single: async () => ({ data: table === 'listings' ? opts.listing : null, error: null }),
-          maybeSingle: async () => ({ data: table === 'photos' ? (opts.photo ?? null) : null, error: null }),
+          maybeSingle: async () => ({
+            data: table === 'photos' ? (opts.photo ?? null) : null,
+            error: table === 'photos' ? (opts.photoError ?? null) : null,
+          }),
         }
         return chain
       },
@@ -160,6 +164,44 @@ test('handleSkipBg: a listing with no processed_url yet (still mid-pipeline) ski
   assert.equal(res.status, 200)
   assert.deepEqual(await res.json(), { ok: true, skip: true })
   assert.equal(reprocessCalls.length, 0)
+})
+
+test('handleSkipBg: turning skip OFF on a jewelry listing still reprocesses via processRaw, never removeBg', async () => {
+  const { client } = stubSupabase({
+    listing: { user_id: 'user-1', skip_background_removal: true, category: 'jewelry' },
+    photo: { id: 'photo-1', raw_url: 'https://x/raw.jpg', processed_url: 'https://x/crop-denoise-only.jpg' },
+  })
+  const calls: string[] = []
+
+  const res = await handleSkipBg(stubSession({ id: 'user-1' }), client, 'listing-1', false, {
+    processRaw: async (photoId, _url, storagePath) => {
+      calls.push(`processRaw:${photoId}:${storagePath}`)
+    },
+    removeBg: async () => {
+      calls.push('removeBg')
+    },
+    getApiKeys: async () => apiKeys,
+  })
+
+  assert.equal(res.status, 200)
+  assert.deepEqual(await res.json(), { ok: true, skip: false })
+  assert.deepEqual(calls, ['processRaw:photo-1:intake/listing-1/processed-photo-1.png'])
+})
+
+test('handleSkipBg: a photo lookup error is not silently swallowed -- returns 500 and does not persist the flag flip', async () => {
+  const { client, calls: dbCalls } = stubSupabase({
+    listing: { user_id: 'user-1', skip_background_removal: false },
+    photoError: { message: 'connection reset' },
+  })
+
+  const res = await handleSkipBg(stubSession({ id: 'user-1' }), client, 'listing-1', true, {
+    processRaw: async () => {
+      throw new Error('should not be called')
+    },
+  })
+
+  assert.equal(res.status, 500)
+  assert.ok(!dbCalls.some((c) => c.table === 'listings' && c.op === 'update'), 'flag must not flip when the photo lookup itself errors')
 })
 
 test('handleSkipBg: a reprocessing failure returns 500 and does not persist the flag flip', async () => {

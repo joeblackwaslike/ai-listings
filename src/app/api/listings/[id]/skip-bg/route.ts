@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { processRawPhoto } from '@/lib/pipeline/process-raw-photo'
 import { removeBackground } from '@/lib/pipeline/remove-background'
+import { categorySkipsBackgroundRemoval } from '@/lib/pipeline/step4b-photoroom'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 
 type SessionSupabaseClient = {
@@ -39,7 +40,7 @@ export async function handleSkipBg(
   // Verify the listing belongs to the caller before updating with the admin client (RLS is bypassed here).
   const { data: listing } = await supabase
     .from('listings')
-    .select('user_id, skip_background_removal')
+    .select('user_id, skip_background_removal, category')
     .eq('id', listingId)
     .single()
   if (!listing || listing.user_id !== user.id) {
@@ -55,17 +56,25 @@ export async function handleSkipBg(
   // here every consumer of processed_url (PhotoPanel, PhotoSection, ListingCard) keeps showing
   // whichever variant was generated before the toggle, not the one the user just asked for.
   if (turningSkipOn || turningSkipOff) {
-    const { data: photo } = await supabase
+    const { data: photo, error: photoLookupError } = await supabase
       .from('photos')
       .select('id, raw_url, processed_url')
       .eq('listing_id', listingId)
       .eq('type', 'intake')
       .maybeSingle()
 
+    if (photoLookupError) {
+      console.error(`skip-bg: failed to look up intake photo for listing ${listingId}:`, photoLookupError)
+      return Response.json({ error: 'Failed to look up intake photo' }, { status: 500 })
+    }
+
     if (photo?.processed_url && photo.raw_url) {
       const storagePath = `intake/${listingId}/processed-${photo.id}.png`
+      // Jewelry never gets background-removed, regardless of the flag being toggled off --
+      // matches the category-based exclusion step4b-photoroom.ts applies at intake time.
+      const useRaw = turningSkipOn || categorySkipsBackgroundRemoval(listing.category)
       try {
-        if (turningSkipOn) {
+        if (useRaw) {
           await processRaw(photo.id, photo.raw_url, storagePath)
         } else {
           const apiKeys = await getApiKeys(user.id)
