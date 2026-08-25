@@ -29,6 +29,26 @@ async function noisyImage(width: number, height: number): Promise<Buffer> {
   return sharp(raw, { raw: { width, height, channels } }).png().toBuffer()
 }
 
+async function exifRotatedBarImage(): Promise<Buffer> {
+  // 60x100 canvas (portrait sensor dims) with a horizontal 40x10 colored bar inset, tagged
+  // with EXIF orientation 6 (rotate 90deg CW to display correctly) -- simulates a phone photo
+  // taken with the device rotated, the common real-world case that leaves photos sideways
+  // when EXIF orientation isn't honored before processing.
+  const bar = await sharp({
+    create: { width: 40, height: 10, channels: 4, background: { r: 200, g: 40, b: 40, alpha: 1 } },
+  })
+    .png()
+    .toBuffer()
+
+  return sharp({
+    create: { width: 60, height: 100, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
+  })
+    .composite([{ input: bar, top: 45, left: 10 }])
+    .withMetadata({ orientation: 6 })
+    .jpeg()
+    .toBuffer()
+}
+
 test('strengthToMedianSize: 30% strength (DENOISE_STRENGTH) maps to median(3), the mildest setting', () => {
   assert.equal(DENOISE_STRENGTH, 0.3)
   assert.equal(strengthToMedianSize(0.3), 3)
@@ -62,5 +82,22 @@ test('cropDenoiseAndFlatten: denoises via median filter, reducing per-channel va
   assert.ok(
     outputStats.channels[0].stdev < inputStats.channels[0].stdev,
     `expected denoise to reduce stdev: ${outputStats.channels[0].stdev} < ${inputStats.channels[0].stdev}`
+  )
+})
+
+test('cropDenoiseAndFlatten: auto-orients from EXIF before cropping, so a sideways camera capture is not left sideways', async () => {
+  const input = await exifRotatedBarImage()
+  const inputMeta = await sharp(input).metadata()
+  assert.equal(inputMeta.orientation, 6, 'fixture must carry EXIF orientation 6 (rotate 90deg CW to display correctly)')
+
+  const output = await cropDenoiseAndFlatten(input)
+  const outputMeta = await sharp(output).metadata()
+
+  // Orientation 6 means the stored pixel bar (wide: 40x10) must display tall once corrected --
+  // auto-orienting before trim is what makes the cropped output reflect the corrected shape
+  // instead of the raw sensor shape (which would stay wider than tall).
+  assert.ok(
+    outputMeta.height! > outputMeta.width!,
+    `expected auto-oriented crop to be taller than wide: ${outputMeta.width}x${outputMeta.height}`
   )
 })

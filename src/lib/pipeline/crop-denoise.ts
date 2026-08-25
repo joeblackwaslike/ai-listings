@@ -29,6 +29,11 @@ export function strengthToMedianSize(strength: number): number {
 // regardless of which path produced it.
 export async function cropDenoiseAndFlatten(buffer: Buffer): Promise<Buffer> {
   return sharp(buffer)
+    // Auto-orient from EXIF before anything else -- camera uploads (especially portrait shots
+    // from phones) store pixels in the sensor's orientation and rely on the EXIF tag to display
+    // correctly. jpeg().toBuffer() alone doesn't honor that tag, so without this the trim/median
+    // crop below would operate on, and the output would stay in, the sideways sensor orientation.
+    .rotate()
     .trim({ threshold: 10 })
     .median(strengthToMedianSize(DENOISE_STRENGTH))
     .flatten({ background: { r: 255, g: 255, b: 255 } })

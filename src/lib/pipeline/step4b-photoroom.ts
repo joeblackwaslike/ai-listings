@@ -24,10 +24,7 @@ export async function runStep4bPhotoRoom(
   const processRaw = deps.processRaw ?? processRawPhoto
   const removeBg = deps.removeBg ?? removeBackground
 
-  // Keyed by intakePhotoId, not just listingId -- a shared static key here would let
-  // concurrent/multiple photo outputs for the same listing overwrite or target the wrong
-  // storage object (codexreviewbot, PR #56). Matches the per-photo key already used for
-  // studio photos in photo-quality-gate.ts.
+  // Key outputs by intakePhotoId so each photo in a listing has a distinct storage object.
   const storagePath = `intake/${listingId}/processed-${intakePhotoId}.png`
 
   // Background removal is skipped for these cases, but the photo still needs its raw borders
