@@ -1,10 +1,9 @@
-import sharp from 'sharp'
-import '@/lib/sharp-config'
 import { getSupabaseAdmin } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { toInternalUrl } from './to-public-url'
 import { uploadFile } from '@/lib/storage'
 import { getBgRemovalProvider } from './bg-removal'
+import { cropDenoiseAndFlatten } from './crop-denoise'
 
 export async function removeBackground(
   photoId: string,
@@ -23,12 +22,9 @@ export async function removeBackground(
   const provider = getBgRemovalProvider(apiKeys)
   const rawProcessedBuffer = await provider.removeBackground(Buffer.from(photoBuffer))
 
-  // Auto-crop transparent borders, then flatten onto white (transparent PNG looks terrible in UI)
-  const processedBuffer = await sharp(rawProcessedBuffer)
-    .trim({ threshold: 10 })
-    .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .jpeg({ quality: 92 })
-    .toBuffer()
+  // Auto-crop transparent borders, denoise, then flatten onto white (transparent PNG looks
+  // terrible in UI)
+  const processedBuffer = await cropDenoiseAndFlatten(rawProcessedBuffer)
 
   const processedUrl = await uploadFile(storagePath, processedBuffer, 'image/jpeg')
 
