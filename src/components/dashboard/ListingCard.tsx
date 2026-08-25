@@ -290,9 +290,7 @@ export function ListingCard({
     listing.status === 'intake' ||
     (listing.status === 'id_gate' && idConfirmed) ||
     (listing.status === 'gender_gate' && genderGateSubmitted)
-  const photoUrl = skipBg
-    ? listing.coverPhoto?.raw_url
-    : (listing.coverPhoto?.processed_url ?? listing.coverPhoto?.raw_url)
+  const photoUrl = listing.coverPhoto?.processed_url ?? listing.coverPhoto?.raw_url
   const features = (listing.intake_meta?.visionAnalysis as { notable_features?: string[] } | undefined)?.notable_features ?? []
 
   async function handleArchive(e: React.MouseEvent) {

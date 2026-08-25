@@ -66,7 +66,7 @@ export const conditionReassessment = inngest.createFunction(
     const result = await step.run('reassess-condition', async () => {
       const { data: listingRow, error: listingError } = await supabase
         .from('listings')
-        .select('user_id, skip_background_removal')
+        .select('user_id')
         .eq('id', listingId)
         .single()
       if (listingError) throw new Error(`condition-reassessment: failed to load listing ${listingId} -- ${listingError.message}`)
@@ -80,7 +80,7 @@ export const conditionReassessment = inngest.createFunction(
       if (photosError) throw new Error(`condition-reassessment: failed to load photos for listing ${listingId} -- ${photosError.message}`)
 
       const urls = (photos ?? [])
-        .map((p) => (listingRow.skip_background_removal ? p.raw_url : p.processed_url ?? p.raw_url) as string)
+        .map((p) => (p.processed_url ?? p.raw_url) as string)
         .filter(Boolean)
       if (urls.length === 0) return null
 
