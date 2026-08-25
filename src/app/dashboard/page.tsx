@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { ListingsGrid } from '@/components/dashboard/ListingsGrid'
 import type { ListingWithCover } from '@/components/dashboard/ListingCard'
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
-import { BlockedListingsBanner } from '@/components/dashboard/BlockedListingsBanner'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 
 export default async function DashboardPage() {
@@ -10,7 +9,7 @@ export default async function DashboardPage() {
 
   const { data: listings } = await supabase
     .from('listings')
-    .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, agent_blocked, agent_blocked_reason, pipeline_step, pipeline_total, skip_background_removal')
+    .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, final_price_cents, agent_blocked, agent_blocked_reason, pipeline_step, pipeline_total, skip_background_removal')
     .neq('status', 'archived')
     .order('created_at', { ascending: false })
     .limit(100)
@@ -42,13 +41,10 @@ export default async function DashboardPage() {
     coverPhoto: coverByListing.get(l.id) ?? undefined,
   }))
 
-  const blockedCount = listingsWithCovers.filter((l) => l.agent_blocked).length
-
   return (
     <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
       <AutoRefresh />
       <DashboardHeader listingsCount={listingsWithCovers.length} />
-      {blockedCount > 0 && <BlockedListingsBanner blockedCount={blockedCount} />}
       <ListingsGrid initialListings={listingsWithCovers} />
     </main>
   )
