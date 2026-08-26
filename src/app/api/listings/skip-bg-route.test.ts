@@ -145,10 +145,35 @@ test('handleSkipBg: no-op toggle (requested skip matches current flag) never tou
   assert.ok(!dbCalls.some((c) => c.table === 'photos'), 'photos table should never be queried on a no-op toggle')
 })
 
-test('handleSkipBg: a listing with no processed_url yet (still mid-pipeline) skips reprocessing but still flips the flag', async () => {
+test('handleSkipBg: a legacy listing with no processed_url yet still gets reprocessed (raw_url alone is the eligibility condition)', async () => {
+  // Before this PR, skip_background_removal listings never got a processed_url at all -- the
+  // reprocessing guard used to require processed_url to already be set, which permanently
+  // stranded exactly those pre-existing rows: toggling skip off flipped the flag but never
+  // called removeBg, since there was no processed_url yet to justify reprocessing.
   const { client } = stubSupabase({
     listing: { user_id: 'user-1', skip_background_removal: false },
     photo: { id: 'photo-1', raw_url: 'https://x/raw.jpg', processed_url: null },
+  })
+  const reprocessCalls: string[] = []
+
+  const res = await handleSkipBg(stubSession({ id: 'user-1' }), client, 'listing-1', true, {
+    processRaw: async (photoId, _url, storagePath) => {
+      reprocessCalls.push(`processRaw:${photoId}:${storagePath}`)
+    },
+    removeBg: async () => {
+      reprocessCalls.push('removeBg')
+    },
+  })
+
+  assert.equal(res.status, 200)
+  assert.deepEqual(await res.json(), { ok: true, skip: true })
+  assert.deepEqual(reprocessCalls, ['processRaw:photo-1:intake/listing-1/processed-photo-1.png'])
+})
+
+test('handleSkipBg: no intake photo row at all skips reprocessing but still flips the flag', async () => {
+  const { client } = stubSupabase({
+    listing: { user_id: 'user-1', skip_background_removal: false },
+    photo: null,
   })
   const reprocessCalls: string[] = []
 

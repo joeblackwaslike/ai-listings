@@ -68,7 +68,10 @@ export async function handleSkipBg(
       return Response.json({ error: 'Failed to look up intake photo' }, { status: 500 })
     }
 
-    if (photo?.processed_url && photo.raw_url) {
+    // raw_url alone is the eligibility condition -- processed_url being unset is the normal,
+    // permanent state for a listing whose skip_background_removal predates this PR (that's the
+    // exact bug this PR backfills), not just a transient "still mid-pipeline" signal.
+    if (photo?.raw_url) {
       const storagePath = `intake/${listingId}/processed-${photo.id}.png`
       // Jewelry never gets background-removed, regardless of the flag being toggled off --
       // matches the category-based exclusion step4b-photoroom.ts applies at intake time.
