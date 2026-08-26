@@ -171,7 +171,7 @@ For the photo plan, generate an item-specific ordered shot checklist for the stu
 
 Ordering principles (reason from these for this specific item — do not just copy a template):
 1. Shot #1 is the listing thumbnail. It must be the single most compelling full-item image — the one that reads best at postage-stamp size and makes someone want to click. For a 3D item this is typically an angled front-corner hero shot; for a flat item it's a clean front flat. Never put a detail, close-up, damage, or accessory shot first.
-2. Dimensionality drives the rotation. 3D items (bags, shoes, keyboards, watches, most electronics): hero → top-down → front → back → sides → bottom → then details, then accessories, then packaging. Flat items (clothing, flat wallets): front → back → details. Adjust for in-between items.
+2. Dimensionality drives the rotation. 3D items (bags, shoes, keyboards, watches, most electronics): hero → top-down → front → back → sides → bottom → then details, then accessories, then packaging. Flat items (clothing, flat wallets, slim pouches): front → back → details — NO overhead shot. The overhead and front flat show the same surface on a flat item; only include overhead when the item has real depth (>~2cm closed) that makes the top a distinct surface worth shooting separately. Adjust for in-between items.
 3. Whole before part. Full-item shots before any detail or close-up. Establish shape and condition first.
 4. Exterior before interior. After covering all exterior sides, reveal the inside (open compartments, card slots, box contents). Interior shots come after the exterior rotation and before detail close-ups. Only include if the item has an interior worth showing.
 5. Details in descending importance. Brand/auth marks (stamp, date code, serial) → hardware → condition areas → damage (one shot per distinct area, only if present).
@@ -180,8 +180,8 @@ Ordering principles (reason from these for this specific item — do not just co
 
 Category reference sequences (illustrative, not rigid — reason about this specific item):
 - handbag/bag: angled hero → top-down → front flat → back flat → bottom → interior open → all hardware → brand stamp → date code → serial → strap/handle → damage areas → dust bag → auth card
-- small_leather_goods (3D): angled hero → front flat → back flat → interior (all slots) → brand/blind stamp → hardware → date code → damage → accessories
-- small_leather_goods (flat): front → back → interior → brand stamp → hardware → damage
+- small_leather_goods (3D, has real gusset/depth — zip-around wallet, structured coin purse, rounded pouch): angled hero → front flat → back flat → interior (all slots) → brand/blind stamp → hardware → date code → damage → accessories
+- small_leather_goods (flat/shallow — flat clutch, cardholder, slim bifold, envelope pouch with depth <~2cm): NO overhead; front flat (upright) → back flat → interior open (all slots/compartments) → brand stamp → hardware → damage → accessories. Overhead duplicates front flat and is omitted.
 - sneakers: angled 3/4 hero (both shoes together, best face) → medial side → toe box → heel → insole with size → outsole → box label → hangtag/extras → damage
 - watches: angled hero with watch in open box → full dial front-on → crown → case back (serial + movement if visible) → full band/bracelet → clasp → bezel → crystal edge → damage → papers/inner box
 - clothing: front flat → back flat → brand tag → care/size label → material texture (if notable) → damage
