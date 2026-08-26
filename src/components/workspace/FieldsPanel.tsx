@@ -90,6 +90,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
   const [saving, setSaving] = useState(false)
   const [inclusions, setInclusions] = useState<Inclusion[]>(listing.inclusions ?? [])
   const [conditionConfirmed, setConditionConfirmed] = useState(listing.condition_confirmed)
+  const [refreshingPlan, setRefreshingPlan] = useState(false)
   const [addInput, setAddInput] = useState('')
   const addInputRef = useRef<HTMLInputElement>(null)
   const retakeTargetPhotoId = useRef<string | null>(null)
@@ -301,6 +302,16 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
     }
   }
 
+  async function refreshPhotoPlan() {
+    setRefreshingPlan(true)
+    try {
+      await fetch(`/api/listings/${listing.id}/photo-plan/refresh`, { method: 'POST' })
+      router.refresh()
+    } finally {
+      setRefreshingPlan(false)
+    }
+  }
+
   function addInclusion(name?: string) {
     const item = (name ?? addInput).trim()
     if (!item) return
@@ -506,20 +517,39 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
 
         {listing.photo_plan && listing.photo_plan.length > 0 && (
           <section>
-            <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Photo Plan
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                Photo Plan
+              </h3>
+              {inclusions.some((i) => !i.confirmed) && (
+                <button
+                  onClick={refreshPhotoPlan}
+                  disabled={refreshingPlan}
+                  className="text-[10px] text-amber-400 hover:text-amber-300 disabled:opacity-50"
+                >
+                  {refreshingPlan ? 'Refreshing…' : 'Refresh with current inclusions'}
+                </button>
+              )}
+            </div>
             <ul className="space-y-2">
-              {listing.photo_plan.map((shot) => (
-                <li key={shot.shot} className="flex items-start gap-2">
-                  <span className={`mt-0.5 flex-none w-3.5 h-3.5 rounded border ${shot.required ? 'border-gray-600' : 'border-gray-700'}`} />
-                  <div className="min-w-0">
-                    <span className="text-xs text-gray-300">{shot.shot}</span>
-                    {shot.required && <span className="ml-1 text-[10px] text-orange-500">required</span>}
-                    <p className="text-[10px] text-gray-600 leading-snug">{shot.description}</p>
-                  </div>
-                </li>
-              ))}
+              {listing.photo_plan.map((shot, idx) => {
+                const order = shot.order ?? idx + 1
+                const isHero = order === 1
+                return (
+                  <li key={shot.shot} className="flex items-start gap-2">
+                    <span className={`mt-0.5 flex-none text-[10px] font-mono w-5 text-right leading-3.5 ${isHero ? 'text-amber-400 font-bold' : 'text-gray-600'}`}>
+                      {order}
+                    </span>
+                    <span className={`mt-0.5 flex-none w-3.5 h-3.5 rounded border ${shot.required ? 'border-gray-600' : 'border-gray-700'}`} />
+                    <div className="min-w-0">
+                      <span className={`text-xs ${isHero ? 'text-amber-300 font-medium' : 'text-gray-300'}`}>{shot.shot}</span>
+                      {isHero && <span className="ml-1 text-[10px] text-amber-500 font-semibold">HERO</span>}
+                      {shot.required && !isHero && <span className="ml-1 text-[10px] text-orange-500">required</span>}
+                      <p className="text-[10px] text-gray-600 leading-snug">{shot.description}</p>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           </section>
         )}

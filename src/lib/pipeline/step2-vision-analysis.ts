@@ -115,6 +115,7 @@ type VisionOutput = {
     description: string
     required: boolean
     photo_type: 'intake' | 'processed' | 'auth_card' | 'studio'
+    order: number
   }>
   confidence_note: string
 }
@@ -166,14 +167,27 @@ Analyze the photo carefully and extract the structured product information using
 
 For sneakers specifically: always identify US size (from box label, insole tag, or visible markings) and gender (men's/women's, inferred from silhouette). Include both as explicit entries in notable_features even if the value is "unknown".
 
-For the photo plan, generate an item-specific shot checklist for the studio session. Examples by category:
-- handbag: front flat, back flat, bottom, interior open, all hardware close-up, brand stamp, date code, auth card, serial number, strap, zipper pulls, any damage areas
-- small_leather_goods: front, back, interior open (all card slots/compartments), brand stamp/blind stamp, date code, zipper or snap hardware close-up, any scuffs or corner wear, dust bag if present
-- sneakers: side profile (both shoes), toe box, heel, insole with size label visible, box label (size + colorway), hangtag, any creasing or scuffs, outsole wear
-- electronics: front powered off, front powered on (boot/home screen), back, all ports, serial/IMEI label, all accessories, any damage
-- clothing: front flat, back flat, brand tag, care label, measurement reference, any wear/damage
-- watches: front dial (full face), crown close-up, case back (serial number + movement if visible), band/bracelet + clasp, bezel detail, any scratches/chips on crystal, box and papers if present
-- keyboards: top-down full board, left side profile, right side profile, bottom (case + badge), PCB close-up if unbuilt/exposed, switch stem detail, keycap legends (angle shot), stabilizers, any scratches/damage, box and accessories included`
+For the photo plan, generate an item-specific ordered shot checklist for the studio session. Shot order is the shoot sequence — the photographer takes them in this exact order. Assign every shot an \`order\` field (1-indexed).
+
+Ordering principles (reason from these for this specific item — do not just copy a template):
+1. Shot #1 is the listing thumbnail. It must be the single most compelling full-item image — the one that reads best at postage-stamp size and makes someone want to click. For a 3D item this is typically an angled front-corner hero shot; for a flat item it's a clean front flat. Never put a detail, close-up, damage, or accessory shot first.
+2. Dimensionality drives the rotation. 3D items (bags, shoes, keyboards, watches, most electronics): hero → top-down → front → back → sides → bottom → then details, then accessories, then packaging. Flat items (clothing, flat wallets): front → back → details. Adjust for in-between items.
+3. Whole before part. Full-item shots before any detail or close-up. Establish shape and condition first.
+4. Exterior before interior. After covering all exterior sides, reveal the inside (open compartments, card slots, box contents). Interior shots come after the exterior rotation and before detail close-ups. Only include if the item has an interior worth showing.
+5. Details in descending importance. Brand/auth marks (stamp, date code, serial) → hardware → condition areas → damage (one shot per distinct area, only if present).
+6. Accessories and inclusions after the item itself. One shot per accessory or all together if small. Packaging last (box closed, then open).
+7. Item- and brand-specific reasoning. A luxury item with a dust bag, auth card, and receipt needs those explicitly ordered after the item. A watch with a display case back gets its own prominent shot. A bag with distinctive hardware should foreground that hardware earlier in the detail section. Apply brand-specific auth mark conventions (LV date codes, Chanel auth cards, Nike swoosh on outsole, etc.).
+
+Category reference sequences (illustrative, not rigid — reason about this specific item):
+- handbag/bag: angled hero → top-down → front flat → back flat → bottom → interior open → all hardware → brand stamp → date code → serial → strap/handle → damage areas → dust bag → auth card
+- small_leather_goods (3D): angled hero → front flat → back flat → interior (all slots) → brand/blind stamp → hardware → date code → damage → accessories
+- small_leather_goods (flat): front → back → interior → brand stamp → hardware → damage
+- sneakers: angled 3/4 hero (both shoes together, best face) → medial side → toe box → heel → insole with size → outsole → box label → hangtag/extras → damage
+- watches: angled hero with watch in open box → full dial front-on → crown → case back (serial + movement if visible) → full band/bracelet → clasp → bezel → crystal edge → damage → papers/inner box
+- clothing: front flat → back flat → brand tag → care/size label → material texture (if notable) → damage
+- electronics: front powered on (home/boot screen) → back → all ports/sides → serial/IMEI → all accessories together → damage
+- keyboards: angled 3/4 beauty shot (front-facing diagonal from above) → top-down full board → left side → right side → bottom → keycap legends close-up → switch stems → stabilizers → damage → box + accessories
+- jewelry: angled hero if geometry allows (pendant hanging, ring on stand) → otherwise top-down full → back/clasp → brand/hallmark stamp → stone or detail close-up → scale reference → damage → box/pouch/certificate`
 
   let output: VisionOutput
   try {
@@ -241,10 +255,11 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
                 description: { type: 'string' },
                 required: { type: 'boolean' },
                 photo_type: { type: 'string', enum: ['studio', 'auth_card'] },
+                order: { type: 'integer', description: '1-indexed position in shoot sequence. Shot 1 is the thumbnail/hero.' },
               },
-              required: ['shot', 'description', 'required', 'photo_type'],
+              required: ['shot', 'description', 'required', 'photo_type', 'order'],
             },
-            description: 'Studio shot checklist specific to this item',
+            description: 'Ordered studio shot checklist specific to this item. Shot order is the shoot sequence; shot #1 is the listing thumbnail.',
           },
           confidence_note: {
             type: 'string',
@@ -284,6 +299,7 @@ For the photo plan, generate an item-specific shot checklist for the studio sess
     is_luxury: isLuxury,
     inclusions: mergeDetectedInclusions([], output.inclusions),
     photo_plan: output.photo_plan,
+    photo_plan_generated_at: new Date().toISOString(),
     intake_meta: {
       lensMatches: step1.lensMatches,
       visionAnalysis: output,

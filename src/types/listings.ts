@@ -87,6 +87,8 @@ export interface PhotoShot {
   description: string;
   required: boolean;
   photo_type: PhotoType;
+  order?: number;         // 1-indexed shoot sequence; shot 1 is the thumbnail/hero
+  inclusion_ref?: string; // inclusion item name this shot backs, for reconcile targeting
 }
 
 // Always inches -- no unit suffix needed on the individual fields since, unlike jewelry's
@@ -253,6 +255,7 @@ export interface Listing {
 
   auth_plan: AuthStep[];
   photo_plan: PhotoShot[];
+  photo_plan_generated_at: string | null;
   platform_fields: PlatformFields;
   listing_urls: ListingUrls;
 

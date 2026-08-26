@@ -28,12 +28,13 @@ function hasMatchingShot(authStep: AuthStep, photoPlan: PhotoShot[]): boolean {
   })
 }
 
-function buildShotForAuthStep(authStep: AuthStep): PhotoShot {
+function buildShotForAuthStep(authStep: AuthStep, order: number): PhotoShot {
   return {
     shot: `${authStep.step} (authenticity check)`,
     description: `Close-up photo documenting: ${authStep.guidance}`,
     required: true,
     photo_type: 'auth_card',
+    order,
   }
 }
 
@@ -43,13 +44,18 @@ function buildShotForAuthStep(authStep: AuthStep): PhotoShot {
  * calls with no cross-reference, so coverage of authenticity-relevant shots in the studio
  * shot list is otherwise coincidental rather than guaranteed. Matching is a deterministic
  * keyword-overlap heuristic (no LLM call) so this stays cheap, fast, and testable.
+ *
+ * Appended auth_card shots are assigned order values continuing from the highest existing
+ * order so they appear at the end of the shoot sequence.
  */
 export function reconcilePhotoPlan(authPlan: AuthStep[], photoPlan: PhotoShot[]): PhotoShot[] {
   const result = [...photoPlan]
+  let nextOrder = Math.max(0, ...photoPlan.map((s) => s.order ?? 0))
   for (const authStep of authPlan) {
     if (!authStep.photo_required) continue
     if (hasMatchingShot(authStep, result)) continue
-    result.push(buildShotForAuthStep(authStep))
+    nextOrder += 1
+    result.push(buildShotForAuthStep(authStep, nextOrder))
   }
   return result
 }
