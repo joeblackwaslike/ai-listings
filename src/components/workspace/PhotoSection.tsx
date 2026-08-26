@@ -50,7 +50,7 @@ export function PhotoSection({ photos, listingId, initialSkip }: PhotoSectionPro
           {skip ? 'BG removal off' : 'Skip BG removal'}
         </button>
       </div>
-      <PhotoPanel photos={photos} skipBgRemoval={skip} />
+      <PhotoPanel photos={photos} />
     </div>
   )
 }
