@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { toPublicUrl } from '@/lib/pipeline/to-public-url'
 import { removeBackground } from '@/lib/pipeline/remove-background'
 import { processRawPhoto } from '@/lib/pipeline/process-raw-photo'
+import { categorySkipsBackgroundRemoval } from '@/lib/pipeline/step4b-photoroom'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import { getInclusionChecklist, mergeDetectedInclusions } from '@/lib/inclusions'
 import { detectInclusionsFromPhoto } from '@/lib/pipeline/step2-vision-analysis'
@@ -179,7 +180,7 @@ export const photoQualityGate = inngest.createFunction(
 
     const { data: listingRow } = await supabase
       .from('listings')
-      .select('user_id, skip_background_removal')
+      .select('user_id, skip_background_removal, category')
       .eq('id', listingId)
       .single()
 
@@ -195,7 +196,7 @@ export const photoQualityGate = inngest.createFunction(
 
     const storagePath = `studio/${listingId}/processed-${photoId}.png`
 
-    if (listingRow?.skip_background_removal) {
+    if (listingRow?.skip_background_removal || categorySkipsBackgroundRemoval(listingRow?.category)) {
       // Studio uploads get the same crop/denoise treatment as intake photos when background
       // removal is skipped -- previously this branch returned without processing at all, so
       // skip-bg studio photos never got a processed_url and consumers fell back to the
