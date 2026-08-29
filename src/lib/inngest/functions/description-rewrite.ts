@@ -43,7 +43,7 @@ export const descriptionRewrite = inngest.createFunction(
         .from('listings')
         .update({ status: 'in_loop' })
         .eq('id', listingId)
-        .neq('status', 'archived')
+        .eq('status', 'condition_gate')
     })
 
     return { ok: true, listingId }
