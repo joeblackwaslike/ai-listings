@@ -99,11 +99,14 @@ export const conditionReassessment = inngest.createFunction(
     if (updateError) {
       console.error('[condition-reassessment] condition update failed, skipping gate transition', updateError)
     } else {
-      await supabase
+      const { error: gateError } = await supabase
         .from('listings')
         .update({ status: 'condition_gate' })
         .eq('id', listingId)
         .eq('status', 'in_loop')
+      if (gateError) {
+        console.error('[condition-reassessment] failed to set condition_gate status', gateError)
+      }
     }
 
     return { ok: true, listingId }

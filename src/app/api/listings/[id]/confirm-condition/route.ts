@@ -71,6 +71,7 @@ export async function PATCH(
     .eq('id', id)
     .eq('user_id', user.id)
     .eq('status', 'condition_gate')
+    .eq('condition_confirmed', false)
     .select('id')
     .maybeSingle()
 

@@ -63,13 +63,17 @@ export async function runRewriteListing(
 
   // Studio photos for the vision call — use processed_url (background-removed) only.
   // Limit to 20 and require type=studio so intake/auth photos don't pollute the rewrite.
-  const { data: photos } = await supabase
+  const { data: photos, error: photosError } = await supabase
     .from('photos')
     .select('processed_url')
     .eq('listing_id', listingId)
     .eq('type', 'studio')
     .not('processed_url', 'is', null)
     .limit(20)
+
+  if (photosError) {
+    throw new Error(`rewrite-listing: failed to load studio photos for listing ${listingId} -- ${photosError.message}`)
+  }
 
   const photoUrls = (photos ?? []).map((p) => p.processed_url as string).filter(Boolean)
   const images: ClaudeImageInput[] = await Promise.all(

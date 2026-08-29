@@ -24,6 +24,7 @@ export const descriptionRewrite = inngest.createFunction(
           condition_confirmed: false,
         })
         .eq('id', listingId)
+        .eq('status', 'condition_gate')
     },
   },
   async ({ event, step }) => {
@@ -39,11 +40,14 @@ export const descriptionRewrite = inngest.createFunction(
     // rewrite completion). Archived listings are never transitioned.
     await step.run('transition-to-in-loop', async () => {
       const supabase = getSupabaseAdmin()
-      await supabase
+      const { error } = await supabase
         .from('listings')
-        .update({ status: 'in_loop' })
+        .update({ status: 'in_loop', agent_blocked: false })
         .eq('id', listingId)
         .eq('status', 'condition_gate')
+      if (error) {
+        throw new Error(`description-rewrite: failed to advance listing ${listingId} to in_loop -- ${error.message}`)
+      }
     })
 
     return { ok: true, listingId }

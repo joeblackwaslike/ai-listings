@@ -124,7 +124,7 @@ function genderGateContext(listing: Listing): WorkspaceContext {
   ], detailGateContext)
 }
 
-function conditionGateContext(listing: Listing): WorkspaceContext {
+function conditionGateContext(_listing: Listing): WorkspaceContext {
   return {
     firstMessage: "Studio photos are in. Review the condition grade below — select the right one, add any observations, and click Rewrite & Confirm to refresh all copy.",
     suggestions: null,
