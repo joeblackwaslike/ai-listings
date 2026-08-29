@@ -11,6 +11,7 @@ import { EvidenceDrawer } from './EvidenceDrawer'
 import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
+import { ConditionReviewPanel } from '@/components/workspace/ConditionReviewPanel'
 import { getInclusionChecklist } from '@/lib/inclusions'
 import { adjustForCondition, computeAdjustedPricing, conditionDelta, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
@@ -454,29 +455,32 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
           )}
         </dl>
 
-        {listing.condition && !conditionConfirmed && (
-          <section>
-            <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Condition
-            </h3>
-            <div className="flex items-start gap-2 px-2 py-2 rounded bg-amber-950/40 border-l-2 border-amber-600">
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-amber-300 font-medium">
-                  {CONDITION_LABELS[listing.condition] ?? listing.condition}
-                  <span className="text-amber-600/70 font-normal"> — recalculated from studio photos</span>
-                </p>
-                {listing.condition_notes && (
-                  <p className="text-[10px] text-amber-600/80 mt-0.5 leading-snug">{listing.condition_notes}</p>
-                )}
+        {listing.status === 'condition_gate'
+          ? <ConditionReviewPanel listing={listing} />
+          : listing.condition && !conditionConfirmed && (
+            <section>
+              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Condition
+              </h3>
+              <div className="flex items-start gap-2 px-2 py-2 rounded bg-amber-950/40 border-l-2 border-amber-600">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-amber-300 font-medium">
+                    {CONDITION_LABELS[listing.condition] ?? listing.condition}
+                    <span className="text-amber-600/70 font-normal"> — recalculated from studio photos</span>
+                  </p>
+                  {listing.condition_notes && (
+                    <p className="text-[10px] text-amber-600/80 mt-0.5 leading-snug">{listing.condition_notes}</p>
+                  )}
+                </div>
+                <div className="flex-none flex gap-1.5 pt-0.5">
+                  <button onClick={() => void approveCondition()} className="text-emerald-500 hover:text-emerald-400" title="Approve">
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex-none flex gap-1.5 pt-0.5">
-                <button onClick={() => void approveCondition()} className="text-emerald-500 hover:text-emerald-400" title="Approve">
-                  <Check className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
+            </section>
+          )
+        }
 
         {populatedMeasurements.length > 0 && (
           <section>

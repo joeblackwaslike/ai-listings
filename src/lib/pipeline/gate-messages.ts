@@ -170,5 +170,5 @@ export function shouldAttemptPersistGreeting(
 ): firstMessage is string {
   if (!firstMessage) return false
   if (listing.agent_blocked) return true
-  return listing.status === 'in_loop' || listing.status === 'id_gate' || listing.status === 'gender_gate'
+  return listing.status === 'in_loop' || listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate'
 }

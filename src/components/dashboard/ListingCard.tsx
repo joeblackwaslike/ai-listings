@@ -135,6 +135,58 @@ function IdGatePhoto({
   )
 }
 
+const CONDITION_RUBRIC: { grade: string; label: string; criteria: string }[] = [
+  { grade: 'new_with_tags', label: 'New with tags', criteria: 'Tags attached, sealed original packaging' },
+  { grade: 'new_without_tags', label: 'New without tags', criteria: 'Unworn; factory protections still in place' },
+  { grade: 'like_new', label: 'Like new', criteria: 'Worn once or less, all surfaces pristine' },
+  { grade: 'very_good', label: 'Very good', criteria: 'Light use, minor surface wear only' },
+  { grade: 'good', label: 'Good', criteria: 'Visible wear, fully functional' },
+  { grade: 'fair', label: 'Fair', criteria: 'Moderate wear, multiple visible flaws' },
+  { grade: 'poor', label: 'Poor', criteria: 'Heavy wear, significant damage' },
+  { grade: 'for_parts', label: 'For parts', criteria: 'Non-functional or severely damaged' },
+]
+
+function ConditionGatePhoto({
+  listing,
+  photoUrl,
+}: Readonly<{
+  listing: CardListing
+  photoUrl?: string
+}>) {
+  return (
+    <>
+      {photoUrl ? (
+        <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-40" />
+      ) : (
+        <div className="absolute inset-0 bg-gray-900" />
+      )}
+      <div className="absolute inset-0 bg-gray-950/88 flex flex-col border border-amber-800/60 rounded-xl">
+        <div className="relative flex-1 min-h-0">
+          <div className="absolute inset-0 overflow-y-auto px-3 pt-2.5 pb-2 space-y-1">
+            {CONDITION_RUBRIC.map(({ grade, label, criteria }) => (
+              <div key={grade} className="leading-tight">
+                <span className="text-[9px] text-amber-300/80 font-medium">{label} </span>
+                <span className="text-[9px] text-gray-500">{criteria}</span>
+              </div>
+            ))}
+          </div>
+          <div className="absolute bottom-0 inset-x-0 h-6 bg-linear-to-t from-gray-950/95 to-transparent pointer-events-none" />
+        </div>
+        <div className="flex-none px-3 py-2.5 space-y-1.5">
+          <p className="text-[10px] text-amber-400 font-medium uppercase tracking-wider">Review condition</p>
+          <Link
+            href={`/listings/${listing.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block w-full py-1.5 text-[11px] font-semibold rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-center transition-colors"
+          >
+            Open Workspace →
+          </Link>
+        </div>
+      </div>
+    </>
+  )
+}
+
 const GENDER_OPTIONS: { value: string; label: string }[] = [
   { value: 'mens', label: "Men's" },
   { value: 'womens', label: "Women's" },
@@ -286,6 +338,7 @@ export function ListingCard({
   const isBlocked = listing.agent_blocked && listing.status === 'in_loop'
   const isIdGate = listing.status === 'id_gate' && !idConfirmed
   const isGenderGate = listing.status === 'gender_gate' && !genderGateSubmitted
+  const isConditionGate = listing.status === 'condition_gate'
   const isProcessing =
     listing.status === 'intake' ||
     (listing.status === 'id_gate' && idConfirmed) ||
@@ -343,7 +396,7 @@ export function ListingCard({
 
   let borderClass = 'border-gray-800 hover:border-gray-700'
   if (isBlocked) borderClass = 'border-red-900/60 hover:border-red-800/60'
-  else if (isIdGate || isGenderGate) borderClass = 'border-amber-800/60 hover:border-amber-700/60'
+  else if (isIdGate || isGenderGate || isConditionGate) borderClass = 'border-amber-800/60 hover:border-amber-700/60'
 
   const inner = (
     <div className={`bg-gray-900 rounded-xl overflow-hidden border transition-colors group ${borderClass}`}>
@@ -365,6 +418,12 @@ export function ListingCard({
             onSubmitted={() => setGenderGateSubmitted(true)}
           />
         )}
+        {isConditionGate && (
+          <ConditionGatePhoto
+            listing={listing}
+            photoUrl={photoUrl}
+          />
+        )}
         {isProcessing && (
           <>
             {photoUrl ? (
@@ -378,7 +437,7 @@ export function ListingCard({
             </div>
           </>
         )}
-        {!isBlocked && !isIdGate && !isGenderGate && !isProcessing && photoUrl && (
+        {!isBlocked && !isIdGate && !isGenderGate && !isConditionGate && !isProcessing && photoUrl && (
           <Image
             src={photoUrl}
             alt={listing.title ?? 'Listing'}
@@ -386,7 +445,7 @@ export function ListingCard({
             className="object-cover group-hover:scale-[1.02] transition-transform duration-200"
           />
         )}
-        {!isBlocked && !isIdGate && !isGenderGate && !isProcessing && !photoUrl && (
+        {!isBlocked && !isIdGate && !isGenderGate && !isConditionGate && !isProcessing && !photoUrl && (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-gray-700 text-xs">No photo</span>
           </div>

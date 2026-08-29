@@ -29,6 +29,9 @@ function getBadge(listing: BadgeInput): { label: string; className: string } {
     }
     return { label: 'Ready', className: 'bg-emerald-900/60 text-emerald-400' }
   }
+  if (listing.status === 'condition_gate') {
+    return { label: 'Check condition', className: 'bg-amber-900/60 text-amber-300' }
+  }
   if (listing.status === 'finalizing') {
     return { label: 'Ready to publish', className: 'bg-blue-900/60 text-blue-300' }
   }

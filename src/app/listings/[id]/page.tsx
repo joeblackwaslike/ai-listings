@@ -124,6 +124,13 @@ function genderGateContext(listing: Listing): WorkspaceContext {
   ], detailGateContext)
 }
 
+function conditionGateContext(_listing: Listing): WorkspaceContext {
+  return {
+    firstMessage: "Studio photos are in. Review the condition grade below — select the right one, add any observations, and click Rewrite & Confirm to refresh all copy.",
+    suggestions: null,
+  }
+}
+
 function buildWorkspaceContext(
   listing: Listing,
   photos: Photo[],
@@ -150,6 +157,7 @@ function buildWorkspaceContext(
     if (isGenderGateAnswered(history)) return NO_CONTEXT
     return genderGateContext(listing)
   }
+  if (listing.status === 'condition_gate') return conditionGateContext(listing)
   if (listing.status !== 'in_loop') {
     return { firstMessage: "I'm working on this listing. Ask me anything or check back shortly.", suggestions: null }
   }
@@ -223,7 +231,7 @@ export default async function WorkspacePage({
 
   const hasHistory = history.length > 0
   const genderGateAnswered = listing.status === 'gender_gate' && isGenderGateAnswered(history)
-  const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.agent_blocked
+  const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate' || listing.agent_blocked
     ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
