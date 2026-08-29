@@ -1,0 +1,115 @@
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
+import type { Listing, ConditionValue } from '@/types/listings'
+
+interface Props {
+  listing: Listing
+}
+
+const GRADES: { value: ConditionValue; label: string }[] = [
+  { value: 'new_with_tags', label: 'New with tags' },
+  { value: 'new_without_tags', label: 'New without tags' },
+  { value: 'like_new', label: 'Like new' },
+  { value: 'very_good', label: 'Very good' },
+  { value: 'good', label: 'Good' },
+  { value: 'fair', label: 'Fair' },
+  { value: 'poor', label: 'Poor' },
+  { value: 'for_parts', label: 'For parts' },
+]
+
+export function ConditionReviewPanel({ listing }: Readonly<Props>) {
+  const router = useRouter()
+  const [selectedGrade, setSelectedGrade] = useState<ConditionValue | null>(listing.condition)
+  const [conditionNotes, setConditionNotes] = useState(listing.condition_notes ?? '')
+  const [extraNotes, setExtraNotes] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit() {
+    if (!selectedGrade) return
+    setLoading(true)
+    setError(null)
+    const res = await fetch(`/api/listings/${listing.id}/confirm-condition`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        condition: selectedGrade,
+        condition_notes: conditionNotes,
+        extra_notes: extraNotes,
+      }),
+    })
+    if (res.ok) {
+      router.refresh()
+    } else {
+      setError('Failed to submit — please try again')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="bg-amber-950/40 border border-amber-700/60 rounded-lg p-4 space-y-4">
+      <p className="text-sm font-medium text-amber-200">
+        Review condition — recalculated from studio photos
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {GRADES.map(({ value, label }) => {
+          const isSelected = selectedGrade === value
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setSelectedGrade(value)}
+              disabled={loading}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
+                isSelected
+                  ? 'bg-amber-900 text-amber-100 ring-2 ring-amber-400'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-gray-400">Condition notes</label>
+        <textarea
+          value={conditionNotes}
+          onChange={(e) => setConditionNotes(e.target.value)}
+          rows={4}
+          disabled={loading}
+          className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-700 outline-none focus:border-gray-600 transition-colors resize-y disabled:opacity-50"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-gray-400">Extra observations</label>
+        <textarea
+          value={extraNotes}
+          onChange={(e) => setExtraNotes(e.target.value)}
+          placeholder="What else did you notice? (factory tape on zipper, plastic still on hardware, receipt tucked in pocket, etc.)"
+          rows={3}
+          disabled={loading}
+          className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-700 outline-none focus:border-gray-600 transition-colors resize-y disabled:opacity-50"
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => void handleSubmit()}
+        disabled={loading || !selectedGrade}
+        className="w-full py-2 text-sm font-semibold rounded-lg bg-amber-700 hover:bg-amber-600 text-white disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+      >
+        {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+        {loading ? 'Submitting…' : 'Rewrite & Confirm'}
+      </button>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  )
+}
