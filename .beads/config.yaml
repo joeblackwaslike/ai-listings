@@ -55,3 +55,5 @@
 
 # Use the shared Dolt server (port 3308) for all projects (prevents per-project drift).
 dolt.shared-server: true
+
+sync.remote: "git+ssh://git@github.com/joeblackwaslike/ai-listings.git"
