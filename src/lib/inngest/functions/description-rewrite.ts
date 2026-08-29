@@ -10,11 +10,11 @@ export const descriptionRewrite = inngest.createFunction(
     concurrency: { limit: 1, key: 'event.data.listingId' },
   },
   async ({ event, step }) => {
-    const { listingId } = (event as unknown as ListingConditionConfirmedEvent).data
+    const { listingId, extraNotes } = (event as unknown as ListingConditionConfirmedEvent).data
 
     await step.run('rewrite-listing', async () => {
       const apiKeys = await loadApiKeys(listingId)
-      return runRewriteListing(listingId, apiKeys)
+      return runRewriteListing(listingId, apiKeys, extraNotes)
     })
 
     return { ok: true, listingId }

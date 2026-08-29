@@ -42,7 +42,8 @@ export async function loadApiKeys(listingId: string): Promise<ApiKeys> {
  */
 export async function runRewriteListing(
   listingId: string,
-  apiKeys: ApiKeys
+  apiKeys: ApiKeys,
+  extraNotes: string = ''
 ): Promise<{ ok: true }> {
   const supabase = getSupabaseAdmin()
 
@@ -131,6 +132,7 @@ Item details:
 - Category: ${listing.category ?? 'Unknown'}
 - Condition: ${listing.condition ?? 'Unknown'}
 - Condition notes: ${listing.condition_notes ?? ''}
+${extraNotes.trim() ? `- Additional user observations: ${extraNotes.trim()}` : ''}
 ${measurementsLine ? `- ${measurementsLine}` : ''}
 - Confirmed inclusions: ${inclusionsLine}
 
@@ -196,26 +198,10 @@ Rules:
     throw err
   }
 
-  // Update canonical fields on the listing row
-  const { error: listingUpdateError } = await supabase
-    .from('listings')
-    .update({
-      title: rewrite.canonical_title,
-      description: rewrite.canonical_description,
-      condition_notes: rewrite.condition_notes,
-    })
-    .eq('id', listingId)
-    .neq('status', 'archived')
-
-  if (listingUpdateError) {
-    throw new Error(
-      `rewrite-listing: failed to update listing ${listingId} -- ${listingUpdateError.message}`
-    )
-  }
-
   // Deep-merge platform_fields — preserve all existing keys, patch only title and description.
   // category_id, item_specifics, condition_id, size, original_price, ebay_listing_id, etc.
   // all survive untouched because we spread existingPf.ebay / existingPf.poshmark first.
+  // platform_fields is already fetched above, so no second DB read is needed.
   const updatedPlatformFields: PlatformFields = { ...existingPf }
 
   if (existingPf.ebay) {
@@ -234,15 +220,31 @@ Rules:
     }
   }
 
-  const { error: pfUpdateError } = await supabase
+  // Single update — title, description, condition_notes, and merged platform_fields together.
+  // .select('id').maybeSingle() lets us detect zero-rows-affected (archived or deleted listing)
+  // and throw so Inngest retries rather than silently succeeding with no DB change.
+  const { data: updatedRow, error: updateError } = await supabase
     .from('listings')
-    .update({ platform_fields: updatedPlatformFields })
+    .update({
+      title: rewrite.canonical_title,
+      description: rewrite.canonical_description,
+      condition_notes: rewrite.condition_notes,
+      platform_fields: updatedPlatformFields,
+    })
     .eq('id', listingId)
     .neq('status', 'archived')
+    .select('id')
+    .maybeSingle()
 
-  if (pfUpdateError) {
+  if (updateError) {
     throw new Error(
-      `rewrite-listing: failed to update platform_fields for listing ${listingId} -- ${pfUpdateError.message}`
+      `rewrite-listing: failed to update listing ${listingId} -- ${updateError.message}`
+    )
+  }
+
+  if (!updatedRow) {
+    throw new Error(
+      `rewrite-listing: update matched zero rows for listing ${listingId} -- listing may be archived or deleted`
     )
   }
 
