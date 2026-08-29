@@ -72,6 +72,14 @@ function buildHumanSteps(listing: Listing, photos: Photo[]): Step[] {
       state: humanStepState({ done: isPublished || photos_confirmed, ready: allProcessed }),
     },
     {
+      label: 'Review Condition',
+      sublabel: 'Grade confirmed from studio photos',
+      state: humanStepState({
+        done: listing.condition_confirmed === true || isPublished,
+        ready: !!photos_confirmed && listing.condition_confirmed !== true,
+      }),
+    },
+    {
       label: 'Review Listing',
       sublabel: 'Title, description, condition',
       state: humanStepState({ done: isPublished, ready: photos_confirmed }),
