@@ -100,6 +100,7 @@ export async function PATCH(
       })
       .eq('id', id)
       .eq('user_id', user.id)
+      .eq('status', 'condition_gate')
     if (revertError) {
       // Both the event dispatch AND the compensating revert failed — the listing is stuck with
       // condition_confirmed=true but no rewrite scheduled; needs manual DB intervention.
