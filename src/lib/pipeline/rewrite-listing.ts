@@ -35,8 +35,9 @@ export async function loadApiKeys(listingId: string): Promise<ApiKeys> {
 
 /**
  * Rewrite all listing copy using studio photos, confirmed inclusions, measurements,
- * and condition notes. Patches only title/description on listings and platform_fields;
- * all other fields (price, category, item specifics, size, etc.) are preserved.
+ * and condition notes. Patches title, description, and condition_notes on listings,
+ * and title+description within platform_fields; all other fields (price, category,
+ * item specifics, size, etc.) are preserved.
  *
  * Does NOT call pushPipelineStep — the pipeline step counter is intake-only.
  */
@@ -90,8 +91,8 @@ export async function runRewriteListing(
       if (rules['poshmark']) parts.push(`[Poshmark listing rules — excerpt]\n${rules['poshmark'].slice(0, 1500)}`)
       if (parts.length > 0) rulesSection = `Platform listing policies to follow:\n${parts.join('\n\n')}\n\n`
     }
-  } catch {
-    // Intentionally swallowed — rules are advisory, not blocking
+  } catch (rulesErr) {
+    console.error(`rewrite-listing: failed to fetch platform rules for listing ${listingId} — proceeding without them:`, rulesErr)
   }
 
   // Measurements line — same field resolution as step4a-draft-listing.ts

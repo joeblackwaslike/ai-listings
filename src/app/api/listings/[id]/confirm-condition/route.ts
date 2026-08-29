@@ -48,13 +48,17 @@ export async function PATCH(
   // Read prior field values for compensation (revert) if inngest.send fails.
   // Status is enforced atomically by the compare-and-swap update below — no separate
   // status check here to avoid TOCTOU from double-clicks or concurrent tabs.
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from('listings')
     .select('condition, condition_notes, condition_confirmed')
     .eq('id', id)
     .eq('user_id', user.id)
     .maybeSingle()
 
+  if (existingError) {
+    console.error(`confirm-condition: failed to load listing ${id}:`, existingError)
+    return Response.json({ error: 'Unable to load the listing. Please try again.' }, { status: 500 })
+  }
   if (!existing) return Response.json({ error: 'Listing not found' }, { status: 404 })
 
   // Atomic gate: update only when status is currently condition_gate, then check affected rows.

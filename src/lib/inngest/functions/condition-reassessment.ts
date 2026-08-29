@@ -91,22 +91,17 @@ export const conditionReassessment = inngest.createFunction(
 
     if (!result) return { ok: false, listingId, reason: 'no studio photos or listing not found' }
 
+    // Single atomic write: condition fields + status transition together.
+    // Constraining on status='in_loop' means both writes succeed or neither does,
+    // and FinalizeButton cannot fire in the window between them.
     const { error: updateError } = await supabase
       .from('listings')
-      .update({ condition: result.condition, condition_notes: result.condition_notes, condition_confirmed: false })
+      .update({ condition: result.condition, condition_notes: result.condition_notes, condition_confirmed: false, status: 'condition_gate' })
       .eq('id', listingId)
+      .eq('status', 'in_loop')
 
     if (updateError) {
-      console.error('[condition-reassessment] condition update failed, skipping gate transition', updateError)
-    } else {
-      const { error: gateError } = await supabase
-        .from('listings')
-        .update({ status: 'condition_gate' })
-        .eq('id', listingId)
-        .eq('status', 'in_loop')
-      if (gateError) {
-        console.error('[condition-reassessment] failed to set condition_gate status', gateError)
-      }
+      console.error('[condition-reassessment] failed to write condition + set condition_gate status', updateError)
     }
 
     return { ok: true, listingId }
