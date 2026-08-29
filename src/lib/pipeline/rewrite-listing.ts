@@ -25,12 +25,14 @@ interface RewriteOutput {
  */
 export async function loadApiKeys(listingId: string): Promise<ApiKeys> {
   const supabase = getSupabaseAdmin()
-  const { data: listingRow } = await supabase
+  const { data: listingRow, error } = await supabase
     .from('listings')
     .select('user_id')
     .eq('id', listingId)
     .single()
-  return getUserApiKeys(listingRow?.user_id ?? null)
+  if (error) throw new Error(`loadApiKeys: failed to load listing ${listingId} -- ${error.message}`)
+  if (!listingRow?.user_id) throw new Error(`loadApiKeys: listing ${listingId} has no user_id`)
+  return getUserApiKeys(listingRow.user_id)
 }
 
 /**

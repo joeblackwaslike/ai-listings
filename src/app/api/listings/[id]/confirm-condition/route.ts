@@ -79,7 +79,10 @@ export async function PATCH(
     .select('id')
     .maybeSingle()
 
-  if (updateError) return Response.json({ error: updateError.message }, { status: 500 })
+  if (updateError) {
+    console.error(`confirm-condition: failed to update listing ${id}:`, updateError)
+    return Response.json({ error: 'Failed to save condition. Please try again.' }, { status: 500 })
+  }
   if (!updatedListing) return Response.json({ error: 'listing is not in condition_gate status' }, { status: 409 })
 
   try {
