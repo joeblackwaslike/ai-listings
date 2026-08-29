@@ -28,23 +28,39 @@ export function ConditionReviewPanel({ listing }: Readonly<Props>) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Form was already submitted — rewrite is in progress on the backend.
+  // Show a holding state instead of the form so the user cannot double-submit.
+  if (listing.condition_confirmed) {
+    return (
+      <div className="bg-amber-950/40 border border-amber-700/60 rounded-lg p-4 text-center text-amber-300 text-sm">
+        Rewriting copy — check back shortly.
+      </div>
+    )
+  }
+
   async function handleSubmit() {
     if (!selectedGrade) return
     setLoading(true)
     setError(null)
-    const res = await fetch(`/api/listings/${listing.id}/confirm-condition`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        condition: selectedGrade,
-        condition_notes: conditionNotes,
-        extra_notes: extraNotes,
-      }),
-    })
-    if (res.ok) {
-      router.refresh()
-    } else {
-      setError('Failed to submit — please try again')
+    try {
+      const res = await fetch(`/api/listings/${listing.id}/confirm-condition`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          condition: selectedGrade,
+          condition_notes: conditionNotes,
+          extra_notes: extraNotes,
+        }),
+      })
+      if (res.ok) {
+        router.refresh()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError((body as { error?: string }).error ?? 'Failed to submit — please try again')
+      }
+    } catch {
+      setError('Network error — please check your connection and try again')
+    } finally {
       setLoading(false)
     }
   }

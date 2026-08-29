@@ -3,6 +3,11 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { inngest } from '@/lib/inngest/client'
 import type { ConditionValue } from '@/types/listings'
 
+const VALID_CONDITIONS = [
+  'new_with_tags', 'new_without_tags', 'like_new', 'very_good',
+  'good', 'fair', 'poor', 'for_parts',
+] as const
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -28,39 +33,49 @@ export async function PATCH(
     )
   }
 
+  if (!(VALID_CONDITIONS as ReadonlyArray<string>).includes(condition)) {
+    return Response.json({ error: 'invalid condition value' }, { status: 400 })
+  }
+  if (condition_notes.length > 2000) {
+    return Response.json({ error: 'condition_notes too long' }, { status: 400 })
+  }
+  if (extra_notes.length > 2000) {
+    return Response.json({ error: 'extra_notes too long' }, { status: 400 })
+  }
+
   const supabase = getSupabaseAdmin()
 
-  // Read existing status and prior field values to enforce the gate and enable revert on
-  // inngest.send failure -- without a status check here, a stale retry or concurrent click
-  // could fire a second description-rewrite that races an in-flight one.
+  // Read prior field values for compensation (revert) if inngest.send fails.
+  // Status is enforced atomically by the compare-and-swap update below — no separate
+  // status check here to avoid TOCTOU from double-clicks or concurrent tabs.
   const { data: existing } = await supabase
     .from('listings')
-    .select('status, condition, condition_notes, condition_confirmed')
+    .select('condition, condition_notes, condition_confirmed')
     .eq('id', id)
     .eq('user_id', user.id)
     .maybeSingle()
 
   if (!existing) return Response.json({ error: 'Listing not found' }, { status: 404 })
 
-  if (existing.status !== 'condition_gate') {
-    return Response.json({ error: 'listing is not in condition_gate status' }, { status: 409 })
-  }
-
-  const { data: updated, error } = await supabase
+  // Atomic gate: update only when status is currently condition_gate, then check affected rows.
+  // Both reads can see condition_gate; only one update wins. The second finds no matching row
+  // and gets 409. The listing stays in condition_gate — status advances to in_loop only after
+  // the description-rewrite Inngest step completes successfully.
+  const { data: updatedListing, error: updateError } = await supabase
     .from('listings')
     .update({
       condition,
       condition_notes,
       condition_confirmed: true,
-      status: 'in_loop',
     })
     .eq('id', id)
     .eq('user_id', user.id)
+    .eq('status', 'condition_gate')
     .select('id')
     .maybeSingle()
 
-  if (error) return Response.json({ error: error.message }, { status: 500 })
-  if (!updated) return Response.json({ error: 'Update did not match a listing you own' }, { status: 404 })
+  if (updateError) return Response.json({ error: updateError.message }, { status: 500 })
+  if (!updatedListing) return Response.json({ error: 'listing is not in condition_gate status' }, { status: 409 })
 
   try {
     await inngest.send({
@@ -68,10 +83,8 @@ export async function PATCH(
       data: { listingId: id, condition, conditionNotes: condition_notes, extraNotes: extra_notes },
     })
   } catch (err) {
-    // Compensate so a retry can re-attempt dispatch -- revert status and condition_confirmed
-    // back to the condition_gate state so the UI remains actionable. The condition and
-    // condition_notes that came in with this request are safe to revert to prior values since
-    // the pipeline never acted on them (inngest.send failed before any step ran).
+    // Compensate so a retry can re-attempt dispatch — revert condition fields so the UI
+    // remains actionable. Status stays condition_gate (the update above did not change it).
     console.error(`confirm-condition: inngest.send failed for listing ${id}, reverting for retry:`, err)
     const { error: revertError } = await supabase
       .from('listings')
@@ -79,13 +92,12 @@ export async function PATCH(
         condition: existing.condition as ConditionValue,
         condition_notes: existing.condition_notes,
         condition_confirmed: existing.condition_confirmed ?? false,
-        status: 'condition_gate',
       })
       .eq('id', id)
       .eq('user_id', user.id)
     if (revertError) {
-      // Both the event dispatch AND the compensating revert failed -- a retry will see status
-      // 'in_loop' and skip re-dispatch, so this listing needs manual DB intervention.
+      // Both the event dispatch AND the compensating revert failed — the listing is stuck with
+      // condition_confirmed=true but no rewrite scheduled; needs manual DB intervention.
       console.error(
         `confirm-condition: revert ALSO failed for listing ${id} -- needs manual intervention:`,
         revertError

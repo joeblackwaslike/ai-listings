@@ -61,12 +61,15 @@ export async function runRewriteListing(
     )
   }
 
-  // Studio photos for the vision call — use processed_url (background-removed) only
+  // Studio photos for the vision call — use processed_url (background-removed) only.
+  // Limit to 20 and require type=studio so intake/auth photos don't pollute the rewrite.
   const { data: photos } = await supabase
     .from('photos')
     .select('processed_url')
     .eq('listing_id', listingId)
+    .eq('type', 'studio')
     .not('processed_url', 'is', null)
+    .limit(20)
 
   const photoUrls = (photos ?? []).map((p) => p.processed_url as string).filter(Boolean)
   const images: ClaudeImageInput[] = await Promise.all(
