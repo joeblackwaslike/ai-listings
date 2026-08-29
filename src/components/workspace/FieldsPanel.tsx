@@ -114,7 +114,15 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
     formData.append('photo', file)
     formData.append('listingId', listing.id)
     formData.append('replacesPhotoId', replacesPhotoId)
-    await fetch('/api/studio-upload', { method: 'POST', body: formData })
+    const res = await fetch('/api/studio-upload', { method: 'POST', body: formData })
+    if (!res.ok) {
+      let msg = `Retake upload failed (${res.status})`
+      try {
+        const body = await res.json() as { error?: string }
+        if (body.error) msg = body.error
+      } catch { /* non-JSON body */ }
+      throw new Error(msg)
+    }
   }
 
   async function handleUseAsIs(photoId: string) {

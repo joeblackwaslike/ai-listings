@@ -190,8 +190,16 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
       form.append('photo', file)
       form.append('listingId', listingId)
       const res = await fetch('/api/studio-upload', { method: 'POST', body: form })
-      const data = await res.json() as { photoUrl?: string }
-      return data.photoUrl ?? ''
+      if (!res.ok) {
+        let msg = `Upload failed (${res.status})`
+        try {
+          const body = await res.json() as { error?: string }
+          if (body.error) msg = body.error
+        } catch { /* non-JSON body (e.g. HTML redirect) — use status message */ }
+        throw new Error(msg)
+      }
+      const data = await res.json() as { photoUrl: string }
+      return data.photoUrl
     }))
   }
 
@@ -199,23 +207,23 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     setSuggestionsDismissed(true)
     setStreaming(true)
 
-    let uploadedUrls: string[] = []
-    if (imagesToUpload.length > 0) {
-      uploadedUrls = await uploadImages(imagesToUpload)
-      setPendingImages([])
-    }
-
-    const photoCount = uploadedUrls.length
-    const photoNote = photoCount > 0 ? `[Uploaded ${photoCount} ${plural(photoCount, 'photo')}]\n` : ''
-    const message = (photoNote + text).trim()
-    const displayContent = text || `Uploaded ${photoCount} ${plural(photoCount, 'photo')}`
-
-    setMessages((prev) => [...prev, {
-      id: uid(), role: 'user', content: displayContent,
-      images: photoCount > 0 ? uploadedUrls : undefined,
-    }])
-
     try {
+      let uploadedUrls: string[] = []
+      if (imagesToUpload.length > 0) {
+        uploadedUrls = await uploadImages(imagesToUpload)
+        setPendingImages([])
+      }
+
+      const photoCount = uploadedUrls.length
+      const photoNote = photoCount > 0 ? `[Uploaded ${photoCount} ${plural(photoCount, 'photo')}]\n` : ''
+      const message = (photoNote + text).trim()
+      const displayContent = text || `Uploaded ${photoCount} ${plural(photoCount, 'photo')}`
+
+      setMessages((prev) => [...prev, {
+        id: uid(), role: 'user', content: displayContent,
+        images: photoCount > 0 ? uploadedUrls : undefined,
+      }])
+
       const res = await fetch(`/api/agent/${listingId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
