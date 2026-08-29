@@ -1,4 +1,5 @@
 import { Inngest } from 'inngest'
+import type { ConditionValue } from '@/types/listings'
 
 export const inngest = new Inngest({
   id: 'ai-listings',
@@ -66,6 +67,18 @@ export interface ListingPhotosConfirmedEvent {
   name: 'listing/photos-confirmed'
   data: {
     listingId: string
+  }
+}
+
+// Fired from the condition-gate UI after the user reviews the AI-assigned
+// condition grade and submits their override (or confirms the original).
+export interface ListingConditionConfirmedEvent {
+  name: 'listing/condition-confirmed'
+  data: {
+    listingId: string
+    condition: ConditionValue
+    conditionNotes: string
+    extraNotes: string
   }
 }
 

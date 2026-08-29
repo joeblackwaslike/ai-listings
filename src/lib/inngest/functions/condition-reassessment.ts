@@ -100,6 +100,12 @@ export const conditionReassessment = inngest.createFunction(
       console.error(`condition-reassessment: failed to write condition for listing ${listingId}:`, updateError)
     }
 
+    await supabase
+      .from('listings')
+      .update({ status: 'condition_gate' })
+      .eq('id', listingId)
+      .neq('status', 'archived')
+
     return { ok: true, listingId }
   }
 )

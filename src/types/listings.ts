@@ -3,6 +3,7 @@ export type ListingStatus =
   | 'id_gate'
   | 'gender_gate'
   | 'in_loop'
+  | 'condition_gate'
   | 'finalizing'
   | 'published'
   | 'archived';
