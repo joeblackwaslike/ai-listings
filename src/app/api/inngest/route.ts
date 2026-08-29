@@ -11,6 +11,7 @@ import { textIntakePipeline } from '@/lib/inngest/functions/text-intake-pipeline
 import { autoDiscountCron } from '@/lib/inngest/functions/auto-discount-cron'
 import { conditionReassessment } from '@/lib/inngest/functions/condition-reassessment'
 import { autoRecoverPipeline } from '@/lib/inngest/functions/auto-recover-pipeline'
+import { descriptionRewrite } from '@/lib/inngest/functions/description-rewrite'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -26,5 +27,6 @@ export const { GET, POST, PUT } = serve({
     autoDiscountCron,
     conditionReassessment,
     autoRecoverPipeline,
+    descriptionRewrite,
   ],
 })
