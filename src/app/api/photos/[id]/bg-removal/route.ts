@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { inngest } from '@/lib/inngest/client'
+import { inngest } from '@/lib/inngest'
 
 function getAdmin() {
   return createSupabaseClient(
@@ -12,14 +12,10 @@ function getAdmin() {
 
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ photoId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { photoId } = await params
-  const { action } = await req.json() as { action: 'skip' | 'apply' }
-
-  if (action !== 'skip' && action !== 'apply') {
-    return NextResponse.json({ error: 'action must be skip or apply' }, { status: 400 })
-  }
+  const { id: photoId } = await params
+  const { action } = (await req.json()) as { action: 'skip' | 'apply' }
 
   const sessionClient = await createClient()
   const { data: { user } } = await sessionClient.auth.getUser()
@@ -57,7 +53,7 @@ export async function POST(
       .eq('id', photoId)
     await inngest.send({
       name: 'studio/uploaded',
-      data: { listingId: photo.listing_id as string, photoId, photoUrl: photo.raw_url as string },
+      data: { listingId: photo.listing_id, photoId, photoUrl: photo.raw_url },
     })
   }
 

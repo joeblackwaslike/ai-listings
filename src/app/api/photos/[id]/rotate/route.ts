@@ -25,9 +25,9 @@ async function fetchImage(url: string): Promise<Buffer> {
 
 export async function POST(
   _req: Request,
-  { params }: { params: Promise<{ photoId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { photoId } = await params
+  const { id: photoId } = await params
 
   const sessionClient = await createClient()
   const { data: { user } } = await sessionClient.auth.getUser()
