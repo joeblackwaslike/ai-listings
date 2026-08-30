@@ -4,6 +4,8 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { assembleContext } from './system-prompt'
 import { TOOL_SCHEMAS, executeTool } from './tools'
+import { getClaudeBackend } from '@/lib/claude/backend'
+import { runTextOauth } from '@/lib/claude/oauth-backend'
 
 export type AgentEvent =
   | { type: 'text'; content: string }
@@ -109,6 +111,48 @@ export async function streamAgentResponse(
 
     emit({ type: 'done' })
   } catch (err) {
+    const isCreditsError =
+      err instanceof Anthropic.APIError &&
+      err.status === 400 &&
+      err.message.includes('credit balance')
+
+    if (isCreditsError && getClaudeBackend() === 'oauth') {
+      try {
+        const systemText = typeof systemBlocks === 'string'
+          ? systemBlocks
+          : (systemBlocks as Array<{ type: string; text?: string }>)
+              .filter(b => b.type === 'text')
+              .map(b => b.text ?? '')
+              .join('\n\n')
+        const convText = messages.map((m: MessageParam) => {
+          const role = m.role === 'user' ? 'Human' : 'Assistant'
+          const parts = Array.isArray(m.content)
+            ? (m.content as Array<{ type: string; text?: string }>)
+                .filter(b => b.type === 'text')
+                .map(b => b.text ?? '')
+            : [String(m.content)]
+          return `${role}: ${parts.join('')}`
+        }).join('\n\n')
+        const result = await runTextOauth({
+          prompt: `${systemText}\n\n${convText}\n\nAssistant:`,
+          model: 'claude-sonnet-4-6',
+        })
+        if (result) {
+          finalAssistantText = result
+          emit({ type: 'text', content: result })
+          await supabase.from('conversations').insert({
+            listing_id: listingId,
+            role: 'assistant',
+            content: result,
+          })
+        }
+        emit({ type: 'done' })
+      } catch {
+        emit({ type: 'error', message: 'API credits exhausted; OAuth fallback also failed — try again shortly.' })
+      }
+      return
+    }
+
     const message = err instanceof Error ? err.message : 'Unknown error in agent loop'
     emit({ type: 'error', message })
   }
