@@ -50,8 +50,13 @@ export async function POST(request: Request) {
   const storagePath = `studio/${listingId}/${timestamp}.${ext}`
 
   let buffer = Buffer.from(await file.arrayBuffer())
-  buffer = Buffer.from(await sharp(buffer).rotate().toBuffer())
-  buffer = Buffer.from(await applyGrayWorldWhiteBalance(buffer))
+  try {
+    buffer = Buffer.from(await sharp(buffer).rotate().toBuffer())
+    buffer = Buffer.from(await applyGrayWorldWhiteBalance(buffer))
+  } catch (err) {
+    console.error('[studio-upload] image processing failed:', err)
+    return NextResponse.json({ error: 'Image processing failed' }, { status: 500 })
+  }
 
   let photoUrl: string
   try {
@@ -72,18 +77,23 @@ export async function POST(request: Request) {
     .single()
 
   if (photoError || !photoRow) {
+    console.error('[studio-upload] photo insert failed:', photoError)
     return NextResponse.json({ error: 'Failed to create photo record' }, { status: 500 })
   }
 
-  await inngest.send({
-    name: 'studio/uploaded',
-    data: {
-      listingId,
-      photoId: photoRow.id as string,
-      photoUrl,
-      ...(replacesPhotoId ? { replacesPhotoId } : {}),
-    },
-  })
+  try {
+    await inngest.send({
+      name: 'studio/uploaded',
+      data: {
+        listingId,
+        photoId: photoRow.id as string,
+        photoUrl,
+        ...(replacesPhotoId ? { replacesPhotoId } : {}),
+      },
+    })
+  } catch (err) {
+    console.error('[studio-upload] inngest.send failed:', err)
+  }
 
   return NextResponse.json({ photoId: photoRow.id, photoUrl })
 }
