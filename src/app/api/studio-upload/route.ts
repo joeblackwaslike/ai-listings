@@ -25,8 +25,9 @@ export async function POST(request: Request) {
   }
 
   const sessionClient = await createClient()
-  const { data: { user } } = await sessionClient.auth.getUser()
+  const { data: { user }, error: getUserError } = await sessionClient.auth.getUser()
   if (!user) {
+    console.error('[studio-upload] auth failed:', getUserError)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
