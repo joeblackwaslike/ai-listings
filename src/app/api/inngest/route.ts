@@ -12,6 +12,7 @@ import { autoDiscountCron } from '@/lib/inngest/functions/auto-discount-cron'
 import { conditionReassessment } from '@/lib/inngest/functions/condition-reassessment'
 import { autoRecoverPipeline } from '@/lib/inngest/functions/auto-recover-pipeline'
 import { descriptionRewrite } from '@/lib/inngest/functions/description-rewrite'
+import { batchQualityCheck } from '@/lib/inngest/functions/batch-quality-check'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -28,5 +29,6 @@ export const { GET, POST, PUT } = serve({
     conditionReassessment,
     autoRecoverPipeline,
     descriptionRewrite,
+    batchQualityCheck,
   ],
 })
