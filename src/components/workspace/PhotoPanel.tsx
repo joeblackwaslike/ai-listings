@@ -25,7 +25,9 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const router = useRouter()
 
-  const displayPhotos = [...photos].sort((a, b) => photoRank(a) - photoRank(b) || a.display_order - b.display_order)
+  const displayPhotos = [...photos]
+    .filter((p) => p.type !== 'intake')
+    .sort((a, b) => photoRank(a) - photoRank(b) || a.display_order - b.display_order)
   const main = displayPhotos[selectedIdx]
   const mainUrl = main?.processed_url ?? main?.raw_url
 
