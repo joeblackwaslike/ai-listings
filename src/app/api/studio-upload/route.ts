@@ -65,7 +65,11 @@ export async function POST(request: Request) {
 
   let buffer = Buffer.from(await file.arrayBuffer())
   try {
+    const preMeta = await sharp(buffer).metadata()
+    console.log('[studio-upload] EXIF orientation:', preMeta.orientation ?? 'absent', 'dims:', preMeta.width, 'x', preMeta.height)
     buffer = Buffer.from(await sharp(buffer).rotate().toBuffer())
+    const postMeta = await sharp(buffer).metadata()
+    console.log('[studio-upload] after rotate dims:', postMeta.width, 'x', postMeta.height)
     buffer = Buffer.from(await applyGrayWorldWhiteBalance(buffer))
   } catch (err) {
     console.error('[studio-upload] image processing failed:', err)
