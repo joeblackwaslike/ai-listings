@@ -257,26 +257,28 @@ function greetingListing(overrides: Partial<Pick<Listing, 'status' | 'agent_bloc
   }
 }
 
-test('shouldAttemptPersistGreeting is true for in_loop with a message', () => {
-  assert.equal(shouldAttemptPersistGreeting(greetingListing(), 'Upload your studio photos...'), true)
+test('shouldAttemptPersistGreeting is false for in_loop (transient UI hint, not persisted)', () => {
+  // in_loop greetings are transient — they change as the listing progresses and must not be
+  // written to conversations (leads to stale "upload photos" messages after upload completes).
+  assert.equal(shouldAttemptPersistGreeting(greetingListing(), 'Upload your studio photos...', []), false)
 })
 
 test('shouldAttemptPersistGreeting is false when firstMessage is null', () => {
-  assert.equal(shouldAttemptPersistGreeting(greetingListing(), null), false)
+  assert.equal(shouldAttemptPersistGreeting(greetingListing(), null, []), false)
 })
 
 test('shouldAttemptPersistGreeting is true for a newly agent_blocked listing (the failure reason must reach the chat)', () => {
   // Regression: HB-0091 was agent_blocked with a real pipeline failure reason, but the chat
   // showed neither a prompt nor the reason -- the old blanket `agent_blocked -> false` rule
   // meant the reason never persisted even though `conversations` already had prior history.
-  assert.equal(shouldAttemptPersistGreeting(greetingListing({ agent_blocked: true }), 'step3: pricing failed'), true)
+  assert.equal(shouldAttemptPersistGreeting(greetingListing({ agent_blocked: true }), 'step3: pricing failed', []), true)
 })
 
 test('shouldAttemptPersistGreeting is false for statuses outside in_loop/id_gate/gender_gate', () => {
   const otherStatuses: ListingStatus[] = ['intake', 'finalizing', 'published', 'archived']
   for (const status of otherStatuses) {
     assert.equal(
-      shouldAttemptPersistGreeting(greetingListing({ status }), 'some greeting'),
+      shouldAttemptPersistGreeting(greetingListing({ status }), 'some greeting', []),
       false,
       `expected false for status ${status}`
     )
@@ -291,13 +293,13 @@ test('shouldAttemptPersistGreeting is true for id_gate with a message', () => {
   // deciding it against a `history` array raced under concurrent page loads and produced
   // duplicate gate prompts seconds apart (HB-0102, SN-0035, 2026-08-21).
   assert.equal(
-    shouldAttemptPersistGreeting(greetingListing({ status: 'id_gate' }), "I've analyzed the photo..."),
+    shouldAttemptPersistGreeting(greetingListing({ status: 'id_gate' }), "I've analyzed the photo...", []),
     true
   )
 })
 
 test('shouldAttemptPersistGreeting is true for gender_gate with a message', () => {
-  assert.equal(shouldAttemptPersistGreeting(greetingListing({ status: 'gender_gate' }), 'What is the gender?'), true)
+  assert.equal(shouldAttemptPersistGreeting(greetingListing({ status: 'gender_gate' }), 'What is the gender?', []), true)
 })
 
 test('notableFeaturesOf reads notable_features from visionAnalysis when present', () => {

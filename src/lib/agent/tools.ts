@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
 import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
+import { conditionDelta, adjustForCondition } from '@/lib/pipeline/pricing-adjust'
 import type {
   PricingResearchResult,
   AuthChecklistResult,
@@ -20,18 +21,39 @@ import type {
 async function researchPricing(listingId: string): Promise<PricingResearchResult> {
   const supabase = getSupabaseAdmin()
 
-  const { data: comps, error } = await supabase
-    .from('pricing_comps')
-    .select('source, title, sale_price_cents, condition, sold_at, listing_url, condition_delta, adjusted_price_cents')
-    .eq('listing_id', listingId)
-    .order('adjusted_price_cents', { ascending: true })
+  const [compsResult, listingResult] = await Promise.all([
+    supabase
+      .from('pricing_comps')
+      .select('source, title, sale_price_cents, condition, sold_at, listing_url')
+      .eq('listing_id', listingId)
+      .order('sale_price_cents', { ascending: true }),
+    supabase
+      .from('listings')
+      .select('condition')
+      .eq('id', listingId)
+      .single(),
+  ])
 
-  if (error) return { ok: false, reason: `DB error: ${error.message}` }
+  if (compsResult.error) return { ok: false, reason: `DB error: ${compsResult.error.message}` }
+  const comps = compsResult.data
   if (!comps || comps.length === 0) {
     return { ok: false, reason: 'No pricing comps found. Pipeline step 3 may not have run yet.' }
   }
 
-  const prices = comps.map((c) => c.adjusted_price_cents).sort((a, b) => a - b)
+  const currentCondition = (listingResult.data?.condition as string | null) ?? ''
+
+  // Recalculate condition delta and adjusted price against current listing condition,
+  // not the stale step-3 values — avoids reporting wrong condition tier after manual edits.
+  const recomped = comps.map((c) => {
+    const delta = conditionDelta(currentCondition, (c.condition as string | null) ?? '')
+    return {
+      ...c,
+      condition_delta: delta,
+      adjusted_price_cents: adjustForCondition(c.sale_price_cents as number, delta),
+    }
+  })
+
+  const prices = recomped.map((c) => c.adjusted_price_cents).sort((a, b) => a - b)
   const mid = Math.floor(prices.length / 2)
   const suggestedPrice =
     prices.length % 2 === 0
@@ -47,13 +69,13 @@ async function researchPricing(listingId: string): Promise<PricingResearchResult
   const confidenceLabel = confidence >= 75 ? 'high' : confidence >= 60 ? 'medium' : 'low'
 
   const now = Date.now()
-  const mappedComps = comps.slice(0, 8).map((c) => ({
+  const mappedComps = recomped.slice(0, 8).map((c) => ({
     source: c.source as string,
     title: c.title as string,
     price: c.sale_price_cents as number,
     condition: c.condition as string,
-    conditionDelta: c.condition_delta as 'same' | 'better' | 'worse',
-    adjustedPrice: c.adjusted_price_cents as number,
+    conditionDelta: c.condition_delta,
+    adjustedPrice: c.adjusted_price_cents,
     soldDaysAgo: c.sold_at
       ? Math.floor((now - new Date(c.sold_at as string).getTime()) / 86_400_000)
       : 0,
@@ -66,7 +88,7 @@ async function researchPricing(listingId: string): Promise<PricingResearchResult
     confidence,
     confidenceSummary: `${comps.length} comp${comps.length !== 1 ? 's' : ''} · ${confidenceLabel} confidence`,
     comps: mappedComps,
-    evidence: `Median of ${comps.length} sold comps (condition-adjusted). Suggested: $${(suggestedPrice / 100).toFixed(0)}.`,
+    evidence: `Median of ${comps.length} sold comps (condition-adjusted to ${currentCondition || 'current condition'}). Suggested: $${(suggestedPrice / 100).toFixed(0)}.`,
   }
 }
 
