@@ -16,6 +16,7 @@
     "@local/poshmark-seller-sdk": "file:./packages/poshmark-seller-sdk",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
+    "@tailwindcss/typography": "^0.5.20",
     "cheerio": "^1.2.0",
     "graphql-request": "^7.4.0",
     "inngest": "^4.2.4",
