@@ -185,10 +185,11 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   }
 
   async function uploadImages(files: File[]): Promise<string[]> {
-    return Promise.all(files.map(async (file) => {
+    return Promise.all(files.map(async (file, index) => {
       const form = new FormData()
       form.append('photo', file)
       form.append('listingId', listingId)
+      form.append('displayOrder', String(index))
       const res = await fetch('/api/studio-upload', { method: 'POST', body: form })
       if (!res.ok) {
         let msg = `Upload failed (${res.status})`

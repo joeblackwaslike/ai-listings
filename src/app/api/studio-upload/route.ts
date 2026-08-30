@@ -19,10 +19,17 @@ export async function POST(request: Request) {
   const file = formData.get('photo') as File | null
   const listingId = formData.get('listingId') as string | null
   const replacesPhotoId = formData.get('replacesPhotoId') as string | null
+  const displayOrderRaw = formData.get('displayOrder') as string | null
+  const displayOrder = displayOrderRaw !== null ? parseInt(displayOrderRaw, 10) : null
 
   if (!file || !listingId) {
     return NextResponse.json({ error: 'photo and listingId required' }, { status: 400 })
   }
+
+  const { cookies: getCookies } = await import('next/headers')
+  const cookieStore = await getCookies()
+  const sbCookies = cookieStore.getAll().filter(c => c.name.startsWith('sb-'))
+  console.log('[studio-upload] auth attempt cookies:', sbCookies.map(c => c.name))
 
   const sessionClient = await createClient()
   const { data: { user }, error: getUserError } = await sessionClient.auth.getUser()
@@ -49,6 +56,7 @@ export async function POST(request: Request) {
   const timestamp = Date.now()
   const ext = file.name.split('.').pop() ?? 'jpg'
   const storagePath = `studio/${listingId}/${timestamp}.${ext}`
+  const resolvedDisplayOrder = displayOrder ?? timestamp
 
   let buffer = Buffer.from(await file.arrayBuffer())
   try {
@@ -72,7 +80,7 @@ export async function POST(request: Request) {
       listing_id: listingId,
       type: 'studio',
       raw_url: photoUrl,
-      display_order: timestamp,
+      display_order: resolvedDisplayOrder,
     })
     .select('id')
     .single()
