@@ -32,7 +32,12 @@ export async function POST(request: Request) {
   console.log('[studio-upload] auth attempt cookies:', sbCookies.map(c => c.name))
 
   const sessionClient = await createClient()
-  const { data: { user }, error: getUserError } = await sessionClient.auth.getUser()
+  let getResult = await sessionClient.auth.getUser()
+  if (getResult.error?.name === 'AuthRetryableFetchError') {
+    await new Promise(r => setTimeout(r, 150))
+    getResult = await sessionClient.auth.getUser()
+  }
+  const { data: { user }, error: getUserError } = getResult
   if (!user) {
     console.error('[studio-upload] auth failed:', getUserError)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
