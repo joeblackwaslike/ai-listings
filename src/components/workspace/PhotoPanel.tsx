@@ -75,12 +75,12 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
                       <Image src={url} alt="" fill className="object-cover" />
                     </button>
                     {isStudio && (
-                      <div className="absolute inset-0 rounded-lg flex items-end justify-end gap-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+                      <div className="absolute inset-0 rounded-lg flex items-end justify-end gap-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                         <button
                           onClick={(e) => { e.stopPropagation(); void photoAction(photo.id as string, 'rotate') }}
                           disabled={isBusy}
                           title="Rotate left"
-                          className="w-6 h-6 rounded bg-black/70 flex items-center justify-center text-white hover:bg-black/90 disabled:opacity-40 transition-colors"
+                          className="pointer-events-auto w-6 h-6 rounded bg-black/70 flex items-center justify-center text-white hover:bg-black/90 disabled:opacity-40 transition-colors"
                         >
                           <RotateCcw className="w-3 h-3" />
                         </button>
@@ -88,7 +88,7 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
                           onClick={(e) => { e.stopPropagation(); void photoAction(photo.id as string, 'bg-removal', { action: hasBgRemoval ? 'skip' : 'apply' }) }}
                           disabled={isBusy}
                           title={hasBgRemoval ? 'Revert background removal' : 'Apply background removal'}
-                          className="w-6 h-6 rounded bg-black/70 flex items-center justify-center text-white hover:bg-black/90 disabled:opacity-40 transition-colors"
+                          className="pointer-events-auto w-6 h-6 rounded bg-black/70 flex items-center justify-center text-white hover:bg-black/90 disabled:opacity-40 transition-colors"
                         >
                           {hasBgRemoval
                             ? <ImageOff className="w-3 h-3" />

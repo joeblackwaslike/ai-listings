@@ -199,7 +199,7 @@ export default async function WorkspacePage({
       .select('id, role, content, created_at')
       .eq('listing_id', id)
       .order('created_at', { ascending: true })
-      .limit(30),
+      .limit(100),
     supabase
       .from('listing_price_events')
       .select('id, listing_id, event_type, price_cents, note, created_at')
@@ -235,7 +235,7 @@ export default async function WorkspacePage({
     ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
-  if (shouldAttemptPersistGreeting(listing, firstMessage)) {
+  if (shouldAttemptPersistGreeting(listing, firstMessage, history)) {
     // Atomic check-and-insert (migration 0022) -- deciding "does this already match the last
     // message" here against `history` (fetched moments earlier) raced under concurrent page
     // loads and produced duplicate gate prompts (ai-listings dashboard report, 2026-08-21).

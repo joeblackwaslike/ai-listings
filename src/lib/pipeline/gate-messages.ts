@@ -164,11 +164,22 @@ export function isGenderGateAnswered(history: { role: string; content: string }[
 // (ai-listings dashboard report, 2026-08-21). buildWorkspaceContext (page.tsx) only ever
 // recomputes firstMessage fresh for these four cases, so this only needs to gate on "is this
 // one of them" -- it does NOT need its own hasHistory/id_gate change-detection anymore.
+// Suffix that all agent_blocked "photos need attention" messages share regardless of count.
+// Used to deduplicate across multiple confirm cycles instead of exact-content matching.
+const BLOCKED_SUFFIX = 'need attention — see the checklist below.'
+
 export function shouldAttemptPersistGreeting(
   listing: Pick<Listing, 'status' | 'agent_blocked'>,
-  firstMessage: string | null
+  firstMessage: string | null,
+  history: { role: string; content: string }[]
 ): firstMessage is string {
   if (!firstMessage) return false
-  if (listing.agent_blocked) return true
-  return listing.status === 'in_loop' || listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate'
+  if (listing.agent_blocked) {
+    // Only insert a blocked message if no prior one with the same suffix already exists.
+    // The count changes each cycle ("1 photo" → "12 photos") so exact dedup misses these.
+    return !history.some((m) => m.role === 'assistant' && m.content.endsWith(BLOCKED_SUFFIX))
+  }
+  // in_loop messages are transient UI hints — they change as the listing progresses and
+  // should not be persisted (leads to stale "upload photos" messages appearing after upload).
+  return listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate'
 }
