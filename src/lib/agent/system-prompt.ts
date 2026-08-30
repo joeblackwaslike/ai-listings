@@ -54,9 +54,11 @@ function buildListingSnapshot(listing: Record<string, unknown>): string {
     agent_blocked: listing.agent_blocked,
     agent_blocked_reason: listing.agent_blocked_reason,
     photo_plan_count: Array.isArray(listing.photo_plan) ? listing.photo_plan.length : 0,
-    auth_plan_count: Array.isArray(listing.auth_plan) ? listing.auth_plan.length : 0,
-    inclusions_count: Array.isArray(listing.inclusions) ? listing.inclusions.length : 0,
+    auth_plan: Array.isArray(listing.auth_plan) ? listing.auth_plan : [],
+    inclusions: Array.isArray(listing.inclusions) ? listing.inclusions : [],
     is_luxury: listing.is_luxury,
+    price_cents: listing.price_cents,
+    pricing_methodology: listing.pricing_methodology,
   }
   return `## Current Listing State\n\`\`\`json\n${JSON.stringify(snap, null, 2)}\n\`\`\``
 }
