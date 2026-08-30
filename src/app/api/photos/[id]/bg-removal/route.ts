@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { inngest } from '@/lib/inngest'
+import { inngest } from '@/lib/inngest/client'
 
 function getAdmin() {
   return createSupabaseClient(
