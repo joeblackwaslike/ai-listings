@@ -181,5 +181,10 @@ export function shouldAttemptPersistGreeting(
   }
   // in_loop messages are transient UI hints — they change as the listing progresses and
   // should not be persisted (leads to stale "upload photos" messages appearing after upload).
-  return listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate'
+  if (listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate') {
+    // These gate messages are stable text — exact dedup across all history prevents re-insertion
+    // after a user responds (insert_conversation_if_new only checks the last row).
+    return !history.some((m) => m.role === 'assistant' && m.content === firstMessage)
+  }
+  return false
 }

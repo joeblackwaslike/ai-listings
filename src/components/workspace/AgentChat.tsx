@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { Send, Zap, Check, X, AlertCircle, ImagePlus } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import { SuggestedReplies } from './SuggestedReplies'
 import type { Suggestion } from './SuggestedReplies'
 import { MeasurementFields } from './MeasurementFields'
@@ -358,7 +359,7 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
         {showFirstMessage && (
           <div className="flex justify-start">
             <div className="max-w-[90%] rounded-2xl rounded-tl-sm px-3 py-2 bg-gray-900/50">
-              <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{firstMessage}</p>
+              <div className="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:text-gray-200"><ReactMarkdown>{firstMessage}</ReactMarkdown></div>
             </div>
           </div>
         )}
@@ -404,7 +405,7 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
           return (
             <div key={msg.id} className="flex justify-start">
               <div className="max-w-[90%] rounded-2xl rounded-tl-sm px-3 py-2 bg-gray-900 border border-gray-700">
-                <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                <div className="text-sm text-gray-200 leading-relaxed prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:text-gray-200"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
               </div>
             </div>
           )
