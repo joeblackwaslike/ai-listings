@@ -70,6 +70,9 @@ export async function POST(
     const rotatedProcessed = await sharp(processedBuf).rotate(270).toBuffer()
     await uploadFile(processedPath, rotatedProcessed, 'image/png')
     updates.processed_url = `${getPublicUrl(processedPath)}?v=${v}`
+  } else if (processedBase) {
+    // processed_url === raw_url (skip-bg-removal case): point it to the new rotated raw
+    updates.processed_url = updates.raw_url
   }
 
   await supabase.from('photos').update(updates).eq('id', photoId)
