@@ -26,5 +26,5 @@ export async function applyGrayWorldWhiteBalance(buffer: Buffer): Promise<Buffer
   const gainB = safeGain(meanG.mean, meanB.mean)
   const gains = channels.length >= 4 ? [gainR, 1, gainB, 1] : [gainR, 1, gainB]
 
-  return image.linear(gains, new Array(gains.length).fill(0)).toBuffer()
+  return image.linear(gains, new Array(gains.length).fill(0)).withMetadata().toBuffer()
 }
