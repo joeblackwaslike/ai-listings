@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import sharp from 'sharp'
@@ -26,8 +27,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'photo and listingId required' }, { status: 400 })
   }
 
-  const { cookies: getCookies } = await import('next/headers')
-  const cookieStore = await getCookies()
+  const cookieStore = await cookies()
   const sbCookies = cookieStore.getAll().filter(c => c.name.startsWith('sb-'))
   console.log('[studio-upload] auth attempt cookies:', sbCookies.map(c => c.name))
 
