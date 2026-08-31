@@ -6,6 +6,7 @@ import { getPlatformRules } from '@/lib/platform-rules'
 import { getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
 import { buildShoeSizingPromptSection } from '@/lib/sizing/shoe-conversion'
+import { conditionDelta, adjustForCondition } from './pricing-adjust'
 import type { ClothingSubType, JewelrySubType } from '@/types/listings'
 
 interface DraftOutput {
@@ -36,7 +37,7 @@ export async function runStep4aDraftListing(
   try {
     const { data: listingRow } = await supabase
       .from('listings')
-      .select('user_id')
+      .select('user_id, condition')
       .eq('id', listingId)
       .single()
 
@@ -59,7 +60,7 @@ export async function runStep4aDraftListing(
 
   const { data: measurementsRow } = await supabase
     .from('listings')
-    .select('measurements, sub_type, gender')
+    .select('measurements, sub_type, gender, condition')
     .eq('id', listingId)
     .single()
 
@@ -90,20 +91,23 @@ export async function runStep4aDraftListing(
         .join(', ')}`
     : ''
 
+  const listingCondition = (measurementsRow?.condition as string | null) ?? ''
+
   const { data: comps } = await supabase
     .from('pricing_comps')
-    .select('source, title, sale_price_cents, condition, condition_delta, adjusted_price_cents')
+    .select('source, title, sale_price_cents, condition')
     .eq('listing_id', listingId)
-    .order('adjusted_price_cents')
+    .order('sale_price_cents')
     .limit(8)
 
   const compsText =
     comps && comps.length > 0
       ? comps
-          .map(
-            (c) =>
-              `${c.source}: "${c.title}" — $${(c.adjusted_price_cents / 100).toFixed(0)} adjusted (${c.condition}, ${c.condition_delta} condition)`
-          )
+          .map((c) => {
+            const delta = conditionDelta(listingCondition, (c.condition as string) ?? '')
+            const adjusted = adjustForCondition(c.sale_price_cents as number, delta)
+            return `${c.source}: "${c.title}" — $${(adjusted / 100).toFixed(0)} adjusted (${c.condition}, ${delta} condition)`
+          })
           .join('\n')
       : 'No comps available'
 

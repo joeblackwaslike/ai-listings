@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation'
 import { X, ExternalLink, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { relativeDate, formatPrice } from '@/lib/utils'
-import type { PricingComp, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
+import type { AdjustedComp, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
 
 interface EvidenceDrawerProps {
   open: boolean
   onClose: () => void
   listingId: string
-  comps: PricingComp[]
+  comps: AdjustedComp[]
   suggestedPriceCents: number | null
   confidenceScore: number | null
   priceToMoveCents?: number | null

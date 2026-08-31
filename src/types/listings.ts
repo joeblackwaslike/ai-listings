@@ -297,12 +297,17 @@ export interface PricingComp {
   condition: string;
   sold_at: string;
   listing_url: string | null;
-  condition_delta: 'same' | 'better' | 'worse';
-  adjusted_price_cents: number;
   color: string | null;
   relevance_score: number | null;
   provider: CompProvider | null;
   created_at: string;
+}
+
+// condition_delta and adjusted_price_cents are not stored — always computed from
+// sale_price_cents + comp.condition vs listing.condition at read time.
+export type AdjustedComp = PricingComp & {
+  condition_delta: 'same' | 'better' | 'worse'
+  adjusted_price_cents: number
 }
 
 export interface Conversation {

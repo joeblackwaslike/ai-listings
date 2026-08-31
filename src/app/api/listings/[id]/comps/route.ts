@@ -62,10 +62,6 @@ export async function POST(
     condition: 'Not specified',
     sold_at: isActive ? null : (body.soldAt ?? null),
     listing_url: trimmedUrl,
-    condition_delta: 'same',
-    // A hand-entered comp is a direct real-world observation, not a comparable that needs
-    // the automated condition-normalization adjustment applied to fetched comps.
-    adjusted_price_cents: salePriceCents,
     relevance_score: null,
     color: null,
   })

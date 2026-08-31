@@ -14,7 +14,7 @@ import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { ConditionReviewPanel } from '@/components/workspace/ConditionReviewPanel'
 import { getInclusionChecklist } from '@/lib/inclusions'
 import { adjustForCondition, computeAdjustedPricing, conditionDelta, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
-import type { Listing, Photo, PricingComp, AuthStep, Inclusion, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
+import type { Listing, Photo, PricingComp, AdjustedComp, AuthStep, Inclusion, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
 
 interface FieldsPanelProps {
   listing: Listing
@@ -212,16 +212,12 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
   // contradictory "$X to move" above an already-lower resolved price. Suppress it whenever an
   // override is in effect rather than deriving a second discount off the override.
   const showPriceToMove = listing.final_price_cents == null
-  // The stored condition_delta/adjusted_price_cents columns on each sold comp reflect the
-  // listing's condition at step3 gather-time -- recompute against the current condition here
-  // too, or the drawer shows adjustment labels/prices that no longer support resolvedPriceCents
-  // above (e.g. after a condition re-assessment flips condition_confirmed back to false).
-  // _active-suffixed comps are excluded: they're live asking prices, not sold prices,
-  // deliberately stored with condition_delta 'same' and adjusted_price_cents == sale_price_cents
-  // verbatim (computeAdjustedPricing excludes them from the median entirely) -- condition-
-  // adjusting them here would show a price that was never actually asked.
-  const currentComps = comps.map((c) => {
-    if (c.source.endsWith('_active')) return c
+  // condition_delta and adjusted_price_cents are not stored in the DB — compute them here
+  // against the current listing.condition so EvidenceDrawer always shows correct adjustments.
+  // _active-suffixed comps are live asking prices, not sold prices — don't condition-adjust
+  // them (computeAdjustedPricing excludes them from the median anyway).
+  const currentComps: AdjustedComp[] = comps.map((c) => {
+    if (c.source.endsWith('_active')) return { ...c, condition_delta: 'same' as const, adjusted_price_cents: c.sale_price_cents }
     const delta = conditionDelta(listing.condition ?? '', c.condition)
     return { ...c, condition_delta: delta, adjusted_price_cents: adjustForCondition(c.sale_price_cents, delta) }
   })

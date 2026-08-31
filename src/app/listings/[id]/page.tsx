@@ -193,7 +193,7 @@ export default async function WorkspacePage({
       .from('pricing_comps')
       .select('*')
       .eq('listing_id', id)
-      .order('adjusted_price_cents', { ascending: true }),
+      .order('sale_price_cents', { ascending: true }),
     supabase
       .from('conversations')
       .select('id, role, content, created_at')

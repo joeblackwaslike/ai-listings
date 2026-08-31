@@ -186,7 +186,7 @@ function comp(overrides: Partial<PricingComp> = {}): PricingComp {
   return {
     id: 'comp-1', listing_id: 'listing-1', source: 'ebay', title: 'Test comp',
     sale_price_cents: 10_000, condition: 'Not specified', sold_at: '2026-01-01T00:00:00Z',
-    listing_url: 'https://example.com', condition_delta: 'same', adjusted_price_cents: 10_000,
+    listing_url: 'https://example.com',
     color: null, relevance_score: null, provider: null, created_at: '2026-01-01T00:00:00Z',
     ...overrides,
   }
@@ -251,7 +251,7 @@ test('computeAdjustedPricing: retail (brand-new MSRP) comps are excluded from th
 })
 
 test('computeAdjustedPricing: recomputes against the listing\'s CURRENT condition, not any cached comp delta (staleness fix)', () => {
-  const comps = [comp({ sale_price_cents: 10_000, condition: 'Like new', condition_delta: 'better', adjusted_price_cents: 99_999 })]
+  const comps = [comp({ sale_price_cents: 10_000, condition: 'Like new' })]
 
   const worse = computeAdjustedPricing(
     { condition: 'very_good', category: 'jewelry' as const, sub_type: null, inclusions: [] },
@@ -262,9 +262,7 @@ test('computeAdjustedPricing: recomputes against the listing\'s CURRENT conditio
     comps, { includePremiums: false }
   )
 
-  // Same comp row (including its stale adjusted_price_cents: 99999), different current
-  // condition on the listing — the stored adjusted_price_cents/condition_delta columns are
-  // ignored entirely; only listing.condition and the comp's raw condition text are used.
+  // Different listing.condition, same comp — only listing.condition and comp.condition are used.
   assert.equal(worse.priceCents, 8_500) // very_good (rank 5) < Like new (rank 6) → worse → 10000 * 0.85
   assert.equal(better.priceCents, 11_500) // new_with_tags (rank 8) > Like new (rank 6) → better → 10000 * 1.15
 })

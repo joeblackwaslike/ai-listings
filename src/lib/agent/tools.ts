@@ -164,15 +164,18 @@ async function buildDescription(
 
   const { data: comps } = await supabase
     .from('pricing_comps')
-    .select('source, title, adjusted_price_cents, condition, condition_delta')
+    .select('source, title, sale_price_cents, condition')
     .eq('listing_id', listingId)
-    .order('adjusted_price_cents')
+    .order('sale_price_cents')
     .limit(5)
 
+  const listingCondition = (listing.condition as string | null) ?? ''
   const compsText = comps && comps.length > 0
-    ? comps.map((c) =>
-        `${c.source}: "${c.title}" — $${((c.adjusted_price_cents as number) / 100).toFixed(0)} adjusted (${c.condition}, ${c.condition_delta} condition)`
-      ).join('\n')
+    ? comps.map((c) => {
+        const delta = conditionDelta(listingCondition, (c.condition as string) ?? '')
+        const adjusted = adjustForCondition(c.sale_price_cents as number, delta)
+        return `${c.source}: "${c.title}" — $${(adjusted / 100).toFixed(0)} adjusted (${c.condition}, ${delta} condition)`
+      }).join('\n')
     : 'No comps available'
 
   const inclusions = ((listing.inclusions as Inclusion[]) ?? [])

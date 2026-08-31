@@ -1007,7 +1007,12 @@ export async function runStep3PricingResearch(
   // signal and no replacement data -- ai-listings-drz confirmed this exact scenario (a step3
   // retry that found zero comps cleared suggested_price_cents, leaving the listing with no
   // price at all). Skip both operations together in that case, leaving existing data untouched.
-  const toInsert = [...filteredComps, ...filteredActive, ...filteredRetailRows]
+  // condition_delta and adjusted_price_cents are derived from listing.condition, which can
+  // change after step3 runs — strip them before persisting so reads always recalculate fresh.
+  const toInsert = [...filteredComps, ...filteredActive, ...filteredRetailRows].map(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    ({ condition_delta, adjusted_price_cents, ...rest }) => rest
+  )
   const insertedIds: string[] = []
   if (toInsert.length > 0) {
     const { data: inserted, error } = await supabase.from('pricing_comps').insert(toInsert).select('id')
@@ -1228,7 +1233,7 @@ export async function recalculateListingPrice(listingId: string): Promise<{
 
   const { data: listing, error: listingError } = await supabase
     .from('listings')
-    .select('category')
+    .select('category, condition')
     .eq('id', listingId)
     .single()
   if (listingError || !listing) {
@@ -1237,7 +1242,7 @@ export async function recalculateListingPrice(listingId: string): Promise<{
 
   const { data: existingRows, error: reloadError } = await supabase
     .from('pricing_comps')
-    .select('source, title, sale_price_cents, adjusted_price_cents, relevance_score')
+    .select('source, title, sale_price_cents, condition, relevance_score')
     .eq('listing_id', listingId)
     .order('created_at', { ascending: false })
     .limit(200)
@@ -1245,13 +1250,17 @@ export async function recalculateListingPrice(listingId: string): Promise<{
     throw new Error(`recalculateListingPrice: pricing_comps reload failed — ${reloadError.message}`)
   }
 
-  const existing = (existingRows ?? []) as Array<{
-    source: string
-    title: string
-    sale_price_cents: number
-    adjusted_price_cents: number
-    relevance_score: number | null
-  }>
+  const listingCondition = (listing.condition as string | null) ?? ''
+  const existing = (existingRows ?? []).map((r) => {
+    const delta = conditionDelta(listingCondition, (r.condition as string) ?? '')
+    return {
+      source: r.source as string,
+      title: r.title as string,
+      sale_price_cents: r.sale_price_cents as number,
+      adjusted_price_cents: adjustForCondition(r.sale_price_cents as number, delta),
+      relevance_score: r.relevance_score as number | null,
+    }
+  })
   const effectiveSoldComps = removeOutlierComps(deduplicateComps(existing.filter((r) => !isActiveSource(r.source))))
   const effectiveActiveComps = removeOutlierComps(deduplicateComps(existing.filter((r) => isActiveSource(r.source))))
 
