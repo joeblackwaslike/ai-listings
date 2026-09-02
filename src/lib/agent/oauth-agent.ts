@@ -95,6 +95,8 @@ export async function runAgentOauth(
         model: 'claude-sonnet-4-6',
         env: subprocessEnv(),
         abortController,
+        permissionMode: 'bypassPermissions' as const,
+        allowDangerouslySkipPermissions: true,
       },
     })) {
       if (message.type === 'assistant') {
