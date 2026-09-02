@@ -46,6 +46,7 @@ export async function streamAgentResponse(
         max_tokens: 4096,
         system: systemBlocks as Parameters<typeof client.messages.create>[0]['system'],
         tools: TOOL_SCHEMAS,
+        tool_choice: { type: 'auto' },
         messages,
       })
 

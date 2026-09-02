@@ -90,8 +90,8 @@ export async function assembleContext(
       .from('conversations')
       .select('role, content')
       .eq('listing_id', listingId)
-      .order('created_at', { ascending: true })
-      .limit(20),
+      .order('created_at', { ascending: false })
+      .limit(8),
   ])
 
   if (listingResult.error || !listingResult.data) {
@@ -106,7 +106,8 @@ export async function assembleContext(
     { type: 'text', text: listingSnapshot, cache_control: { type: 'ephemeral' } },
   ]
 
-  const history: MessageParam[] = (historyResult.data ?? []).map((row) => ({
+  // Fetched newest-first (limit 8), reverse to chronological order for the API.
+  const history: MessageParam[] = (historyResult.data ?? []).reverse().map((row) => ({
     role: row.role as 'user' | 'assistant',
     content: row.content,
   }))
