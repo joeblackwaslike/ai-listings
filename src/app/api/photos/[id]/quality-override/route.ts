@@ -19,7 +19,7 @@ export async function PATCH(
 
   const { data: photoRow } = await supabase
     .from('photos')
-    .select('id, listing_id, type, raw_url, photoroom_meta, listings!inner(user_id, skip_background_removal)')
+    .select('id, listing_id, type, raw_url, processed_url, photoroom_meta, listings!inner(user_id, skip_background_removal)')
     .eq('id', id)
     .eq('listings.user_id', user.id)
     .single()
@@ -41,11 +41,15 @@ export async function PATCH(
     skip_background_removal: boolean
   }
 
+  // A photo whose processed_url === raw_url had BG removal individually skipped by the user
+  // (via the per-photo skip toggle). Honour that choice — don't re-apply BG removal here.
+  const photoBgSkipped = photoRow.processed_url === photoRow.raw_url
+
   // Run background removal (if applicable) *before* writing the override flags below --
   // removeBackground unconditionally overwrites photoroom_meta to `{}` once it finishes, so
   // doing it first and letting our own update land last is what keeps quality_overridden from
   // getting silently wiped out.
-  if (!listingRow.skip_background_removal) {
+  if (!listingRow.skip_background_removal && !photoBgSkipped) {
     const apiKeys = await getUserApiKeys(listingRow.user_id)
     const storagePath = `studio/${photoRow.listing_id}/processed-${id}-override.png`
     try {
