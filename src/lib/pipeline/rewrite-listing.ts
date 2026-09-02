@@ -164,7 +164,7 @@ Rules:
 - poshmark_title: max 50 chars, natural language
 - condition_notes: polished prose that merges AI photo observations with the condition notes above — no contradictions with the description
 - Descriptions should be factual, buyer-oriented, no filler phrases like "don't miss out"
-- Do NOT end any description with a labeled "Condition:" block — condition is displayed separately`
+- Weave condition details naturally into the description prose (e.g. "Shows light wear on hardware consistent with use") — do NOT use a labeled "Condition:" section or header`
 
   let rewrite: RewriteOutput
   try {
