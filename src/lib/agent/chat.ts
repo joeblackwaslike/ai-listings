@@ -37,16 +37,26 @@ export async function streamAgentResponse(
   let iterations = 0
   let finalAssistantText = ''
 
+  // Force build_description on the first turn when the user is clearly asking for a
+  // description rewrite. Without this, the model tends to write the description as chat
+  // text (stop_reason=end_turn) instead of calling the tool, especially when prior
+  // conversation history contains examples of that pattern.
+  const descriptionIntent = /rewrite|update.{0,20}description|write.{0,20}description|generate.{0,20}description|new description/i.test(userMessage)
+
   try {
     while (iterations < MAX_ITERATIONS) {
       iterations++
+
+      const toolChoice = (descriptionIntent && iterations === 1)
+        ? { type: 'tool' as const, name: 'build_description' }
+        : { type: 'auto' as const }
 
       const stream = client.messages.stream({
         model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: systemBlocks as Parameters<typeof client.messages.create>[0]['system'],
         tools: TOOL_SCHEMAS,
-        tool_choice: { type: 'auto' },
+        tool_choice: toolChoice,
         messages,
       })
 
