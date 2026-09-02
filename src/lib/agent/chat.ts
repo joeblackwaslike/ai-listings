@@ -5,6 +5,7 @@ import type { ApiKeys } from '@/lib/user-api-keys'
 import { assembleContext } from './system-prompt'
 import { TOOL_SCHEMAS, executeTool } from './tools'
 import { getClaudeBackend } from '@/lib/claude/backend'
+import { runAgentOauth } from './oauth-agent'
 
 export type AgentEvent =
   | { type: 'text'; content: string }
@@ -130,8 +131,30 @@ export async function streamAgentResponse(
       err.status === 400 &&
       err.message.includes('credit balance')
 
+    if (isCreditsError && getClaudeBackend() === 'oauth') {
+      console.error(`[chat] credits exhausted — retrying via OAuth subprocess agent loop`)
+      try {
+        // assembleContext already fetched history for the API-key path. Re-use systemBlocks
+        // but rebuild messages without the current userMessage appended (runAgentOauth
+        // handles the prompt construction itself).
+        const historyOnly = baseMessages.slice(0, -1) as Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string }> }>
+        const result = await runAgentOauth(listingId, userMessage, emit, systemBlocks as Array<{ type: 'text'; text: string }>, historyOnly)
+        if (result) {
+          await supabase.from('conversations').insert({
+            listing_id: listingId,
+            role: 'assistant',
+            content: result,
+          })
+        }
+        emit({ type: 'done' })
+      } catch (oauthErr) {
+        console.error(`[chat] OAuth agent loop also failed:`, oauthErr instanceof Error ? oauthErr.message : oauthErr)
+        emit({ type: 'error', message: 'Agent unavailable — API credits exhausted and OAuth fallback failed. Try again shortly.' })
+      }
+      return
+    }
+
     if (isCreditsError) {
-      console.error(`[chat] credits exhausted (backend=${getClaudeBackend()}) — emitting error`)
       emit({ type: 'error', message: 'Anthropic API credits exhausted. Add credits at console.anthropic.com/settings/billing, then try again.' })
       return
     }
