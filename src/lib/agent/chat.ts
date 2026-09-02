@@ -124,12 +124,15 @@ export async function streamAgentResponse(
 
     emit({ type: 'done' })
   } catch (err) {
+    console.error(`[chat] CATCH err=${err instanceof Error ? err.message : String(err)} backend=${getClaudeBackend()}`)
+
     const isCreditsError =
       err instanceof Anthropic.APIError &&
       err.status === 400 &&
       err.message.includes('credit balance')
 
     if (isCreditsError && getClaudeBackend() === 'oauth') {
+      console.error(`[chat] credits exhausted — falling back to OAuth text path`)
       try {
         const systemText = typeof systemBlocks === 'string'
           ? systemBlocks
