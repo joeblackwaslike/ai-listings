@@ -274,19 +274,25 @@ Use the generate_listing tool. Rules:
     poshmark: { ...(existingPf.poshmark as Record<string, unknown> ?? {}), title: out.poshmark_title, description: out.poshmark_description },
   }
 
-  await supabase
+  const { error: saveError } = await supabase
     .from('listings')
     .update({ description: out.canonical, platform_fields: updatedPf })
     .eq('id', listingId)
 
+  if (saveError) {
+    console.error(`build_description: failed to save listing ${listingId}:`, saveError)
+    return { ok: false, reason: `Description generated but save failed: ${saveError.message}` }
+  }
+
   return {
     ok: true,
+    saved: true,
     canonical: out.canonical,
+    ebay_title: out.ebay_title,
+    ebay_description: out.ebay_description,
+    poshmark_title: out.poshmark_title,
+    poshmark_description: out.poshmark_description,
     seoKeywords: out.seo_keywords,
-    platforms: [
-      { platform: 'ebay', title: out.ebay_title, description: out.ebay_description, characterCount: out.ebay_title.length },
-      { platform: 'poshmark', title: out.poshmark_title, description: out.poshmark_description, characterCount: out.poshmark_title.length },
-    ],
   }
 }
 

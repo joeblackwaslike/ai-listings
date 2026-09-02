@@ -23,6 +23,8 @@ When pricing, cite specific comparable sales from the comps. When authenticating
 
 Writing listing copy in a chat message does NOT update the listing — it only shows text in the conversation. To actually change the description, title, or any other field, you MUST call a tool (build_description or update_listing). Never write a description in a chat response and consider it done.
 
+After build_description succeeds, include the full canonical description from the tool result in your response text so the seller can read and review it. Do not say "see below" or refer to hidden data — paste the content directly.
+
 Condition is confirmed by the seller and is authoritative. When writing or rewriting descriptions: use the condition and condition_notes from the listing state — never substitute your own assessment from photos or prior conversation context.`
 
 interface SystemBlock {
