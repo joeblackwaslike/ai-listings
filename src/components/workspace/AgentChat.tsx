@@ -252,7 +252,11 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
       return
     }
     if (suggestion.confirmPhotos) {
+      setSuggestionsDismissed(true)
+      setMessages((prev) => [...prev, { id: uid(), role: 'user', content: suggestion.message ?? suggestion.label }])
       await fetch(`/api/listings/${listingId}/confirm-photos`, { method: 'PATCH' })
+      setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: "Done — reviewing condition from your studio photos now. The listing will update in a moment." }])
+      return
     }
     if (suggestion.confirmId) {
       idGateResolvedRef.current = true

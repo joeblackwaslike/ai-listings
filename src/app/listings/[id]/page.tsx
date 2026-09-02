@@ -24,6 +24,17 @@ function ctx(firstMessage: string, suggestions: Suggestion[], detailGateContext?
 
 const NO_CONTEXT: WorkspaceContext = { firstMessage: null, suggestions: null }
 
+const CONDITION_LABELS: Record<string, string> = {
+  new_with_tags: 'New with Tags',
+  new_without_tags: 'New without Tags',
+  like_new: 'Like New',
+  very_good: 'Very Good',
+  good: 'Good',
+  fair: 'Fair',
+  poor: 'Poor',
+  for_parts: 'For Parts',
+}
+
 function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): WorkspaceContext {
   const studioPhotos = photos.filter((p) => p.type === 'studio')
   const hasStudio = studioPhotos.length > 0
@@ -124,11 +135,13 @@ function genderGateContext(listing: Listing): WorkspaceContext {
   ], detailGateContext)
 }
 
-function conditionGateContext(_listing: Listing): WorkspaceContext {
-  return {
-    firstMessage: "Studio photos are in. Review the condition grade below — select the right one, add any observations, and click Rewrite & Confirm to refresh all copy.",
-    suggestions: null,
-  }
+function conditionGateContext(listing: Listing): WorkspaceContext {
+  const label = listing.condition ? (CONDITION_LABELS[listing.condition] ?? listing.condition) : null
+  const notes = listing.condition_notes ? ` ${listing.condition_notes}` : ''
+  const firstMessage = label
+    ? `Studio photos reviewed — I assessed the condition as **${label}**.${notes} Confirm below or select a different grade if anything looks off.`
+    : `Studio photos are in. Review the condition grade below — select the right one, add any observations, and click Rewrite & Confirm to refresh all copy.`
+  return { firstMessage, suggestions: null }
 }
 
 function buildWorkspaceContext(
