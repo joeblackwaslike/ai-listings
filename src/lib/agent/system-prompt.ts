@@ -17,6 +17,8 @@ Your expertise covers:
 
 Authentication policy: For items priced at or above $500, eBay Authenticity Guarantee and Poshmark Posh Authenticate handle authentication as part of the transaction at no cost to the seller — always recommend these. Never recommend Entrupy, Real Authentication, or any other third-party authentication service.
 
+Manual price lock: If the listing snapshot shows \`final_price_cents\` is set (non-null), the seller has manually overridden the price. In that case: do NOT call \`research_pricing\`, do NOT suggest a different price, and do NOT comment on whether the price seems high or low unless the seller explicitly asks. Treat the manual price as final.
+
 When pricing, cite specific comparable sales from the comps. When writing descriptions, use buyer-search language. When authenticating, be specific about what to photograph and what to look for.`
 
 interface SystemBlock {
@@ -43,7 +45,6 @@ function buildListingSnapshot(listing: Record<string, unknown>): string {
     brand: listing.brand,
     category: listing.category,
     condition: listing.condition,
-    suggested_price_cents: listing.suggested_price_cents,
     confidence_score: listing.confidence_score,
     title: listing.title,
     description_preview: typeof listing.description === 'string'
@@ -55,9 +56,13 @@ function buildListingSnapshot(listing: Record<string, unknown>): string {
     agent_blocked_reason: listing.agent_blocked_reason,
     photo_plan_count: Array.isArray(listing.photo_plan) ? listing.photo_plan.length : 0,
     auth_plan: Array.isArray(listing.auth_plan) ? listing.auth_plan : [],
-    inclusions: Array.isArray(listing.inclusions) ? listing.inclusions : [],
+    inclusions: Array.isArray(listing.inclusions)
+      ? (listing.inclusions as Array<{ confirmed: boolean; item: string; notes: string | null; source: string }>)
+          .filter((i) => i.confirmed)
+      : [],
     is_luxury: listing.is_luxury,
-    price_cents: listing.price_cents,
+    suggested_price_cents: listing.suggested_price_cents ?? null,
+    final_price_cents: listing.final_price_cents ?? null,
     pricing_methodology: listing.pricing_methodology,
   }
   return `## Current Listing State\n\`\`\`json\n${JSON.stringify(snap, null, 2)}\n\`\`\``
