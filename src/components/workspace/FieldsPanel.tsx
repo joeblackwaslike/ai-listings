@@ -333,6 +333,40 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
   return (
     <>
       <div className="space-y-5">
+        {(() => {
+          const flaggedPhotos = photos.filter(
+            (p) => p.type === 'studio' && (p.photoroom_meta as { quality_failed?: boolean } | null)?.quality_failed
+          )
+          if (listing.agent_blocked && flaggedPhotos.length > 0) {
+            return (
+              <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5 space-y-3">
+                <p className="text-xs font-medium text-orange-400">
+                  Agent waiting — {flaggedPhotos.length} photo{flaggedPhotos.length === 1 ? '' : 's'} need{flaggedPhotos.length === 1 ? 's' : ''} attention
+                </p>
+                {flaggedPhotos.map((photo) => (
+                  <QaChecklistRow key={photo.id} photo={photo} onRetake={startRetake} onUseAsIs={handleUseAsIs} />
+                ))}
+                <input
+                  ref={retakeFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => void handleRetakeFileSelected(e)}
+                />
+              </div>
+            )
+          }
+          if (listing.agent_blocked && listing.agent_blocked_reason) {
+            return (
+              <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5">
+                <p className="text-xs font-medium text-orange-400 mb-0.5">Agent waiting</p>
+                <p className="text-xs text-orange-300/80">{listing.agent_blocked_reason}</p>
+              </div>
+            )
+          }
+          return null
+        })()}
+
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono text-gray-600">{listing.sku ?? '—'}</span>
@@ -777,39 +811,6 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
           )}
         </section>
 
-        {(() => {
-          const flaggedPhotos = photos.filter(
-            (p) => p.type === 'studio' && (p.photoroom_meta as { quality_failed?: boolean } | null)?.quality_failed
-          )
-          if (listing.agent_blocked && flaggedPhotos.length > 0) {
-            return (
-              <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5 space-y-3">
-                <p className="text-xs font-medium text-orange-400">
-                  Agent waiting — {flaggedPhotos.length} photo{flaggedPhotos.length === 1 ? '' : 's'} need{flaggedPhotos.length === 1 ? 's' : ''} attention
-                </p>
-                {flaggedPhotos.map((photo) => (
-                  <QaChecklistRow key={photo.id} photo={photo} onRetake={startRetake} onUseAsIs={handleUseAsIs} />
-                ))}
-                <input
-                  ref={retakeFileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => void handleRetakeFileSelected(e)}
-                />
-              </div>
-            )
-          }
-          if (listing.agent_blocked && listing.agent_blocked_reason) {
-            return (
-              <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5">
-                <p className="text-xs font-medium text-orange-400 mb-0.5">Agent waiting</p>
-                <p className="text-xs text-orange-300/80">{listing.agent_blocked_reason}</p>
-              </div>
-            )
-          }
-          return null
-        })()}
       </div>
 
       <EvidenceDrawer
