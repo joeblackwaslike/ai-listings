@@ -45,6 +45,7 @@ function buildListingSnapshot(listing: Record<string, unknown>): string {
     brand: listing.brand,
     category: listing.category,
     condition: listing.condition,
+    condition_notes: listing.condition_notes ?? null,
     confidence_score: listing.confidence_score,
     title: listing.title,
     description_preview: typeof listing.description === 'string'
