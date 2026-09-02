@@ -220,12 +220,13 @@ ${compsText}
 ${priceHint}
 
 Use the generate_listing tool. Rules:
-- canonical: Buyer-oriented Markdown. Open with 1-2 sentences of descriptive prose about the item (what it is, why a buyer wants it). Do NOT open with a bullet list or key-value headers like "Brand:", "Category:", "Inclusions:". After the prose opening, add a "**Condition**" section using the condition grade and notes. Factual, no filler ("don't miss out", "rare find").
+- canonical: Buyer-oriented Markdown. Open with 1-2 sentences of descriptive prose (what it is, why a buyer wants it). NO bullet lists anywhere. Measurements and what's included go at the end as flowing prose ("Measurements: 8" W × 5" H × 2" D. Includes original box and dust bag.") — NOT bullets. Add a "**Condition**" section using the condition grade and notes. No filler phrases.
 - eBay title: ≤ 80 chars, keyword-rich (brand + model + key attributes buyers search)
-- ebay_description: plain text ONLY — no Markdown, no HTML, no tables, no emojis; eBay does not render them; include a "Condition:" section with grade and notes
+- ebay_description: plain text ONLY — no Markdown, no HTML, no bullet points, no pipe-separated values. Write a complete description (not just the title repeated). Include a "Condition:" line with grade and notes. Write what's included as a sentence ("Includes original box and dust bag.") — never as a header with pipe-separated values.
 - Poshmark title: ≤ 60 chars, natural language
-- poshmark_description: plain text; minimal emojis only if they genuinely help readability; include a condition section
+- poshmark_description: plain text, no bullet points. Write a complete description. Include condition and write what's included as a sentence ("Includes original box and dust bag.") — not as a header or list.
 - seoKeywords: top 8 search terms buyers use for this specific item
+- Use "Includes" in descriptions, never "Inclusions:" as a header
 - Condition_notes are authoritative — if they conflict with the condition grade, honour the notes and describe the item accordingly
 - Do NOT add any condition observations of your own (hardware wear, scuffs, etc.) that are not stated in the condition_notes above`
 
