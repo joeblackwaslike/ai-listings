@@ -378,7 +378,6 @@ export interface AuthChecklist {
 
 export interface ListingDescription {
   ok: true;
-  saved: true;
   canonical: string;
   ebay_title: string;
   ebay_description: string;

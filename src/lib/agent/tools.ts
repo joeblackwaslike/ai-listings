@@ -267,26 +267,10 @@ Use the generate_listing tool. Rules:
     throw err
   }
 
-  const existingPf = (listing.platform_fields ?? {}) as Record<string, unknown>
-  const updatedPf = {
-    ...existingPf,
-    ebay: { ...(existingPf.ebay as Record<string, unknown> ?? {}), title: out.ebay_title, description: out.ebay_description },
-    poshmark: { ...(existingPf.poshmark as Record<string, unknown> ?? {}), title: out.poshmark_title, description: out.poshmark_description },
-  }
-
-  const { error: saveError } = await supabase
-    .from('listings')
-    .update({ description: out.canonical, platform_fields: updatedPf })
-    .eq('id', listingId)
-
-  if (saveError) {
-    console.error(`build_description: failed to save listing ${listingId}:`, saveError)
-    return { ok: false, reason: `Description generated but save failed: ${saveError.message}` }
-  }
-
+  // Return the draft for review — do NOT auto-save. The agent must show this to
+  // the seller and wait for approval, then call update_listing to persist.
   return {
     ok: true,
-    saved: true,
     canonical: out.canonical,
     ebay_title: out.ebay_title,
     ebay_description: out.ebay_description,
@@ -350,9 +334,25 @@ async function updateListing(
   }
 
   const supabase = getSupabaseAdmin()
+
+  // Deep-merge platform_fields with existing so we don't blow away fields like
+  // ebay_listing_id / ebay_offer_id that were set at publish time.
+  let finalUpdates: typeof updates = updates
+  if (updates.platform_fields) {
+    const { data: existing } = await supabase
+      .from('listings').select('platform_fields').eq('id', listingId).single()
+    const existingPf = (existing?.platform_fields ?? {}) as Record<string, unknown>
+    const newPf = updates.platform_fields as Record<string, Record<string, unknown>>
+    const merged: Record<string, unknown> = { ...existingPf }
+    for (const [platform, fields] of Object.entries(newPf)) {
+      merged[platform] = { ...(existingPf[platform] as Record<string, unknown> ?? {}), ...fields }
+    }
+    finalUpdates = { ...updates, platform_fields: merged }
+  }
+
   const { error } = await supabase
     .from('listings')
-    .update(updates)
+    .update(finalUpdates)
     .eq('id', listingId)
 
   if (error) return { ok: false, reason: `DB update failed: ${error.message}` }
@@ -471,7 +471,7 @@ export const TOOL_SCHEMAS: Anthropic.Messages.Tool[] = [
   },
   {
     name: 'build_description',
-    description: 'Generate and save a new listing description with platform-specific titles and SEO keywords. Saves description and platform_fields automatically.',
+    description: 'Generate a draft listing description with platform-specific titles and SEO keywords. Returns the draft for seller review — does NOT save automatically. After showing the draft to the seller and getting approval, call update_listing to persist.',
     input_schema: {
       type: 'object',
       properties: {
@@ -486,7 +486,7 @@ export const TOOL_SCHEMAS: Anthropic.Messages.Tool[] = [
   },
   {
     name: 'update_listing',
-    description: 'Update one or more listing fields. Only use this after confirming the values are correct. Writeable fields: title, description, condition, condition_notes, suggested_price_cents, final_price_cents, inclusions, auth_plan, photo_plan, platform_fields, tags.',
+    description: 'Update one or more listing fields. Use this to save a description draft after the seller approves it. Pass description (canonical Markdown) and platform_fields ({ ebay: { title, description }, poshmark: { title, description } }) to persist a draft from build_description. Writeable fields: title, description, condition, condition_notes, suggested_price_cents, final_price_cents, inclusions, auth_plan, photo_plan, platform_fields, tags.',
     input_schema: {
       type: 'object',
       properties: {
