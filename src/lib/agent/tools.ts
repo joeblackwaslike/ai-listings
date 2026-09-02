@@ -223,7 +223,9 @@ Use the generate_listing tool. Rules:
 - canonical: factual, buyer-oriented, no filler ("don't miss out", "rare find")
 - eBay title: ≤ 80 chars, keyword-rich (brand + model + key attributes buyers search)
 - Poshmark title: ≤ 60 chars, natural language
-- seoKeywords: top 8 search terms buyers use for this specific item`
+- seoKeywords: top 8 search terms buyers use for this specific item
+- Condition_notes are authoritative — if they conflict with the condition grade, honour the notes and describe the item accordingly
+- Do NOT add any condition observations of your own (hardware wear, scuffs, etc.) that are not stated in the condition_notes above`
 
   let out: {
     canonical: string; ebay_title: string; ebay_description: string
