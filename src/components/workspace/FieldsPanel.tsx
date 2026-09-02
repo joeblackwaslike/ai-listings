@@ -55,6 +55,13 @@ interface QaChecklistRowProps {
 
 function QaChecklistRow({ photo, onRetake, onUseAsIs }: Readonly<QaChecklistRowProps>) {
   const meta = photo.photoroom_meta as { quality_verdict?: string } | null
+  const [accepting, setAccepting] = useState(false)
+
+  async function handleAccept() {
+    setAccepting(true)
+    await onUseAsIs(photo.id)
+  }
+
   return (
     <div className="rounded bg-black/20 p-2 space-y-1.5">
       <div className="flex items-center gap-2">
@@ -66,15 +73,17 @@ function QaChecklistRow({ photo, onRetake, onUseAsIs }: Readonly<QaChecklistRowP
       <div className="flex gap-1.5 pl-12">
         <button
           onClick={() => onRetake(photo.id)}
-          className="text-[10px] px-2 py-1 rounded bg-orange-900/50 text-orange-300 hover:bg-orange-900/70 transition-colors"
+          disabled={accepting}
+          className="text-[10px] px-2 py-1 rounded bg-orange-900/50 text-orange-300 hover:bg-orange-900/70 transition-colors disabled:opacity-40"
         >
           Retake
         </button>
         <button
-          onClick={() => void onUseAsIs(photo.id)}
-          className="text-[10px] px-2 py-1 rounded bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
+          onClick={() => void handleAccept()}
+          disabled={accepting}
+          className="text-[10px] px-2 py-1 rounded bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors disabled:opacity-40"
         >
-          Use as-is
+          {accepting ? 'Processing…' : 'Use as-is'}
         </button>
       </div>
     </div>
@@ -127,6 +136,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
 
   async function handleUseAsIs(photoId: string) {
     await fetch(`/api/photos/${photoId}/quality-override`, { method: 'PATCH' })
+    router.refresh()
   }
 
   // AutoRefresh polls via router.refresh(), which re-renders this client component with a new

@@ -51,8 +51,9 @@ export async function PATCH(
     try {
       await removeBackground(id, photoRow.raw_url as string, storagePath, apiKeys)
     } catch (err) {
-      console.error('quality-override background removal failed:', err)
-      return Response.json({ error: 'Failed to process photo' }, { status: 500 })
+      // BG removal failure is non-fatal for the override — the user's intent is to accept
+      // the photo as-is regardless, so proceed to clear quality_failed below.
+      console.error('quality-override background removal failed (continuing):', err)
     }
   }
 
