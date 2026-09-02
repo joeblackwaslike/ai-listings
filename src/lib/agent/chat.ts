@@ -73,6 +73,8 @@ export async function streamAgentResponse(
 
       const finalMessage = await stream.finalMessage()
 
+      console.log(`[chat] iter=${iterations} stop_reason=${finalMessage.stop_reason} tool_choice=${JSON.stringify(toolChoice)} content_types=${finalMessage.content.map(b => b.type).join(',')}`)
+
       if (finalMessage.stop_reason !== 'tool_use') {
         break
       }
