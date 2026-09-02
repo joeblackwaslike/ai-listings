@@ -160,11 +160,13 @@ ${rulesSection}Use the rewrite_listing tool to produce all updated fields.
 
 Rules:
 - canonical_title: max 80 chars, brand + model + key attributes, not platform-specific
+- canonical_description: factual, buyer-oriented Markdown; include a "**Condition**" section with the condition grade and notes; no filler ("don't miss out", "rare find")
 - ebay_title: max 80 chars, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
+- ebay_description: plain text ONLY — no Markdown, no HTML, no tables, no emojis; eBay does not render them; include a "Condition:" section with grade and notes
 - poshmark_title: max 50 chars, natural language
+- poshmark_description: plain text; minimal emojis only if they genuinely help; include a condition section
 - condition_notes: polished prose that merges AI photo observations with the condition notes above — no contradictions with the description
-- Descriptions should be factual, buyer-oriented, no filler phrases like "don't miss out"
-- Weave condition details naturally into the description prose (e.g. "Shows light wear on hardware consistent with use") — do NOT use a labeled "Condition:" section or header`
+- No invented condition details — only what is in the condition and condition_notes fields above`
 
   let rewrite: RewriteOutput
   try {

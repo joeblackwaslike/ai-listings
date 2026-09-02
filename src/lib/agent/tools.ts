@@ -220,9 +220,11 @@ ${compsText}
 ${priceHint}
 
 Use the generate_listing tool. Rules:
-- canonical: factual, buyer-oriented, no filler ("don't miss out", "rare find")
+- canonical: factual, buyer-oriented Markdown; include a "**Condition**" section with the condition grade and notes; no filler ("don't miss out", "rare find")
 - eBay title: ≤ 80 chars, keyword-rich (brand + model + key attributes buyers search)
+- ebay_description: plain text ONLY — no Markdown, no HTML, no tables, no emojis; eBay does not render them; include a "Condition:" section with grade and notes
 - Poshmark title: ≤ 60 chars, natural language
+- poshmark_description: plain text; minimal emojis only if they genuinely help readability; include a condition section
 - seoKeywords: top 8 search terms buyers use for this specific item
 - Condition_notes are authoritative — if they conflict with the condition grade, honour the notes and describe the item accordingly
 - Do NOT add any condition observations of your own (hardware wear, scuffs, etc.) that are not stated in the condition_notes above`
@@ -248,11 +250,11 @@ Use the generate_listing tool. Rules:
       jsonSchema: {
         type: 'object' as const,
         properties: {
-          canonical: { type: 'string', description: 'Canonical description, 2–4 sentences' },
+          canonical: { type: 'string', description: 'Canonical Markdown description with a "**Condition**" section; factual, no filler' },
           ebay_title: { type: 'string', description: 'eBay title, max 80 chars' },
-          ebay_description: { type: 'string' },
+          ebay_description: { type: 'string', description: 'Plain text only — no Markdown, no HTML, no tables, no emojis. Must include condition.' },
           poshmark_title: { type: 'string', description: 'Poshmark title, max 60 chars' },
-          poshmark_description: { type: 'string' },
+          poshmark_description: { type: 'string', description: 'Plain text; minimal emojis only. Must include condition.' },
           seo_keywords: { type: 'array', items: { type: 'string' } },
         },
         required: ['canonical', 'ebay_title', 'ebay_description', 'poshmark_title', 'poshmark_description', 'seo_keywords'],
