@@ -378,14 +378,13 @@ export interface AuthChecklist {
 
 export interface ListingDescription {
   ok: true;
+  saved: true;
   canonical: string;
+  ebay_title: string;
+  ebay_description: string;
+  poshmark_title: string;
+  poshmark_description: string;
   seoKeywords: string[];
-  platforms: Array<{
-    platform: 'ebay' | 'poshmark';
-    title: string;
-    description: string;
-    characterCount: number;
-  }>;
 }
 
 export type AgentToolError = { ok: false; reason: string };
