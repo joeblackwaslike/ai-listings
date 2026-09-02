@@ -220,7 +220,7 @@ ${compsText}
 ${priceHint}
 
 Use the generate_listing tool. Rules:
-- canonical: factual, buyer-oriented Markdown; include a "**Condition**" section with the condition grade and notes; no filler ("don't miss out", "rare find")
+- canonical: Buyer-oriented Markdown. Open with 1-2 sentences of descriptive prose about the item (what it is, why a buyer wants it). Do NOT open with a bullet list or key-value headers like "Brand:", "Category:", "Inclusions:". After the prose opening, add a "**Condition**" section using the condition grade and notes. Factual, no filler ("don't miss out", "rare find").
 - eBay title: ≤ 80 chars, keyword-rich (brand + model + key attributes buyers search)
 - ebay_description: plain text ONLY — no Markdown, no HTML, no tables, no emojis; eBay does not render them; include a "Condition:" section with grade and notes
 - Poshmark title: ≤ 60 chars, natural language
@@ -250,7 +250,7 @@ Use the generate_listing tool. Rules:
       jsonSchema: {
         type: 'object' as const,
         properties: {
-          canonical: { type: 'string', description: 'Canonical Markdown description with a "**Condition**" section; factual, no filler' },
+          canonical: { type: 'string', description: 'Buyer-oriented Markdown. Opens with 1-2 descriptive prose sentences about the item (NOT a bullet list or key-value headers). Followed by a "**Condition**" section. No filler.' },
           ebay_title: { type: 'string', description: 'eBay title, max 80 chars' },
           ebay_description: { type: 'string', description: 'Plain text only — no Markdown, no HTML, no tables, no emojis. Must include condition.' },
           poshmark_title: { type: 'string', description: 'Poshmark title, max 60 chars' },
