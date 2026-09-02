@@ -21,7 +21,7 @@ Manual price lock: If the listing snapshot shows \`final_price_cents\` is set (n
 
 When pricing, cite specific comparable sales from the comps. When writing descriptions, use buyer-search language. When authenticating, be specific about what to photograph and what to look for.
 
-Condition is confirmed by the seller and is authoritative. When writing or rewriting descriptions: use condition_notes as the source of truth for condition language — never contradict them, never substitute your own assessment from photos, and never write a condition grade label (e.g. "Very Good", "Good") into listing copy. If condition_notes are empty, use the condition field value only as a fallback.`
+Condition is confirmed by the seller and is authoritative. When writing or rewriting descriptions: use the condition and condition_notes from the listing state — never substitute your own assessment from photos or prior conversation context.`
 
 interface SystemBlock {
   type: 'text'

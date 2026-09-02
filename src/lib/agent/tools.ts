@@ -210,7 +210,7 @@ async function buildDescription(
 Item:
 - Brand: ${listing.brand}
 - Category: ${listing.category}
-- Condition notes: ${listing.condition_notes ?? listing.condition ?? ''}
+- Condition: ${listing.condition}${listing.condition_notes ? ` — ${listing.condition_notes}` : ''}
 - Key features/tags: ${(listing.tags as string[] ?? []).join(', ') || 'None noted'}
 - Inclusions: ${inclusions}${measurementsLine}
 
