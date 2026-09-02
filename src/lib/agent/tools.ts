@@ -265,6 +265,18 @@ Use the generate_listing tool. Rules:
     throw err
   }
 
+  const existingPf = (listing.platform_fields ?? {}) as Record<string, unknown>
+  const updatedPf = {
+    ...existingPf,
+    ebay: { ...(existingPf.ebay as Record<string, unknown> ?? {}), title: out.ebay_title, description: out.ebay_description },
+    poshmark: { ...(existingPf.poshmark as Record<string, unknown> ?? {}), title: out.poshmark_title, description: out.poshmark_description },
+  }
+
+  await supabase
+    .from('listings')
+    .update({ description: out.canonical, platform_fields: updatedPf })
+    .eq('id', listingId)
+
   return {
     ok: true,
     canonical: out.canonical,
@@ -451,7 +463,7 @@ export const TOOL_SCHEMAS: Anthropic.Messages.Tool[] = [
   },
   {
     name: 'build_description',
-    description: 'Generate a new listing description with platform-specific titles and SEO keywords. Returns the generated text but does NOT save it — use update_listing to persist.',
+    description: 'Generate and save a new listing description with platform-specific titles and SEO keywords. Saves description and platform_fields automatically.',
     input_schema: {
       type: 'object',
       properties: {
