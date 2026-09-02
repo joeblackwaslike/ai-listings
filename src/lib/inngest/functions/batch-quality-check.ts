@@ -35,10 +35,12 @@ async function checkBatchQuality(photoUrls: string[], apiKey: string | undefined
 For each photo check:
 1. Blur or motion blur — is the subject sharp?
 2. Exposure — significantly underexposed (too dark) or overexposed (washed out)?
-3. Subject framing — is the main item centered and fully visible (not cut off)?
+3. Subject framing — is the main item well-framed? Note: accessories like chains, straps, or cords that extend beyond the frame edges are acceptable — only fail framing if the item itself is cut off or obscured.
 4. Multiple items in frame — are there multiple distinct items that should be separate listings?
 
-A photo passes if it is sharp, properly exposed, the subject is fully visible, and there is only one main item.
+Important: hands or fingers in the frame are acceptable and should never be flagged. Interior shots (zipper pockets, compartments, hardware details) often require a hand to hold the item open — that is expected and correct.
+
+A photo passes if it is sharp, properly exposed, the main item is well-framed, and there is only one main item.
 
 Return one result per photo using its 0-based index.`,
       jsonSchema: {
