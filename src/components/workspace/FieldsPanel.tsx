@@ -13,6 +13,8 @@ import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { ConditionReviewPanel } from '@/components/workspace/ConditionReviewPanel'
 import { getInclusionChecklist } from '@/lib/inclusions'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { adjustForCondition, computeAdjustedPricing, conditionDelta, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp, AdjustedComp, AuthStep, Inclusion, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
 
@@ -555,7 +557,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
             <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Description
             </h3>
-            <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">{listing.description}</p>
+            <div className="text-xs text-gray-300 leading-relaxed prose prose-invert prose-xs max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:text-gray-200 prose-hr:border-gray-700"><ReactMarkdown remarkPlugins={[remarkGfm]}>{listing.description}</ReactMarkdown></div>
             <p className="text-[10px] text-gray-600 mt-1">Ask the agent to rewrite if needed.</p>
           </section>
         )}
