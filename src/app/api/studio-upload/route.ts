@@ -79,7 +79,8 @@ export async function POST(request: Request) {
   let photoUrl: string
   try {
     photoUrl = await uploadFile(storagePath, buffer, file.type || 'image/jpeg')
-  } catch {
+  } catch (err) {
+    console.error('[studio-upload] R2 upload failed:', err)
     return NextResponse.json({ error: 'Storage upload failed' }, { status: 500 })
   }
 
