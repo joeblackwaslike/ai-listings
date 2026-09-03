@@ -82,6 +82,14 @@ export interface ListingConditionConfirmedEvent {
   }
 }
 
+export interface ListingRewriteRequestedEvent {
+  name: 'listing/rewrite-requested'
+  data: {
+    listingId: string
+    extraNotes: string
+  }
+}
+
 export interface TextSubmittedEvent {
   name: 'text/submitted'
   data: {
