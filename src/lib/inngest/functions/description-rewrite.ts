@@ -34,7 +34,9 @@ export const descriptionRewrite = inngest.createFunction(
         .from('listings')
         .update({
           agent_blocked: true,
-          agent_blocked_reason: 'Copy rewrite failed after all retries — try re-confirming condition.',
+          agent_blocked_reason: revertStatus === 'copy_review'
+            ? 'Copy rewrite failed after all retries — try submitting another rewrite.'
+            : 'Copy rewrite failed after all retries — try re-confirming condition.',
           status: revertStatus,
           ...extraUpdate,
         })
