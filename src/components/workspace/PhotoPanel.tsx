@@ -25,9 +25,14 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const router = useRouter()
 
-  const displayPhotos = [...photos]
+  const nonIntakePhotos = [...photos]
     .filter((p) => p.type !== 'intake')
     .sort((a, b) => photoRank(a) - photoRank(b) || a.display_order - b.display_order)
+  const intakePhotos = photos.filter((p) => p.type === 'intake')
+  // When no real photos exist yet, show intake/catalog photos as read-only reference
+  // so the seller can compare during ID approval.
+  const displayPhotos = nonIntakePhotos.length > 0 ? nonIntakePhotos : intakePhotos
+  const isIntakeFallback = nonIntakePhotos.length === 0 && intakePhotos.length > 0
   const main = displayPhotos[selectedIdx]
   const mainUrl = main?.processed_url ?? main?.raw_url
 
@@ -63,7 +68,7 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
             <div className="flex gap-2 overflow-x-auto pb-1">
               {displayPhotos.map((photo, i) => {
                 const url = (photo.processed_url ?? photo.raw_url) as string
-                const isStudio = photo.type === 'studio'
+                const isStudio = photo.type === 'studio' && !isIntakeFallback
                 const isBusy = busy[photo.id as string]
                 const hasBgRemoval = bgRemoved(photo)
                 return (
@@ -108,6 +113,9 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
         <div className="aspect-square rounded-xl bg-gray-900 border border-gray-800 flex items-center justify-center">
           <p className="text-sm text-gray-600">No photos yet</p>
         </div>
+      )}
+      {isIntakeFallback && (
+        <p className="text-xs text-gray-600 -mt-4">Catalog / intake reference — not a seller photo</p>
       )}
     </div>
   )
