@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { RotateCcw, ImageOff, Image as ImageIcon } from 'lucide-react'
+import { RotateCcw, ImageOff, Image as ImageIcon, Trash2 } from 'lucide-react'
 import type { Photo } from '@/types/listings'
 
 interface PhotoPanelProps {
@@ -44,6 +44,18 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       })
+      router.refresh()
+    } finally {
+      setBusy((prev) => ({ ...prev, [photoId]: false }))
+    }
+  }, [router])
+
+  const deletePhoto = useCallback(async (photoId: string) => {
+    if (!confirm('Remove this photo?')) return
+    setBusy((prev) => ({ ...prev, [photoId]: true }))
+    try {
+      await fetch(`/api/photos/${photoId}`, { method: 'DELETE' })
+      setSelectedIdx(0)
       router.refresh()
     } finally {
       setBusy((prev) => ({ ...prev, [photoId]: false }))
@@ -100,6 +112,14 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
                           {hasBgRemoval
                             ? <ImageOff className="w-3 h-3" />
                             : <ImageIcon className="w-3 h-3" />}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void deletePhoto(photo.id as string) }}
+                          disabled={isBusy}
+                          title="Delete photo"
+                          className="pointer-events-auto w-6 h-6 rounded bg-black/70 flex items-center justify-center text-red-400 hover:bg-red-900/80 disabled:opacity-40 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
                     )}
