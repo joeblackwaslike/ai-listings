@@ -166,6 +166,7 @@ Rules:
 - poshmark_title: max 50 chars, natural language
 - poshmark_description: plain text; minimal emojis only if they genuinely help; include a condition section
 - condition_notes: polished prose that merges AI photo observations with the condition notes above — no contradictions with the description
+- Do NOT open canonical_description or poshmark_description with a key-value specification block (Style:, Collection:, Material:, Hardware:, etc.) — start with a flowing prose paragraph that describes the piece naturally
 - No invented condition details — only what is in the condition and condition_notes fields above`
 
   let rewrite: RewriteOutput
