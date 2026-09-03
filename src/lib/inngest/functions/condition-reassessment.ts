@@ -101,7 +101,8 @@ export const conditionReassessment = inngest.createFunction(
       .from('listings')
       .update({ condition: result.condition, condition_notes: result.condition_notes, condition_confirmed: false, status: 'condition_gate' })
       .eq('id', listingId)
-      .not('status', 'in', '("published","archived")')
+      .neq('status', 'published')
+      .neq('status', 'archived')
       .select('id')
       .maybeSingle()
 
