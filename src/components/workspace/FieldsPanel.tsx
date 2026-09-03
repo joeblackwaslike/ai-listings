@@ -12,6 +12,7 @@ import { PipelineTimeline } from './PipelineTimeline'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { ConditionReviewPanel } from '@/components/workspace/ConditionReviewPanel'
+import { CopyReviewPanel } from '@/components/workspace/CopyReviewPanel'
 import { getInclusionChecklist } from '@/lib/inclusions'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -507,6 +508,8 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
 
         {listing.status === 'condition_gate'
           ? <ConditionReviewPanel listing={listing} />
+          : listing.status === 'copy_review'
+          ? <CopyReviewPanel listing={listing} />
           : listing.condition && !conditionConfirmed && (
             <section>
               <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
