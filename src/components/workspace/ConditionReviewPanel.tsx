@@ -9,15 +9,15 @@ interface Props {
   listing: Listing
 }
 
-const GRADES: { value: ConditionValue; label: string }[] = [
-  { value: 'new_with_tags', label: 'New with tags' },
-  { value: 'new_without_tags', label: 'New without tags' },
-  { value: 'like_new', label: 'Like new' },
-  { value: 'very_good', label: 'Very good' },
-  { value: 'good', label: 'Good' },
-  { value: 'fair', label: 'Fair' },
-  { value: 'poor', label: 'Poor' },
-  { value: 'for_parts', label: 'For parts' },
+const GRADES: { value: ConditionValue; label: string; description: string }[] = [
+  { value: 'new_with_tags',    label: 'New with tags',    description: 'Never used. Original tags attached. May be in original packaging.' },
+  { value: 'new_without_tags', label: 'New without tags', description: 'Never used. Tags removed. No signs of wear or use.' },
+  { value: 'like_new',         label: 'Like new',         description: 'Used once or twice. No visible flaws — looks brand new without tags.' },
+  { value: 'very_good',        label: 'Very good',        description: 'Gently used. Minimal wear visible only on close inspection. No damage.' },
+  { value: 'good',             label: 'Good',             description: 'Normal signs of use. Light scuffs, minor marks, or slight fading. No structural damage.' },
+  { value: 'fair',             label: 'Fair',             description: 'Noticeable wear — scratches, marks, or staining visible. Fully functional.' },
+  { value: 'poor',             label: 'Poor',             description: 'Heavy wear. Significant damage (cracks, tears, heavy staining) but still functional.' },
+  { value: 'for_parts',        label: 'For parts',        description: 'Non-functional or severely damaged. Sold for parts or repair only.' },
 ]
 
 export function ConditionReviewPanel({ listing }: Readonly<Props>) {
@@ -25,6 +25,7 @@ export function ConditionReviewPanel({ listing }: Readonly<Props>) {
   const [selectedGrade, setSelectedGrade] = useState<ConditionValue | null>(listing.condition)
   const [conditionNotes, setConditionNotes] = useState(listing.condition_notes ?? '')
   const [extraNotes, setExtraNotes] = useState('')
+  const [hoveredGrade, setHoveredGrade] = useState<ConditionValue | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -79,6 +80,8 @@ export function ConditionReviewPanel({ listing }: Readonly<Props>) {
               key={value}
               type="button"
               onClick={() => setSelectedGrade(value)}
+              onMouseEnter={() => setHoveredGrade(value)}
+              onMouseLeave={() => setHoveredGrade(null)}
               disabled={loading}
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
                 isSelected
@@ -91,6 +94,18 @@ export function ConditionReviewPanel({ listing }: Readonly<Props>) {
           )
         })}
       </div>
+
+      {(() => {
+        const active = hoveredGrade ?? selectedGrade
+        const grade = active ? GRADES.find(g => g.value === active) : null
+        return grade ? (
+          <p className="text-xs text-amber-300/80 bg-amber-950/30 border border-amber-800/40 rounded px-3 py-2 leading-relaxed">
+            <span className="font-semibold text-amber-200">{grade.label}:</span> {grade.description}
+          </p>
+        ) : (
+          <p className="text-xs text-gray-600 italic">Hover a grade to see its definition.</p>
+        )
+      })()}
 
       <div className="space-y-1">
         <label className="text-xs text-gray-400">Condition notes</label>
