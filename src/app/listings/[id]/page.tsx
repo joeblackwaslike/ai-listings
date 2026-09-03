@@ -64,21 +64,6 @@ function inLoopContext(listing: Listing, photos: Photo[], hasHistory: boolean): 
     )
   }
 
-  if (!listing.photos_confirmed) {
-    return ctx(
-      listing.skip_background_removal
-        ? "Background removal is off for this listing, so I've kept your original photos. Take a look and let me know if they look good to continue."
-        : "Your photos have been processed — backgrounds removed. Take a look and let me know if they look good to continue.",
-      [
-        { label: 'Looks good ✓', message: 'The photos look great, ready to continue.', confirmPhotos: true },
-        { label: 'There are problems', focusInput: true },
-        listing.skip_background_removal
-          ? { label: 'Turn on background removal', message: "I'd like to turn background removal back on for my photos." }
-          : { label: 'Redo background removal', message: "Please redo the background removal on my photos." },
-      ]
-    )
-  }
-
   if (pendingAuthCount > 0 || needsInclusions) {
     const parts: string[] = []
     if (pendingAuthCount > 0) {
@@ -244,7 +229,7 @@ export default async function WorkspacePage({
 
   const hasHistory = history.length > 0
   const genderGateAnswered = listing.status === 'gender_gate' && isGenderGateAnswered(history)
-  const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate' || listing.agent_blocked || (listing.status === 'in_loop' && !listing.photos_confirmed)
+  const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate' || listing.agent_blocked
     ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 

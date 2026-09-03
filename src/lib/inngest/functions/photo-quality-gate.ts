@@ -77,6 +77,10 @@ export const photoQualityGate = inngest.createFunction(
       await processRawPhoto(photoId, photoRow.raw_url as string, storagePath)
       await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
       await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
+      await step.sendEvent('trigger-condition-reassessment', {
+        name: 'listing/photos-confirmed',
+        data: { listingId },
+      })
       return { ok: true, listingId, photoId, skipped: true }
     }
 
@@ -85,6 +89,10 @@ export const photoQualityGate = inngest.createFunction(
 
     await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
     await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
+    await step.sendEvent('trigger-condition-reassessment', {
+      name: 'listing/photos-confirmed',
+      data: { listingId },
+    })
 
     return { ok: true, listingId, photoId }
   }

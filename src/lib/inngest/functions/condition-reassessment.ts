@@ -57,6 +57,7 @@ export const conditionReassessment = inngest.createFunction(
     name: 'Condition Re-assessment',
     triggers: [{ event: 'listing/photos-confirmed' }],
     retries: 1,
+    debounce: { period: '30s', key: 'event.data.listingId' },
     concurrency: { limit: 1, key: 'event.data.listingId' },
   },
   async ({ event, step }) => {
