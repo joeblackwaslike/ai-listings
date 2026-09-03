@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -16,6 +16,17 @@ interface PlatformFields {
   poshmark?: { title?: string; description?: string }
 }
 
+const MD_COMPONENTS = {
+  h1: ({ children }: { children?: React.ReactNode }) => <p className="font-bold mt-1">{children}</p>,
+  h2: ({ children }: { children?: React.ReactNode }) => <p className="font-bold mt-1">{children}</p>,
+  h3: ({ children }: { children?: React.ReactNode }) => <p className="font-semibold mt-0.5">{children}</p>,
+  h4: ({ children }: { children?: React.ReactNode }) => <p className="font-medium mt-0.5">{children}</p>,
+  p:  ({ children }: { children?: React.ReactNode }) => <p className="my-0.5">{children}</p>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc list-inside my-0.5 space-y-0">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal list-inside my-0.5 space-y-0">{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="my-0">{children}</li>,
+}
+
 function Field({ label, value, markdown }: { label: string; value: string | null | undefined; markdown?: boolean }) {
   if (!value) return null
   return (
@@ -23,7 +34,7 @@ function Field({ label, value, markdown }: { label: string; value: string | null
       <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{label}</p>
       <div className="text-xs text-gray-300 leading-relaxed bg-gray-900/60 rounded px-2 py-1.5">
         {markdown
-          ? <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:text-gray-200 prose-strong:text-gray-200" style={{ fontSize: '0.75rem' }}><ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown></div>
+          ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{value}</ReactMarkdown>
           : <p className="whitespace-pre-wrap">{value}</p>
         }
       </div>
