@@ -23,7 +23,7 @@ function Field({ label, value, markdown }: { label: string; value: string | null
       <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{label}</p>
       <div className="text-xs text-gray-300 leading-relaxed bg-gray-900/60 rounded px-2 py-1.5">
         {markdown
-          ? <div className="prose prose-invert prose-xs max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:text-gray-200 prose-strong:text-gray-200"><ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown></div>
+          ? <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:text-gray-200 prose-strong:text-gray-200" style={{ fontSize: '0.75rem' }}><ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown></div>
           : <p className="whitespace-pre-wrap">{value}</p>
         }
       </div>
