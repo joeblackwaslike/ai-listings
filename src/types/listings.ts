@@ -4,6 +4,7 @@ export type ListingStatus =
   | 'gender_gate'
   | 'in_loop'
   | 'condition_gate'
+  | 'copy_review'
   | 'finalizing'
   | 'published'
   | 'archived';
