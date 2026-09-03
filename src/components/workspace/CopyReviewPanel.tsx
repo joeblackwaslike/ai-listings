@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { Listing } from '@/types/listings'
 
 interface Props {
@@ -14,12 +16,17 @@ interface PlatformFields {
   poshmark?: { title?: string; description?: string }
 }
 
-function Field({ label, value }: { label: string; value: string | null | undefined }) {
+function Field({ label, value, markdown }: { label: string; value: string | null | undefined; markdown?: boolean }) {
   if (!value) return null
   return (
     <div className="space-y-1">
       <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{label}</p>
-      <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed bg-gray-900/60 rounded px-2 py-1.5">{value}</p>
+      <div className="text-xs text-gray-300 leading-relaxed bg-gray-900/60 rounded px-2 py-1.5">
+        {markdown
+          ? <div className="prose prose-invert prose-xs max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:text-gray-200 prose-strong:text-gray-200"><ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown></div>
+          : <p className="whitespace-pre-wrap">{value}</p>
+        }
+      </div>
     </div>
   )
 }
@@ -91,12 +98,12 @@ export function CopyReviewPanel({ listing }: Readonly<Props>) {
 
       <div className="space-y-3">
         <Field label="Title" value={listing.title} />
-        <Field label="Description" value={listing.description} />
+        <Field label="Description" value={listing.description} markdown />
         <Field label="Condition notes" value={listing.condition_notes} />
         {pf.ebay?.title && <Field label="eBay title" value={pf.ebay.title} />}
-        {pf.ebay?.description && <Field label="eBay description" value={pf.ebay.description} />}
+        {pf.ebay?.description && <Field label="eBay description" value={pf.ebay.description} markdown />}
         {pf.poshmark?.title && <Field label="Poshmark title" value={pf.poshmark.title} />}
-        {pf.poshmark?.description && <Field label="Poshmark description" value={pf.poshmark.description} />}
+        {pf.poshmark?.description && <Field label="Poshmark description" value={pf.poshmark.description} markdown />}
       </div>
 
       <div className="flex gap-2">
