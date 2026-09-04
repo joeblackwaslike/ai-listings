@@ -167,7 +167,8 @@ Rules:
 - poshmark_description: plain text; minimal emojis only if they genuinely help; include a condition section
 - condition_notes: polished prose that merges AI photo observations with the condition notes above — no contradictions with the description
 - Do NOT open canonical_description or poshmark_description with a key-value specification block (Style:, Collection:, Material:, Hardware:, etc.) — start with a flowing prose paragraph that describes the piece naturally
-- No invented condition details — only what is in the condition and condition_notes fields above`
+- No invented condition details — only what is in the condition and condition_notes fields above
+- Inclusions/accessories: ONLY list items from the "Confirmed inclusions" line above — never add, infer, or imply accessories based on brand knowledge, product type, or typical packaging (e.g. auth cards, receipts, care booklets not in the list)`
 
   let rewrite: RewriteOutput
   try {
