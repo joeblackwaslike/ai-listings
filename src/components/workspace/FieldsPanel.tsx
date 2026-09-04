@@ -572,7 +572,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
           <PipelineTimeline listing={listing} photos={photos} />
         </section>
 
-        {listing.photo_plan && listing.photo_plan.length > 0 && (
+        {listing.photo_plan && listing.photo_plan.length > 0 && !listing.photos_confirmed && (
           <section>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
