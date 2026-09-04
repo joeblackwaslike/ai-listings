@@ -28,7 +28,9 @@ async function reassessCondition(
       apiKey,
       toolName: 'reassess_condition',
       toolDescription: 'Re-assess item condition from the full set of studio photos',
-      prompt: `These are all the studio photos for this resale listing, taken after background removal/review. Reassess the item's condition using everything visible across all of them -- wear, completeness, defects that may not have been visible in the original single intake photo.
+      prompt: `These are all the studio photos for this resale listing, taken after background removal/review. Reassess the item's physical condition using everything visible across all of them.
+
+Focus exclusively on the physical state of the item itself: surface wear, scuffing, scratches, staining, fading, hardware condition, structural integrity, and any defects visible in the photos. Do NOT describe, infer, or claim anything about accessories, included items, completeness, or what "comes with" the item — those details are not visible in studio photos and must not be assumed.
 
 Use the generate_listing condition scale: new_with_tags, new_without_tags, like_new, very_good, good, fair, poor, for_parts.`,
       jsonSchema: {
@@ -101,6 +103,7 @@ export const conditionReassessment = inngest.createFunction(
       .from('listings')
       .update({ condition: result.condition, condition_notes: result.condition_notes, condition_confirmed: false, status: 'condition_gate' })
       .eq('id', listingId)
+      .eq('condition_confirmed', false)
       .neq('status', 'published')
       .neq('status', 'archived')
       .select('id')
