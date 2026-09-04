@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { RotateCcw, ImageOff, Image as ImageIcon, Trash2 } from 'lucide-react'
@@ -23,6 +23,7 @@ function bgRemoved(photo: Photo): boolean {
 export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
   const nonIntakePhotos = [...photos]
@@ -44,11 +45,11 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       })
-      router.refresh()
     } finally {
       setBusy((prev) => ({ ...prev, [photoId]: false }))
     }
-  }, [router])
+    startTransition(() => router.refresh())
+  }, [router, startTransition])
 
   const deletePhoto = useCallback(async (photoId: string) => {
     if (!confirm('Remove this photo?')) return
@@ -97,7 +98,7 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
                       <div className="absolute inset-0 rounded-lg flex items-end justify-end gap-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                         <button
                           onClick={(e) => { e.stopPropagation(); void photoAction(photo.id as string, 'rotate') }}
-                          disabled={isBusy}
+                          disabled={isBusy || isPending}
                           title="Rotate left"
                           className="pointer-events-auto w-6 h-6 rounded bg-black/70 flex items-center justify-center text-white hover:bg-black/90 disabled:opacity-40 transition-colors"
                         >
@@ -105,7 +106,7 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); void photoAction(photo.id as string, 'bg-removal', { action: hasBgRemoval ? 'skip' : 'apply' }) }}
-                          disabled={isBusy}
+                          disabled={isBusy || isPending}
                           title={hasBgRemoval ? 'Revert background removal' : 'Apply background removal'}
                           className="pointer-events-auto w-6 h-6 rounded bg-black/70 flex items-center justify-center text-white hover:bg-black/90 disabled:opacity-40 transition-colors"
                         >
@@ -115,7 +116,7 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); void deletePhoto(photo.id as string) }}
-                          disabled={isBusy}
+                          disabled={isBusy || isPending}
                           title="Delete photo"
                           className="pointer-events-auto w-6 h-6 rounded bg-black/70 flex items-center justify-center text-red-400 hover:bg-red-900/80 disabled:opacity-40 transition-colors"
                         >
