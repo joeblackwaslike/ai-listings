@@ -77,5 +77,5 @@ export async function POST(
 
   await supabase.from('photos').update(updates).eq('id', photoId)
 
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, ...updates })
 }

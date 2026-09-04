@@ -20,9 +20,12 @@ function bgRemoved(photo: Photo): boolean {
   return !!(processed && processed !== raw)
 }
 
+type PhotoUrls = { raw_url?: string; processed_url?: string | null }
+
 export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [urlOverrides, setUrlOverrides] = useState<Record<string, PhotoUrls>>({})
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -35,16 +38,23 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
   const displayPhotos = nonIntakePhotos.length > 0 ? nonIntakePhotos : intakePhotos
   const isIntakeFallback = nonIntakePhotos.length === 0 && intakePhotos.length > 0
   const main = displayPhotos[selectedIdx]
-  const mainUrl = main?.processed_url ?? main?.raw_url
+  const mainOverride = main ? urlOverrides[main.id as string] : undefined
+  const mainUrl = mainOverride?.processed_url ?? mainOverride?.raw_url ?? main?.processed_url ?? main?.raw_url
 
   const photoAction = useCallback(async (photoId: string, endpoint: string, body?: object) => {
     setBusy((prev) => ({ ...prev, [photoId]: true }))
     try {
-      await fetch(`/api/photos/${photoId}/${endpoint}`, {
+      const res = await fetch(`/api/photos/${photoId}/${endpoint}`, {
         method: 'POST',
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       })
+      if (res.ok) {
+        const data = await res.json() as PhotoUrls & { ok: boolean }
+        if (data.raw_url) {
+          setUrlOverrides((prev) => ({ ...prev, [photoId]: { raw_url: data.raw_url, processed_url: data.processed_url } }))
+        }
+      }
     } finally {
       setBusy((prev) => ({ ...prev, [photoId]: false }))
     }
@@ -80,7 +90,8 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
           {displayPhotos.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {displayPhotos.map((photo, i) => {
-                const url = (photo.processed_url ?? photo.raw_url) as string
+                const override = urlOverrides[photo.id as string]
+                const url = (override?.processed_url ?? override?.raw_url ?? photo.processed_url ?? photo.raw_url) as string
                 const isStudio = photo.type === 'studio' && !isIntakeFallback
                 const isBusy = busy[photo.id as string]
                 const hasBgRemoval = bgRemoved(photo)
