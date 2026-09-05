@@ -103,7 +103,6 @@ export const conditionReassessment = inngest.createFunction(
       .from('listings')
       .update({ condition: result.condition, condition_notes: result.condition_notes, condition_confirmed: false, status: 'condition_gate' })
       .eq('id', listingId)
-      .eq('condition_confirmed', false)
       .neq('status', 'published')
       .neq('status', 'archived')
       .select('id')
@@ -113,7 +112,7 @@ export const conditionReassessment = inngest.createFunction(
       throw new Error(`condition-reassessment: failed to set condition_gate for listing ${listingId} -- ${updateError.message}`)
     }
     if (!updatedRow) {
-      console.warn(`[condition-reassessment] listing ${listingId} was published or archived when condition_gate transition ran — skipped`)
+      console.warn(`[condition-reassessment] listing ${listingId} is published or archived — condition_gate transition skipped`)
     }
 
     return { ok: true, listingId }
