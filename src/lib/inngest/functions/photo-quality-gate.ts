@@ -43,7 +43,7 @@ async function reconcileQualityEscalation(
 async function autoConfirmPhotosIfComplete(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   listingId: string
-): Promise<void> {
+): Promise<boolean> {
   const { count, error } = await supabase
     .from('photos')
     .select('id', { count: 'exact', head: true })
@@ -52,12 +52,16 @@ async function autoConfirmPhotosIfComplete(
     .is('processed_url', null)
 
   if (!error && count === 0) {
-    await supabase
+    const { data } = await supabase
       .from('listings')
       .update({ photos_confirmed: true, condition_confirmed: false })
       .eq('id', listingId)
       .eq('photos_confirmed', false)
+      .select('id')
+      .maybeSingle()
+    return data !== null
   }
+  return false
 }
 
 export const photoQualityGate = inngest.createFunction(
@@ -97,11 +101,13 @@ export const photoQualityGate = inngest.createFunction(
       await processRawPhoto(photoId, photoRow.raw_url as string, storagePath)
       await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
       await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
-      await step.run('auto-confirm-photos', () => autoConfirmPhotosIfComplete(supabase, listingId))
-      await step.sendEvent('trigger-condition-reassessment', {
-        name: 'listing/photos-confirmed',
-        data: { listingId },
-      })
+      const confirmedSkipped = await step.run('auto-confirm-photos', () => autoConfirmPhotosIfComplete(supabase, listingId))
+      if (confirmedSkipped) {
+        await step.sendEvent('trigger-condition-reassessment', {
+          name: 'listing/photos-confirmed',
+          data: { listingId },
+        })
+      }
       return { ok: true, listingId, photoId, skipped: true }
     }
 
@@ -110,11 +116,13 @@ export const photoQualityGate = inngest.createFunction(
 
     await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
     await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
-    await step.run('auto-confirm-photos', () => autoConfirmPhotosIfComplete(supabase, listingId))
-    await step.sendEvent('trigger-condition-reassessment', {
-      name: 'listing/photos-confirmed',
-      data: { listingId },
-    })
+    const confirmed = await step.run('auto-confirm-photos', () => autoConfirmPhotosIfComplete(supabase, listingId))
+    if (confirmed) {
+      await step.sendEvent('trigger-condition-reassessment', {
+        name: 'listing/photos-confirmed',
+        data: { listingId },
+      })
+    }
 
     return { ok: true, listingId, photoId }
   }
