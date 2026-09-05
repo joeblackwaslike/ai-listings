@@ -95,3 +95,10 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
+          volumeMounts:
+            - name: image-cache
+              mountPath: /app/.next/cache/images
+      volumes:
+        - name: image-cache
+          persistentVolumeClaim:
+            claimName: ai-listings-image-cache
