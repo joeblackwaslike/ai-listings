@@ -131,9 +131,9 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const nonIntakePhotos = [...photos]
-    .filter((p) => p.type !== 'intake' || p.display_order === -1)
+    .filter((p) => p.type !== 'intake')
     .sort((a, b) => a.display_order - b.display_order)
-  const intakePhotos = photos.filter((p) => p.type === 'intake' && p.display_order !== -1)
+  const intakePhotos = photos.filter((p) => p.type === 'intake')
   const isIntakeFallback = nonIntakePhotos.length === 0 && intakePhotos.length > 0
   // Use local ordered state if set (after a drag), otherwise use server-sorted list
   const basePhotos = nonIntakePhotos.length > 0 ? nonIntakePhotos : intakePhotos
