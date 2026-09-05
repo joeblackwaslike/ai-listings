@@ -187,7 +187,9 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   }
 
   async function uploadImages(files: File[]): Promise<string[]> {
-    return Promise.all(files.map(async (file, index) => {
+    const urls: string[] = []
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index]
       const form = new FormData()
       form.append('photo', file)
       form.append('listingId', listingId)
@@ -202,8 +204,9 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
         throw new Error(msg)
       }
       const data = await res.json() as { photoUrl: string }
-      return data.photoUrl
-    }))
+      urls.push(data.photoUrl)
+    }
+    return urls
   }
 
   async function doSend(text: string, imagesToUpload: File[]) {
