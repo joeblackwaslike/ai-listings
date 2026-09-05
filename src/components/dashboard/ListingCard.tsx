@@ -36,6 +36,7 @@ interface CoverPhoto {
 
 export interface ListingWithCover extends CardListing {
   coverPhoto?: CoverPhoto
+  isPriority?: boolean
 }
 
 // A human-set override always wins over the pipeline's own suggestion once one exists --
@@ -54,7 +55,7 @@ function BlockedPhoto({ photoUrl, reason }: Readonly<{ photoUrl?: string; reason
   return (
     <>
       {photoUrl ? (
-        <Image src={photoUrl} alt="Listing" fill className="object-cover brightness-30" />
+        <Image src={photoUrl} alt="Listing" fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-cover brightness-30" />
       ) : (
         <div className="absolute inset-0 bg-gray-900" />
       )}
@@ -87,7 +88,7 @@ function IdGatePhoto({
   return (
     <>
       {photoUrl ? (
-        <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-40" />
+        <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-cover brightness-40" />
       ) : (
         <div className="absolute inset-0 bg-gray-900" />
       )}
@@ -156,7 +157,7 @@ function ConditionGatePhoto({
   return (
     <>
       {photoUrl ? (
-        <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-40" />
+        <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-cover brightness-40" />
       ) : (
         <div className="absolute inset-0 bg-gray-900" />
       )}
@@ -245,7 +246,7 @@ function GenderGatePhoto({
   return (
     <>
       {photoUrl ? (
-        <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-40" />
+        <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-cover brightness-40" />
       ) : (
         <div className="absolute inset-0 bg-gray-900" />
       )}
@@ -324,9 +325,11 @@ function GenderGatePhoto({
 export function ListingCard({
   listing,
   onArchive,
+  isPriority = false,
 }: Readonly<{
   listing: ListingWithCover
   onArchive?: (id: string) => void
+  isPriority?: boolean
 }>) {
   const [isArchiving, setIsArchiving] = useState(false)
   const [idConfirmed, setIdConfirmed] = useState(false)
@@ -427,7 +430,7 @@ export function ListingCard({
         {isProcessing && (
           <>
             {photoUrl ? (
-              <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill className="object-cover brightness-40" />
+              <Image src={photoUrl} alt={listing.title ?? 'Listing'} fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-cover brightness-40" />
             ) : (
               <div className="absolute inset-0 bg-gray-900" />
             )}
@@ -442,6 +445,8 @@ export function ListingCard({
             src={photoUrl}
             alt={listing.title ?? 'Listing'}
             fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            priority={isPriority}
             className="object-cover group-hover:scale-[1.02] transition-transform duration-200"
           />
         )}

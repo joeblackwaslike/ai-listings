@@ -91,8 +91,8 @@ export function ListingsGrid({ initialListings }: Readonly<{ initialListings: Li
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-          {listings.map((listing) => (
-            <ListingCard key={listing.id} listing={listing} onArchive={handleArchive} />
+          {listings.map((listing, index) => (
+            <ListingCard key={listing.id} listing={listing} isPriority={index < 6} onArchive={handleArchive} />
           ))}
         </div>
       )}
