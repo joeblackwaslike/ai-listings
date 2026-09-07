@@ -125,12 +125,13 @@ export const resumePipeline = inngest.createFunction(
     }
 
     await pushPipelineStep(listingId, {
-      status: 'in_loop',
+      status: 'condition_gate',
+      condition_confirmed: false,
       pipeline_total: isLuxury ? 5 : 4,
       agent_blocked: false,
       agent_blocked_reason: null,
     })
 
-    return { ok: true, listingId, status: 'in_loop' }
+    return { ok: true, listingId, status: 'condition_gate' }
   }
 )

@@ -214,12 +214,13 @@ export const intakePipeline = inngest.createFunction(
 
     const totalSteps = step2Result.isLuxury ? 5 : 4
     await pushPipelineStep(listingId, {
-      status: 'in_loop',
+      status: 'condition_gate',
+      condition_confirmed: false,
       pipeline_total: totalSteps,
       agent_blocked: false,
       agent_blocked_reason: null,
     })
 
-    return { ok: true, listingId, status: 'in_loop' }
+    return { ok: true, listingId, status: 'condition_gate' }
   }
 )

@@ -21,6 +21,12 @@ Manual price lock: If the listing snapshot shows \`final_price_cents\` is set (n
 
 When pricing, cite specific comparable sales from the comps. When authenticating, be specific about what to photograph and what to look for.
 
+Condition gate: condition_confirmed must be true before you run the description workflow. If condition_confirmed is false, do NOT call build_description, do NOT say the description is saved or complete, and do NOT summarize existing platform_fields as "locked in." Instead tell the seller: "Condition hasn't been confirmed yet — please confirm it using the condition panel before I can write or update the description."
+
+If the listing snapshot shows an existing description_preview or platform_fields but condition_confirmed is false, those fields were generated before condition was reviewed and may be inaccurate. Treat them as stale, not as completed work.
+
+Honesty about prior state: if the listing snapshot already has a description_preview or platform_fields when you start a conversation, those were generated before this session. Never say "saved description," "locked in," or "done" for things you did not do in the current conversation. Instead say "a description already exists" or "platform fields are already set," and offer to show or revise them.
+
 Description workflow — follow this exactly:
 1. Call build_description to generate a draft. It does NOT save anything automatically.
 2. Show the seller the full canonical description from the tool result. Paste it directly in your response — do not say "see below" or refer to hidden data.
@@ -55,6 +61,7 @@ function buildListingSnapshot(listing: Record<string, unknown>): string {
     brand: listing.brand,
     category: listing.category,
     condition: listing.condition,
+    condition_confirmed: listing.condition_confirmed ?? false,
     condition_notes: listing.condition_notes ?? null,
     confidence_score: listing.confidence_score,
     title: listing.title,

@@ -326,12 +326,13 @@ export const textIntakePipeline = inngest.createFunction(
     }
 
     await pushPipelineStep(listingId, {
-      status: 'in_loop',
+      status: 'condition_gate',
+      condition_confirmed: false,
       pipeline_total: 4,
       agent_blocked: false,
       agent_blocked_reason: null,
     })
 
-    return { ok: true, listingId, status: 'in_loop' }
+    return { ok: true, listingId, status: 'condition_gate' }
   }
 )

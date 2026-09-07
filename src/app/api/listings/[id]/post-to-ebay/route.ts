@@ -8,10 +8,11 @@ import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp } from '@/types/listings'
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+  const draft = new URL(req.url).searchParams.get('draft') === 'true'
 
   const sessionClient = await createClient()
   const { data: { user } } = await sessionClient.auth.getUser()
@@ -101,13 +102,14 @@ export async function POST(
   const comps = (compRows ?? []) as unknown as PricingComp[]
 
   try {
-    const result = await publishListingToEbay(supabase, listing, photos, comps, new EbayAdapter(creds))
+    const result = await publishListingToEbay(supabase, listing, photos, comps, new EbayAdapter(creds), { draft })
 
     return Response.json({
       ok: true,
+      draft,
       platformId: result.platformId,
       offerId: result.offerId,
-      url: result.url,
+      url: result.url || undefined,
     })
   } catch (err) {
     const mapped = mapPostToEbayError(err)

@@ -37,11 +37,31 @@ export async function publishListingToEbay(
   photos: Photo[],
   comps: PricingComp[],
   adapter: EbayPublisher,
+  options?: { draft?: boolean },
 ): Promise<EbayPublishResult> {
+  const draft = options?.draft ?? false
   const unifiedListing = await buildUnifiedListingForEbay(listing, photos, comps)
-  const result = await adapter.createListing(unifiedListing)
+  const result = await adapter.createListing(unifiedListing, { publish: !draft })
 
   const currentPlatformFields = listing.platform_fields as PlatformFields
+
+  if (draft) {
+    // Draft mode: store the offer ID so the UI can show draft status, but don't flip
+    // listing status to 'published' and don't write an empty URL.
+    const draftPlatformFields: PlatformFields = {
+      ...currentPlatformFields,
+      ebay: { ...currentPlatformFields.ebay!, ebay_offer_id: result.offerId },
+    }
+    const { error: draftUpdateError } = await supabase
+      .from('listings')
+      .update({ platform_fields: draftPlatformFields })
+      .eq('id', listing.id)
+    if (draftUpdateError) {
+      throw new Error(`publishListingToEbay: failed to save draft offer ID — ${draftUpdateError.message}`)
+    }
+    return result
+  }
+
   const updatedPlatformFields: PlatformFields = {
     ...currentPlatformFields,
     ebay: {

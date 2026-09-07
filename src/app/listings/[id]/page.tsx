@@ -120,12 +120,14 @@ function genderGateContext(listing: Listing): WorkspaceContext {
   ], detailGateContext)
 }
 
-function conditionGateContext(listing: Listing): WorkspaceContext {
+function conditionGateContext(listing: Listing, photos: Photo[]): WorkspaceContext {
   const label = listing.condition ? (CONDITION_LABELS[listing.condition] ?? listing.condition) : null
   const notes = listing.condition_notes ? ` ${listing.condition_notes}` : ''
+  const hasStudio = photos.some((p) => p.type === 'studio')
+  const sourceLabel = hasStudio ? 'Studio photos reviewed' : 'Intake photo analyzed'
   const firstMessage = label
-    ? `Studio photos reviewed — I assessed the condition as **${label}**.${notes} Confirm below or select a different grade if anything looks off.`
-    : `Studio photos are in. Review the condition grade below — select the right one, add any observations, and click Rewrite & Confirm to refresh all copy.`
+    ? `${sourceLabel} — I assessed the condition as **${label}**.${notes} Confirm below or select a different grade if anything looks off.`
+    : `Photos are in. Review the condition grade below — select the right one, add any observations, and click Rewrite & Confirm to refresh all copy.`
   return { firstMessage, suggestions: null }
 }
 
@@ -155,7 +157,7 @@ function buildWorkspaceContext(
     if (isGenderGateAnswered(history)) return NO_CONTEXT
     return genderGateContext(listing)
   }
-  if (listing.status === 'condition_gate') return conditionGateContext(listing)
+  if (listing.status === 'condition_gate') return conditionGateContext(listing, photos)
   if (listing.status !== 'in_loop') {
     return { firstMessage: "I'm working on this listing. Ask me anything or check back shortly.", suggestions: null }
   }

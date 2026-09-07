@@ -1,5 +1,13 @@
 import type { Listing, Photo, PricingComp } from '@/types/listings';
 import type { UnifiedListing } from './types';
+
+const CONDITION_LABEL: Record<string, string> = {
+  new_without_tags: 'New without tags',
+  like_new: 'Like New',
+  very_good: 'Very Good',
+  good: 'Good',
+  fair: 'Acceptable',
+};
 import { toPublicUrl } from '@/lib/pipeline/to-public-url';
 import { computeAdjustedPricing, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust';
 
@@ -62,6 +70,19 @@ export async function buildUnifiedListingForEbay(
     );
   }
 
+  // Override Condition and Inclusions in item_specifics from authoritative live sources,
+  // not the step4a snapshot. step4a runs before the seller confirms condition or inclusions,
+  // so those two keys are always stale by publish time.
+  const confirmedInclusions = (listing.inclusions ?? [])
+    .filter((i) => i.confirmed)
+    .map((i) => i.item);
+
+  const item_specifics: Record<string, string> = {
+    ...(ebayFields.item_specifics as Record<string, string> ?? {}),
+    Condition: CONDITION_LABEL[listing.condition ?? ''] ?? (ebayFields.item_specifics as Record<string, string>)?.Condition ?? '',
+    Inclusions: confirmedInclusions.length > 0 ? confirmedInclusions.join(', ') : 'None',
+  };
+
   return {
     internalId: listing.sku,
     title: ebayFields.title,
@@ -72,7 +93,7 @@ export async function buildUnifiedListingForEbay(
     brand: listing.brand ?? '',
     imageUrls,
     platformFields: {
-      item_specifics: ebayFields.item_specifics,
+      item_specifics,
       category_id: ebayFields.category_id,
     },
   };

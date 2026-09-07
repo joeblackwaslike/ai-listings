@@ -21,7 +21,7 @@ having l.confidence_score < 50 or count(pc.id) < 3
 order by l.confidence_score asc nulls first, comp_count asc;
 ```
 
-Batch size: ~4-6 items at a time. Present the batch list before starting research.
+Batch size: ~1-4 items at a time. Present the batch list before starting research.
 
 ## 1. Per item, in this order
 
@@ -29,25 +29,17 @@ Batch size: ~4-6 items at a time. Present the batch list before starting researc
 
 **b. Audit the EXISTING comps before adding new research.** Pull every comp already on the listing and check each title against the item's own stated color/colorway/pattern/size/model — not just brand+category. This is not optional and not a one-time thing done for the first item in a batch — do it for every single item, every batch. A pipeline comp match on brand+category alone can produce comp sets that are entirely the wrong variant (this has happened with an entire 27-comp set being for a completely different colorway). Delete confirmed wrong-variant/wrong-color/wrong-size comps. If that leaves zero valid comps, say so plainly — don't leave a price looking better-supported than it is.
 
-**c. Go deep by default — every item, not just the first one.** Multi-platform: eBay-scoped search AND at least one other resale platform (Fashionphile, TheRealReal, or a category-appropriate alternative — e.g. Reverb for electronics). Try a direct WebFetch on a specific listing for a hard price where feasible. **For any URL that blocks direct WebFetch (eBay, Reddit, etc.):** route through the Browserless
-fetch service. Get the token first, then POST to Browserless:
-
-`BROWSERLESS_TOKEN` comes from 1Password (item: Browserless) — export it in your shell before starting:
+**c. Go deep by default — every item, not just the first one.** Multi-platform: eBay-scoped search AND other resale platforms (Poshmark, Fashionphile, TheRealReal, or a category-appropriate alternative — e.g. Reverb for dj equipment). Try a direct WebFetch on a specific listing for a hard price where feasible. **For any URL that blocks direct WebFetch (eBay, Reddit, etc.):** route through Browserless (`$BROWSERLESS_URL` and `$BROWSERLESS_TOKEN` are in `~/creds.zsh`):
 
 ```bash
-export BROWSERLESS_TOKEN=<value from 1Password>
-curl -sS -X POST https://browserless.napoleon-catfish.ts.net/content \
+curl -sS -X POST "$BROWSERLESS_URL/content" \
   -H "Authorization: Bearer $BROWSERLESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"url":"<target-url>","waitForTimeout":3000}' | head -c 200000
 ```
 
-Works for: eBay item pages, eBay sold search (`?LH_Sold=1&LH_Complete=1`), Reddit posts
-and search results (use `old.reddit.com` — more stable HTML than `www.reddit.com`).
-
-Pipe through `head -c 200000` or `| grep -o '<...>'` — raw eBay HTML is 1–2MB and will blow
-the session context if dumped whole. If Browserless returns a Cloudflare challenge rather
-than the real content, note it and move on — the residential IP handles most cases.
+Works for: eBay item pages, eBay sold search (`?LH_Sold=1&LH_Complete=1`). Pipe through
+`head -c 200000` — raw eBay HTML is 1–2MB and will blow the session context if dumped whole.
 
 Fashionphile pages fetch fine via direct WebFetch but often hide price behind a JS
 placeholder on sold-out listings — one attempt is still worth it, just don't chase it if
@@ -68,7 +60,7 @@ This formula was defined carefully in the first batch of a session and then quie
 ## 3. Backfill — every item, every batch, whether the price changed or not
 
 For every item touched:
-- **`pricing_comps`**: insert the real comp(s) that justified the decision (source, price, URL if verifiable, relevance_score). Mark unverified comps clearly in the title text itself (e.g. "unverified -- no direct listing link") rather than fabricating a URL. Never insert a comp with a guessed/unconfirmed URL.
+- **`pricing_comps`**: insert the real comp(s) that justified the decision (source, price, URL, relevance_score). Mark unverified comps clearly in the title text itself (e.g. "unverified") rather than fabricating a URL. Never insert a comp with a guessed URL.
 - **`pricing_methodology`**: replace the stale auto-generated text (the old "median adjusted price... speed-to-sell price..." boilerplate) with a plain-language explanation of what was found and why the price changed or held. This applies even to a "no change" decision — write why, don't leave the old text in place.
 
 Use a REPLACE, not an APPEND, when rewriting methodology — appending a note to old stale text produces confusing output (stale claim first, correction buried at the end).
