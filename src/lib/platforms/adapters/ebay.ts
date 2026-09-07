@@ -252,6 +252,7 @@ export class EbayAdapter implements PlatformSDK {
     const res = await fetch(url, { ...options, headers });
 
     if (res.status === 401) {
+      console.error('[ebay] API returned 401 for', url);
       throw new AuthExpiredError(this.platform);
     }
 

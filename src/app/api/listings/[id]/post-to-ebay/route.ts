@@ -113,7 +113,7 @@ export async function POST(
     })
   } catch (err) {
     const mapped = mapPostToEbayError(err)
-    if (mapped.status === 500) console.error('post-to-ebay failed:', err)
+    console.error(`[post-to-ebay] status=${mapped.status}:`, err)
     return Response.json({ error: mapped.error }, { status: mapped.status })
   }
 }
