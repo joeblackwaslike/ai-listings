@@ -29,7 +29,29 @@ Batch size: ~4-6 items at a time. Present the batch list before starting researc
 
 **b. Audit the EXISTING comps before adding new research.** Pull every comp already on the listing and check each title against the item's own stated color/colorway/pattern/size/model — not just brand+category. This is not optional and not a one-time thing done for the first item in a batch — do it for every single item, every batch. A pipeline comp match on brand+category alone can produce comp sets that are entirely the wrong variant (this has happened with an entire 27-comp set being for a completely different colorway). Delete confirmed wrong-variant/wrong-color/wrong-size comps. If that leaves zero valid comps, say so plainly — don't leave a price looking better-supported than it is.
 
-**c. Go deep by default — every item, not just the first one.** Multi-platform: eBay-scoped search AND at least one other resale platform (Fashionphile, TheRealReal, or a category-appropriate alternative — e.g. Reverb for electronics). Try a direct WebFetch on a specific listing for a hard price where feasible. Note: eBay item pages block direct WebFetch (times out, bot protection) — don't burn time retrying it. Fashionphile pages fetch fine but often hide price behind a JS placeholder on sold-out listings — a fetch attempt is still worth one try, just don't chase it further if it comes back empty.
+**c. Go deep by default — every item, not just the first one.** Multi-platform: eBay-scoped search AND at least one other resale platform (Fashionphile, TheRealReal, or a category-appropriate alternative — e.g. Reverb for electronics). Try a direct WebFetch on a specific listing for a hard price where feasible. **For any URL that blocks direct WebFetch (eBay, Reddit, etc.):** route through the Browserless
+fetch service. Get the token first, then POST to Browserless:
+
+`BROWSERLESS_TOKEN` comes from 1Password (item: Browserless) — export it in your shell before starting:
+
+```bash
+export BROWSERLESS_TOKEN=<value from 1Password>
+curl -sS -X POST https://browserless.napoleon-catfish.ts.net/content \
+  -H "Authorization: Bearer $BROWSERLESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"<target-url>","waitForTimeout":3000}' | head -c 200000
+```
+
+Works for: eBay item pages, eBay sold search (`?LH_Sold=1&LH_Complete=1`), Reddit posts
+and search results (use `old.reddit.com` — more stable HTML than `www.reddit.com`).
+
+Pipe through `head -c 200000` or `| grep -o '<...>'` — raw eBay HTML is 1–2MB and will blow
+the session context if dumped whole. If Browserless returns a Cloudflare challenge rather
+than the real content, note it and move on — the residential IP handles most cases.
+
+Fashionphile pages fetch fine via direct WebFetch but often hide price behind a JS
+placeholder on sold-out listings — one attempt is still worth it, just don't chase it if
+it comes back empty.
 
 **d. If a physical/visual concern comes up (item seems mislabeled, condition notes seem wrong, style doesn't match anything findable) — check the actual intake photo before concluding anything.** Download it, view it, compare against the title/condition_notes/item_specifics. This resolves most "is this mislabeled" questions faster and more reliably than more web search.
 

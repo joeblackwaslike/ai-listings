@@ -22,6 +22,7 @@ const SOLD_BADGE_PATTERNS: Record<string, RegExp> = {
   // listing as sold.
   therealreal_active: /class="[^"]*\bsold\b[^"]*"|>\s*Sold\s*<\/[a-z]/i,
   poshmark_active: /"availability"\s*:\s*"sold_out"|>\s*Sold\s*<\/[a-z]/i,
+  ebay_active: /this listing has ended|"availability"\s*:\s*"SOLD"|>\s*Sold\s*<\/[a-z]/i,
 }
 
 // Only these source -> hostname pairs are ever fetched. comp.listing_url traces
@@ -31,7 +32,14 @@ const SOLD_BADGE_PATTERNS: Record<string, RegExp> = {
 const ALLOWED_HOSTNAMES: Record<string, string[]> = {
   therealreal_active: ['therealreal.com', 'www.therealreal.com'],
   poshmark_active: ['poshmark.com', 'www.poshmark.com'],
+  ebay_active: ['ebay.com', 'www.ebay.com'],
 }
+
+// Sources whose URLs require a headless browser (direct fetch is bot-blocked).
+// Fetched via the internal Browserless service instead of raw fetch().
+const BROWSERLESS_HOSTNAMES = new Set(['ebay.com', 'www.ebay.com'])
+
+const BROWSERLESS_URL = 'http://browserless.ai-listings.svc.cluster.local:3000/content'
 
 // Sources actually eligible for verification -- present in both the sold-badge
 // pattern map and the hostname allowlist, so the two lists can't silently drift
@@ -106,49 +114,87 @@ async function readBoundedText(res: Response, maxBytes: number): Promise<string 
   }
 }
 
+// Fetches a URL via the internal Browserless service (real Chromium render).
+// Returns null on any failure — caller treats null as UNCONFIRMED.
+async function fetchViaBrowserless(url: string): Promise<string | null> {
+  const token = process.env.BROWSERLESS_TOKEN
+  if (!token) return null
+
+  try {
+    const res = await fetch(BROWSERLESS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ url, waitForTimeout: 3000 }),
+      signal: AbortSignal.timeout(35_000),
+    })
+    if (!res.ok) {
+      console.warn(`fetchViaBrowserless: HTTP ${res.status} for ${url}`)
+      return null
+    }
+    return await readBoundedText(res, MAX_RESPONSE_BYTES)
+  } catch (err) {
+    console.warn('fetchViaBrowserless: failed for', url, err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
 export async function verifyComp(comp: VerifiableComp, brand: string): Promise<VerificationResult> {
   if (!comp.listing_url) return UNCONFIRMED
   if (!isAllowedHostname(comp.listing_url, comp.source)) return UNCONFIRMED
 
   try {
-    const res = await fetch(comp.listing_url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-      },
-      signal: AbortSignal.timeout(8_000),
-      // The allowlist above only validates the *requested* URL -- fetch() follows
-      // redirects by default, and a redirect chain (attacker-influenced, since
-      // listing_url traces back to raw SerpAPI results) could land on an internal
-      // address (e.g. cloud metadata) before any post-fetch hostname check runs.
-      // 'error' is documented to reject the fetch outright on any redirect, though
-      // that's not guaranteed identical across every fetch implementation -- some
-      // runtimes could plausibly resolve with an opaque error response instead of
-      // throwing. Either way this is safe: a thrown error is caught below and
-      // returns UNCONFIRMED, and an opaque response fails the res.ok check next.
-      redirect: 'error',
-    })
-    if (!res.ok) {
-      // Distinct from the catch-all below: this is a clean HTTP response, just not
-      // a 2xx (e.g. a 403 bot challenge from TheRealReal/Poshmark) -- worth telling
-      // apart from a network-level failure if reclassification quietly stops working.
-      console.warn(`verifyComp: HTTP ${res.status} for ${comp.listing_url}`)
-      return UNCONFIRMED
+    let html: string | null
+
+    const hostname = (() => {
+      try { return new URL(comp.listing_url).hostname } catch { return '' }
+    })()
+
+    if (BROWSERLESS_HOSTNAMES.has(hostname)) {
+      html = await fetchViaBrowserless(comp.listing_url)
+    } else {
+      const res = await fetch(comp.listing_url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(8_000),
+        // The allowlist above only validates the *requested* URL -- fetch() follows
+        // redirects by default, and a redirect chain (attacker-influenced, since
+        // listing_url traces back to raw SerpAPI results) could land on an internal
+        // address (e.g. cloud metadata) before any post-fetch hostname check runs.
+        // 'error' is documented to reject the fetch outright on any redirect, though
+        // that's not guaranteed identical across every fetch implementation -- some
+        // runtimes could plausibly resolve with an opaque error response instead of
+        // throwing. Either way this is safe: a thrown error is caught below and
+        // returns UNCONFIRMED, and an opaque response fails the res.ok check next.
+        redirect: 'error',
+      })
+      if (!res.ok) {
+        // Distinct from the catch-all below: this is a clean HTTP response, just not
+        // a 2xx (e.g. a 403 bot challenge from TheRealReal/Poshmark) -- worth telling
+        // apart from a network-level failure if reclassification quietly stops working.
+        console.warn(`verifyComp: HTTP ${res.status} for ${comp.listing_url}`)
+        return UNCONFIRMED
+      }
+
+      // Defense in depth: with redirect: 'error' behaving as documented, res.url here
+      // always equals the originally-validated URL and this check can never actually
+      // catch anything -- it's kept in case a runtime's fetch resolves a redirect
+      // (opaque error response) rather than throwing, which would otherwise reach
+      // this point with res.url pointing past the allowlist.
+      if (!isAllowedHostname(res.url, comp.source)) return UNCONFIRMED
+      html = await readBoundedText(res, MAX_RESPONSE_BYTES)
     }
 
-    // Defense in depth: with redirect: 'error' behaving as documented, res.url here
-    // always equals the originally-validated URL and this check can never actually
-    // catch anything -- it's kept in case a runtime's fetch resolves a redirect
-    // (opaque error response) rather than throwing, which would otherwise reach
-    // this point with res.url pointing past the allowlist.
-    if (!isAllowedHostname(res.url, comp.source)) return UNCONFIRMED
-
-    const html = await readBoundedText(res, MAX_RESPONSE_BYTES)
     if (html === null) {
-      console.warn(`verifyComp: response exceeded ${MAX_RESPONSE_BYTES} bytes for ${comp.listing_url}`)
+      console.warn(`verifyComp: no HTML for ${comp.listing_url}`)
       return UNCONFIRMED
     }
 
+    const htmlLower = html.toLowerCase()
     // Brand-only matching lets an unrelated same-brand listing (wrong model/color)
     // satisfy identity, which would then let a *different* item's sold badge
     // reclassify this comp -- also require at least one other significant word
@@ -157,7 +203,6 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
     // title whose non-brand words are all short (<4 chars) or in the stopword
     // list (e.g. "Nike Air") lands here too. Either way, fall back to the
     // brand-only check rather than making identity unconfirmable altogether.
-    const htmlLower = html.toLowerCase()
     const brandConfirmed = htmlLower.includes(brand.toLowerCase())
     const otherTitleWords = significantTitleWords(comp.title, brand)
     const identityConfirmed =
