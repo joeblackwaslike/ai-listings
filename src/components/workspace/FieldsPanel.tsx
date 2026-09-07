@@ -103,6 +103,8 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
   const [saving, setSaving] = useState(false)
   const [inclusions, setInclusions] = useState<Inclusion[]>(listing.inclusions ?? [])
   const [conditionConfirmed, setConditionConfirmed] = useState(listing.condition_confirmed)
+  const [photosConfirmed, setPhotosConfirmed] = useState(listing.photos_confirmed)
+  const [confirmingPhotos, setConfirmingPhotos] = useState(false)
   const [refreshingPlan, setRefreshingPlan] = useState(false)
   const [addInput, setAddInput] = useState('')
   const addInputRef = useRef<HTMLInputElement>(null)
@@ -110,6 +112,13 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
   const retakeFileInputRef = useRef<HTMLInputElement>(null)
   const savingInclusionsRef = useRef(false)
   const savingConditionRef = useRef(false)
+
+  async function confirmPhotos() {
+    setConfirmingPhotos(true)
+    await fetch(`/api/listings/${listing.id}/confirm-photos`, { method: 'PATCH' })
+    setPhotosConfirmed(true)
+    setConfirmingPhotos(false)
+  }
 
   function startRetake(photoId: string) {
     retakeTargetPhotoId.current = photoId
@@ -572,7 +581,25 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
           <PipelineTimeline listing={listing} photos={photos} />
         </section>
 
-        {listing.photo_plan && listing.photo_plan.length > 0 && !listing.photos_confirmed && (
+        {!photosConfirmed && photos.filter((p) => p.type === 'studio').length > 0 &&
+          photos.filter((p) => p.type === 'studio').every((p) => p.processed_url !== null) && (
+          <section>
+            <div className="flex items-center justify-between">
+              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                Photos
+              </h3>
+              <button
+                onClick={() => void confirmPhotos()}
+                disabled={confirmingPhotos}
+                className="text-[10px] px-2 py-1 rounded bg-emerald-900/40 text-emerald-400 hover:bg-emerald-900/60 disabled:opacity-50 transition-colors"
+              >
+                {confirmingPhotos ? 'Confirming…' : 'Confirm photos ✓'}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {listing.photo_plan && listing.photo_plan.length > 0 && !photosConfirmed && (
           <section>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
