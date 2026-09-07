@@ -32,18 +32,26 @@ Batch size: ~4-6 items at a time. Present the batch list before starting researc
 **c. Go deep by default — every item, not just the first one.** Multi-platform: eBay-scoped search AND at least one other resale platform (Fashionphile, TheRealReal, or a category-appropriate alternative — e.g. Reverb for electronics). Try a direct WebFetch on a specific listing for a hard price where feasible. **For any URL that blocks direct WebFetch (eBay, Reddit, etc.):** route through the Browserless
 fetch service. Get the token first, then POST to Browserless:
 
-1. `BROWSERLESS_TOKEN=$(printenv BROWSERLESS_TOKEN)` — read from shell env
-2. WebFetch `https://browserless.napoleon-catfish.ts.net/content` with:
-   - Method: POST
-   - Header: `Authorization: Bearer $BROWSERLESS_TOKEN`
-   - Body: `{"url":"<target-url>","waitForTimeout":3000}`
-3. Read the returned HTML to extract price, condition, sold status, title, etc.
+`BROWSERLESS_TOKEN` comes from 1Password (item: Browserless) — export it in your shell before starting:
+
+```bash
+export BROWSERLESS_TOKEN=<value from 1Password>
+curl -sS -X POST https://browserless.napoleon-catfish.ts.net/content \
+  -H "Authorization: Bearer $BROWSERLESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"<target-url>","waitForTimeout":3000}' | head -c 200000
+```
 
 Works for: eBay item pages, eBay sold search (`?LH_Sold=1&LH_Complete=1`), Reddit posts
 and search results (use `old.reddit.com` — more stable HTML than `www.reddit.com`).
 
-If Browserless returns a Cloudflare challenge page rather than the real content, note it and
-move on — don't retry. The residential IP should handle most cases. Fashionphile pages fetch fine but often hide price behind a JS placeholder on sold-out listings — a fetch attempt is still worth one try, just don't chase it further if it comes back empty.
+Pipe through `head -c 200000` or `| grep -o '<...>'` — raw eBay HTML is 1–2MB and will blow
+the session context if dumped whole. If Browserless returns a Cloudflare challenge rather
+than the real content, note it and move on — the residential IP handles most cases.
+
+Fashionphile pages fetch fine via direct WebFetch but often hide price behind a JS
+placeholder on sold-out listings — one attempt is still worth it, just don't chase it if
+it comes back empty.
 
 **d. If a physical/visual concern comes up (item seems mislabeled, condition notes seem wrong, style doesn't match anything findable) — check the actual intake photo before concluding anything.** Download it, view it, compare against the title/condition_notes/item_specifics. This resolves most "is this mislabeled" questions faster and more reliably than more web search.
 

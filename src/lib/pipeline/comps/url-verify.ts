@@ -22,8 +22,7 @@ const SOLD_BADGE_PATTERNS: Record<string, RegExp> = {
   // listing as sold.
   therealreal_active: /class="[^"]*\bsold\b[^"]*"|>\s*Sold\s*<\/[a-z]/i,
   poshmark_active: /"availability"\s*:\s*"sold_out"|>\s*Sold\s*<\/[a-z]/i,
-  ebay_sold: /this listing has ended|"availability"\s*:\s*"SOLD"|>\s*Sold\s*<\/[a-z]/i,
-  ebay: /this listing has ended|"availability"\s*:\s*"SOLD"|>\s*Sold\s*<\/[a-z]/i,
+  ebay_active: /this listing has ended|"availability"\s*:\s*"SOLD"|>\s*Sold\s*<\/[a-z]/i,
 }
 
 // Only these source -> hostname pairs are ever fetched. comp.listing_url traces
@@ -33,8 +32,7 @@ const SOLD_BADGE_PATTERNS: Record<string, RegExp> = {
 const ALLOWED_HOSTNAMES: Record<string, string[]> = {
   therealreal_active: ['therealreal.com', 'www.therealreal.com'],
   poshmark_active: ['poshmark.com', 'www.poshmark.com'],
-  ebay_sold: ['ebay.com', 'www.ebay.com'],
-  ebay: ['ebay.com', 'www.ebay.com'],
+  ebay_active: ['ebay.com', 'www.ebay.com'],
 }
 
 // Sources whose URLs require a headless browser (direct fetch is bot-blocked).

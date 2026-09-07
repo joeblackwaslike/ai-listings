@@ -8,6 +8,7 @@ metadata:
     tailscale.com/hostname: browserless
 spec:
   ingressClassName: tailscale
+  # Must use defaultBackend — Tailscale ProxyGroup ingress does not support rules.host
   defaultBackend:
     service:
       name: browserless

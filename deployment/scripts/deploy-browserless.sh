@@ -32,6 +32,9 @@ kubectl apply -f "${MANIFESTS}/service.yaml"
 kubectl apply -f "${MANIFESTS}/deployment.yaml"
 kubectl apply -f "${MANIFESTS}/ingress.yaml"
 
+echo "→ Restarting browserless to pick up any secret changes..."
+kubectl rollout restart deployment/browserless -n "${APP_NAMESPACE}"
+
 echo "→ Waiting for rollout..."
 kubectl rollout status deployment/browserless -n "${APP_NAMESPACE}" --timeout=120s
 

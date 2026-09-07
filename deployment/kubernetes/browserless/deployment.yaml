@@ -5,6 +5,8 @@ metadata:
   namespace: ai-listings
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: browserless
@@ -26,7 +28,7 @@ spec:
                   name: browserless-secret
                   key: BROWSERLESS_TOKEN
             - name: CONCURRENT
-              value: "3"
+              value: "1"
             - name: TIMEOUT
               value: "30000"
             - name: QUEUE_LENGTH
@@ -39,15 +41,13 @@ spec:
               memory: "1Gi"
               cpu: "1000m"
           livenessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 3000
             initialDelaySeconds: 20
             periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 10

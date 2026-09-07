@@ -46,17 +46,20 @@ afterEach(() => {
 
 describe('verifyComp — eBay via Browserless', () => {
   const ebayComp = {
-    source: 'ebay_sold',
+    source: 'ebay_active',
     title: 'Louis Vuitton Neverfull MM Monogram',
     listing_url: 'https://www.ebay.com/itm/123456789',
   }
 
   it('returns UNCONFIRMED when BROWSERLESS_TOKEN is not set', async () => {
     const original = process.env.BROWSERLESS_TOKEN
-    delete process.env.BROWSERLESS_TOKEN
-    const result = await verifyComp(ebayComp, 'Louis Vuitton')
-    assert.deepEqual(result, { identityConfirmed: false, soldConfirmed: false })
-    if (original !== undefined) process.env.BROWSERLESS_TOKEN = original
+    try {
+      delete process.env.BROWSERLESS_TOKEN
+      const result = await verifyComp(ebayComp, 'Louis Vuitton')
+      assert.deepEqual(result, { identityConfirmed: false, soldConfirmed: false })
+    } finally {
+      if (original !== undefined) process.env.BROWSERLESS_TOKEN = original
+    }
   })
 
   it('calls Browserless /content endpoint with the listing URL', async () => {
