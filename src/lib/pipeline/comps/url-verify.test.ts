@@ -28,15 +28,22 @@ function browserlessHtmlResponse(html: string) {
 
 let mockFetch: MockFetch
 let originalFetch: typeof globalThis.fetch
+let originalToken: string | undefined
 
 beforeEach(() => {
   mockFetch = createMockFetch()
   originalFetch = globalThis.fetch
+  originalToken = process.env.BROWSERLESS_TOKEN
   globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch
 })
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  if (originalToken !== undefined) {
+    process.env.BROWSERLESS_TOKEN = originalToken
+  } else {
+    delete process.env.BROWSERLESS_TOKEN
+  }
   mock.reset()
 })
 
