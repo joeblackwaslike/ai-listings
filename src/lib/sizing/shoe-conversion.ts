@@ -198,6 +198,26 @@ export function buildShoeSizingPromptSection(args: {
   // never overwrites it -- this has to agree, or the prompt shows a recomputed US size that can
   // be a half size off from what's actually stored and displayed elsewhere.
   const usSize = typeof m.us_size === 'number' && !Number.isNaN(m.us_size) ? m.us_size : converted.usSize
-  const table = `EU ${converted.euSize} · UK ${converted.ukSize} · US ${usSize}`
+  const table = `US ${usSize} · EU ${converted.euSize} · UK ${converted.ukSize}`
   return converted.note ? `\n- Sizing: ${table}\n- Sizing note: ${converted.note}` : `\n- Sizing: ${table}`
+}
+
+// Returns the compact "US Z / EU X" string used in sneaker titles.
+// Mirrors buildShoeSizingPromptSection's guards so both produce consistent values.
+export function buildShoeSizingTitleString(args: {
+  category: string
+  brand: string
+  gender: string | null
+  measurements: Record<string, unknown> | null
+}): string {
+  if (args.category !== 'sneakers' || !args.measurements) return ''
+  const m = args.measurements
+  const rawSystem = typeof m.shoe_size_system === 'string' ? m.shoe_size_system.toLowerCase() : null
+  if (rawSystem !== 'us' && rawSystem !== 'eu' && rawSystem !== 'uk') return ''
+  const rawValue = typeof m.shoe_size_raw === 'string' ? Number.parseFloat(m.shoe_size_raw) : null
+  if (rawValue === null || Number.isNaN(rawValue)) return ''
+  if (args.gender !== 'mens' && args.gender !== 'womens') return ''
+  const converted = convertShoeSize({ brand: args.brand, system: rawSystem as 'us' | 'eu' | 'uk', value: rawValue, gender: args.gender })
+  const usSize = typeof m.us_size === 'number' && !Number.isNaN(m.us_size) ? m.us_size : converted.usSize
+  return `US ${usSize} / EU ${converted.euSize}`
 }

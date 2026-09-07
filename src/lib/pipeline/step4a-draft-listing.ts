@@ -5,7 +5,7 @@ import type { ApiKeys } from '@/lib/user-api-keys'
 import { getPlatformRules } from '@/lib/platform-rules'
 import { getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
-import { buildShoeSizingPromptSection } from '@/lib/sizing/shoe-conversion'
+import { buildShoeSizingPromptSection, buildShoeSizingTitleString } from '@/lib/sizing/shoe-conversion'
 import { conditionDelta, adjustForCondition } from './pricing-adjust'
 import type { ClothingSubType, JewelrySubType } from '@/types/listings'
 
@@ -69,12 +69,14 @@ export async function runStep4aDraftListing(
     (measurementsRow?.sub_type ?? null) as ClothingSubType | JewelrySubType | null,
     step2.notableFeatures
   )
-  const sizingSection = buildShoeSizingPromptSection({
+  const sizingArgs = {
     category: step2.category,
     brand: step2.brand,
     gender: (measurementsRow?.gender ?? null) as string | null,
     measurements: (measurementsRow?.measurements as Record<string, unknown> | null) ?? null,
-  })
+  }
+  const sizingSection = buildShoeSizingPromptSection(sizingArgs)
+  const titleSizeString = buildShoeSizingTitleString(sizingArgs)
   // When the sizing table above already covers these, drop them from the flat measurements
   // line -- otherwise the raw "EU 39" and the formatted "EU 39 · UK 6 · US 8" both show up.
   const shoeSizingKeys = new Set(['shoe_size_system', 'shoe_size_raw', 'us_size'])
@@ -143,7 +145,7 @@ ${rulesSection}Rules:
 - eBay title: exactly 80 chars or fewer, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
 - Poshmark title: natural, 60 chars max
 - eBay item specifics: brand, style/model, color, material, condition, size/dimensions where relevant
-- If a Sizing line is present, present it as a compact size comparison in the description (e.g. "Sizing: EU 39 · UK 6 · US 8.5") and, if a Sizing note is present, weave it into the description as a natural sentence — never invent, alter, or omit these numbers.
+- If a Sizing line is present, present it as a compact size comparison in the description (e.g. "Sizing: US 8.5 · EU 39 · UK 6") and, if a Sizing note is present, weave it into the description as a natural sentence — never invent, alter, or omit these numbers.${titleSizeString ? `\n- SNEAKERS REQUIRED: all three titles (canonical, eBay, Poshmark) MUST include the gender (${measurementsRow?.gender === 'mens' ? "Men's" : "Women's"}) and the size string "${titleSizeString}" — these are non-negotiable, never omit them` : ''}
 - eBay category_id: use standard eBay category ID numbers (Handbags: 169291, Sneakers: 155202, Electronics/phones: 9355, Clothing tops: 53159)
 - Descriptions should be factual, buyer-oriented, no filler phrases like "don't miss out"
 - Do NOT end descriptions with a "Condition: X — ..." summary block — condition is displayed separately in the listing fields. Condition context may be woven naturally into the description body where relevant, but never as a labeled "Condition:" section at the end.`

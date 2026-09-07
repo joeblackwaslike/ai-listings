@@ -7,6 +7,7 @@ import type { ApiKeys } from '@/lib/user-api-keys'
 import { getPlatformRules } from '@/lib/platform-rules'
 import { getMeasurementFields } from '@/lib/utils'
 import { formatMeasurementValue } from '@/lib/units'
+import { buildShoeSizingPromptSection, buildShoeSizingTitleString } from '@/lib/sizing/shoe-conversion'
 import type { ClothingSubType, Inclusion, JewelrySubType, PlatformFields } from '@/types/listings'
 
 interface RewriteOutput {
@@ -98,6 +99,15 @@ export async function runRewriteListing(
   }
 
   // Measurements line — same field resolution as step4a-draft-listing.ts
+  const shoeSizingArgs = {
+    category: (listing.category ?? '') as string,
+    brand: (listing.brand ?? '') as string,
+    gender: (listing.gender ?? null) as string | null,
+    measurements: (listing.measurements as Record<string, unknown> | null) ?? null,
+  }
+  const sizingSection = buildShoeSizingPromptSection(shoeSizingArgs)
+  const titleSizeString = buildShoeSizingTitleString(shoeSizingArgs)
+  const shoeSizingKeys = new Set(['shoe_size_system', 'shoe_size_raw', 'us_size'])
   const measurementFields = getMeasurementFields(
     (listing.category ?? '') as string,
     (listing.sub_type ?? null) as ClothingSubType | JewelrySubType | null,
@@ -105,6 +115,7 @@ export async function runRewriteListing(
   )
   const populatedMeasurements = listing.measurements
     ? measurementFields.filter((field) => {
+        if (sizingSection && shoeSizingKeys.has(field.key)) return false
         const value = (listing.measurements as Record<string, unknown>)[field.key]
         return value !== undefined && value !== null && value !== ''
       })
@@ -143,7 +154,7 @@ Item details:
 - Condition: ${listing.condition ?? 'Unknown'}
 - Condition notes: ${listing.condition_notes ?? ''}
 ${extraNotes.trim() ? `- Additional user observations: ${extraNotes.trim()}` : ''}
-${measurementsLine ? `- ${measurementsLine}` : ''}
+${measurementsLine ? `- ${measurementsLine}` : ''}${sizingSection}
 - Confirmed inclusions: ${inclusionsLine}
 
 Existing listing copy (for context — rewrite from scratch, do not just paraphrase):
@@ -164,7 +175,7 @@ Rules:
 - ebay_title: max 80 chars, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
 - ebay_description: plain text ONLY — no Markdown, no HTML, no tables, no emojis; eBay does not render them; include a "Condition:" section with grade and notes
 - poshmark_title: max 50 chars, natural language
-- poshmark_description: plain text; minimal emojis only if they genuinely help; include a condition section
+- poshmark_description: plain text; minimal emojis only if they genuinely help; include a condition section${sizingSection ? `\n- If a Sizing line is present, present it as a compact size comparison in the description (e.g. "Sizing: US 8.5 · EU 39 · UK 6") and, if a Sizing note is present, weave it into the description as a natural sentence — never invent, alter, or omit these numbers` : ''}${titleSizeString ? `\n- SNEAKERS REQUIRED: all three titles (canonical, eBay, Poshmark) MUST include the gender (${listing.gender === 'mens' ? "Men's" : "Women's"}) and the size string "${titleSizeString}" — these are non-negotiable, never omit them` : ''}
 - condition_notes: polished prose that merges AI photo observations with the condition notes above — no contradictions with the description
 - Do NOT open canonical_description or poshmark_description with a key-value specification block (Style:, Collection:, Material:, Hardware:, etc.) — start with a flowing prose paragraph that describes the piece naturally
 - No invented condition details — only what is in the condition and condition_notes fields above

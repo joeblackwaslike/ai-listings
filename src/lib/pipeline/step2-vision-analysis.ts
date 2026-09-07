@@ -217,6 +217,8 @@ Category reference sequences (illustrative, not rigid — reason about this spec
               'keyboards',
               'other',
             ],
+            description:
+              "Use 'sneakers' for ALL footwear — athletic shoes, dress shoes, boots, sandals, heels, loafers, oxfords, mules, etc. Use 'other' only when no other category applies.",
           },
           condition: {
             type: 'string',
