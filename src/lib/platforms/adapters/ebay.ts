@@ -202,6 +202,11 @@ export class EbayAdapter implements PlatformSDK {
         certId: this.creds.clientSecret,
         sandbox: this.creds.sandbox,
         autoRefreshToken: false,
+        scope: [
+          'https://api.ebay.com/oauth/api_scope/sell.inventory',
+          'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
+          'https://api.ebay.com/oauth/api_scope/sell.account',
+        ],
       });
       // Seed the OAuth2 layer with the stored refresh token so it can exchange
       // it for a fresh access token.
@@ -222,6 +227,7 @@ export class EbayAdapter implements PlatformSDK {
       this._tokenExpiresAt = Date.now() + expiresIn * 1000;
       return this._accessToken;
     } catch (err) {
+      console.error('[ebay] token refresh failed:', err);
       throw new AuthExpiredError(this.platform);
     }
   }
