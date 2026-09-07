@@ -18,7 +18,7 @@ import eBayApi from '@hendt/ebay-api';
 interface EbayError {
   errorId?: number;
   message?: string;
-  errors?: Array<{ message: string }>;
+  errors?: Array<{ message: string; longMessage?: string; parameters?: Array<{ name: string; value: string }> }>;
 }
 
 interface EbayInventoryItem {
@@ -65,12 +65,12 @@ function mapConditionToEbay(condition: string): string {
     new_with_tags: 'NEW',
     new_without_tags: 'NEW',
     like_new: 'LIKE_NEW',
-    very_good: 'EXCELLENT',
-    good: 'GOOD',
-    fair: 'ACCEPTABLE',
+    very_good: 'USED_EXCELLENT',
+    good: 'USED_GOOD',
+    fair: 'USED_ACCEPTABLE',
     poor: 'FOR_PARTS_OR_NOT_WORKING',
   };
-  return map[condition] ?? 'GOOD';
+  return map[condition] ?? 'USED_GOOD';
 }
 
 function mapConditionIdToEbay(condition: string): number {
@@ -260,7 +260,11 @@ export class EbayAdapter implements PlatformSDK {
       let message = `HTTP ${res.status}`;
       try {
         const errBody = (await res.json()) as EbayError;
-        message = errBody.errors?.[0]?.message ?? errBody.message ?? message;
+        const firstErr = errBody.errors?.[0];
+        const params = firstErr?.parameters?.map(p => `${p.name}=${p.value}`).join(', ');
+        message = firstErr?.longMessage ?? firstErr?.message ?? errBody.message ?? message;
+        if (params) message += ` (${params})`;
+        console.error('[ebay] API error body:', JSON.stringify(errBody));
       } catch {
         // ignore parse errors
       }
@@ -313,7 +317,6 @@ export class EbayAdapter implements PlatformSDK {
             aspects: mapItemSpecificsToAspects(ebayFields.item_specifics),
           },
           condition: mapConditionToEbay(listing.condition),
-          conditionId: mapConditionIdToEbay(listing.condition),
           availability: { shipToLocationAvailability: { quantity: 1 } },
         }),
       },
