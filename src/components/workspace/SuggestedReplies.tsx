@@ -4,7 +4,6 @@ export interface Suggestion {
   label: string
   message?: string
   openFilePicker?: boolean
-  confirmPhotos?: boolean
   confirmId?: boolean
   confirmGender?: string  // 'mens' | 'womens'
   needsSize?: boolean     // if true, ask for size after gender is selected
