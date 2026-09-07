@@ -15,6 +15,8 @@
 #   CLAUDE_CODE_OAUTH_TOKEN (Claude Max/Pro subscription token from `claude setup-token` —
 #     when set, src/lib/claude/backend.ts switches pipeline LLM calls to the Agent SDK
 #     instead of ANTHROPIC_API_KEY; unset falls back to the existing api-key path unchanged)
+#   BROWSERLESS_TOKEN (shared token for calling the Browserless fetch service;
+#     unset degrades url-verify eBay support to UNCONFIRMED — no other impact)
 #
 # Usage: bash deployment/scripts/deploy-app.sh
 set -euo pipefail
@@ -101,6 +103,7 @@ stringData:
   CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
   SERPAPI_API_KEY: "${SERPAPI_API_KEY}"
   SOLDCOMPS_API_KEY: "${SOLDCOMPS_API_KEY:-}"
+  BROWSERLESS_TOKEN: "${BROWSERLESS_TOKEN:-}"
   WITHOUTBG_API_KEY: "${WITHOUTBG_API_KEY}"
   EBAY_CLIENT_ID: "${EBAY_CLIENT_ID}"
   EBAY_CLIENT_SECRET: "${EBAY_CLIENT_SECRET}"
