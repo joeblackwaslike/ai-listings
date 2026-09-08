@@ -325,30 +325,47 @@ export class EbayAdapter implements PlatformSDK {
       token,
     );
 
-    // Step 2: Create offer
-    const offer = await this.ebayFetch<{ offerId: string }>(
-      `${this.baseUrl}/sell/inventory/v1/offer`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          sku,
-          marketplaceId: 'EBAY_US',
-          format: 'FIXED_PRICE',
-          listingDescription: listing.description,
-          pricingSummary: {
-            price: { value: (listing.price / 100).toFixed(2), currency: 'USD' },
-          },
-          categoryId: String(ebayFields.category_id ?? 9355),
-          merchantLocationKey: this.creds.merchantLocationKey,
-          listingPolicies: {
-            fulfillmentPolicyId: this.creds.fulfillmentPolicyId,
-            paymentPolicyId: this.creds.paymentPolicyId,
-            returnPolicyId: this.creds.returnPolicyId,
-          },
-        }),
+    // Step 2: Create or update offer — POST fails if one already exists for this SKU+marketplace
+    // (e.g. from a previous draft attempt), so check first and PATCH instead.
+    const offerBody = {
+      sku,
+      marketplaceId: 'EBAY_US',
+      format: 'FIXED_PRICE',
+      listingDescription: listing.description,
+      pricingSummary: {
+        price: { value: (listing.price / 100).toFixed(2), currency: 'USD' },
       },
+      categoryId: String(ebayFields.category_id ?? 9355),
+      merchantLocationKey: this.creds.merchantLocationKey,
+      listingPolicies: {
+        fulfillmentPolicyId: this.creds.fulfillmentPolicyId,
+        paymentPolicyId: this.creds.paymentPolicyId,
+        returnPolicyId: this.creds.returnPolicyId,
+      },
+    };
+
+    const existingOffers = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+      `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`,
+      { method: 'GET' },
       token,
     );
+    const existingOffer = existingOffers.offers?.[0];
+
+    let offer: { offerId: string };
+    if (existingOffer) {
+      await this.ebayFetch(
+        `${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
+        { method: 'PUT', body: JSON.stringify(offerBody) },
+        token,
+      );
+      offer = { offerId: existingOffer.offerId };
+    } else {
+      offer = await this.ebayFetch<{ offerId: string }>(
+        `${this.baseUrl}/sell/inventory/v1/offer`,
+        { method: 'POST', body: JSON.stringify(offerBody) },
+        token,
+      );
+    }
 
     if (!publish) {
       // Draft-only mode (options.publish === false): inventory item + offer are created but

@@ -60,46 +60,23 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
   const [saving, setSaving] = useState<Platform | null>(null)
   const [markingPublished, setMarkingPublished] = useState(false)
   const [copyAllDoneTab, setCopyAllDoneTab] = useState<Platform | null>(null)
-  const [postingToEbay, setPostingToEbay] = useState<'draft' | 'live' | false>(false)
-  const [ebayDraftOfferId, setEbayDraftOfferId] = useState<string | null>(
-    (listing.platform_fields?.ebay?.ebay_offer_id && !listing.platform_fields?.ebay?.ebay_listing_id)
-      ? (listing.platform_fields.ebay.ebay_offer_id as string)
-      : null
-  )
+  const [postingToEbay, setPostingToEbay] = useState(false)
   const copyAllDone = copyAllDoneTab === activeTab
 
   const hasAnyUrl = savedUrls.ebay || savedUrls.poshmark
 
-  async function postToEbay(draft = false) {
-    setPostingToEbay(draft ? 'draft' : 'live')
+  async function postToEbay() {
+    setPostingToEbay(true)
     try {
-      const url = `/api/listings/${listing.id}/post-to-ebay${draft ? '?draft=true' : ''}`
-      const res = await fetch(url, { method: 'POST' })
-      const data = await res.json() as { ok?: boolean; draft?: boolean; url?: string; offerId?: string; error?: string }
+      const res = await fetch(`/api/listings/${listing.id}/post-to-ebay`, { method: 'POST' })
+      const data = await res.json() as { ok?: boolean; url?: string; error?: string }
       if (!res.ok || !data.ok) {
         toast.error(data.error ?? 'Failed to post listing to eBay')
         return
       }
-      if (data.draft && data.offerId) {
-        setEbayDraftOfferId(data.offerId)
-        toast.success(
-          <span>
-            eBay draft created — offer <code className="text-xs">{data.offerId}</code>{' '}
-            <a
-              href="https://www.ebay.com/sh/lst"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline ml-1"
-            >
-              View in Seller Hub ↗
-            </a>
-          </span>
-        )
-      } else {
-        if (data.url) setSavedUrls((prev) => ({ ...prev, ebay: data.url }))
-        setListingStatus('published')
-        toast.success('Posted to eBay')
-      }
+      if (data.url) setSavedUrls((prev) => ({ ...prev, ebay: data.url }))
+      setListingStatus('published')
+      toast.success('Posted to eBay')
     } catch {
       toast.error('Failed to post listing to eBay')
     } finally {
@@ -221,18 +198,11 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
                 </div>
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => void postToEbay(true)}
-                    disabled={postingToEbay !== false}
-                    className="px-3 py-2 text-xs font-medium rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {postingToEbay === 'draft' ? 'Creating draft…' : 'Create eBay draft'}
-                  </button>
-                  <button
                     onClick={() => void postToEbay()}
-                    disabled={postingToEbay !== false}
+                    disabled={postingToEbay}
                     className="px-3 py-2 text-xs font-medium rounded-lg bg-emerald-700 text-emerald-50 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {postingToEbay === 'live' ? 'Posting to eBay…' : 'Post to eBay'}
+                    {postingToEbay ? 'Posting to eBay…' : 'Post to eBay'}
                   </button>
                   <button
                     onClick={() => void copyAll()}
@@ -246,19 +216,6 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
                     {copyAllDone ? 'Copied!' : 'Copy all eBay fields'}
                   </button>
                 </div>
-                {ebayDraftOfferId && (
-                  <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2">
-                    <span>Draft in Seller Hub — offer <code className="font-mono">{ebayDraftOfferId}</code></span>
-                    <a
-                      href="https://www.ebay.com/sh/lst"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-amber-300 hover:text-amber-100 underline ml-auto"
-                    >
-                      Open <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                )}
               </>
             )}
 
