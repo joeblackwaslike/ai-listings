@@ -101,6 +101,15 @@ export function mapItemSpecificsToAspects(
   );
 }
 
+function defaultShippingWeightOz(category: string): number {
+  const cat = (category ?? '').toLowerCase();
+  if (cat.includes('shoe') || cat.includes('sneaker') || cat.includes('boot')) return 32;
+  if (cat.includes('bag') || cat.includes('handbag') || cat.includes('purse')) return 24;
+  if (cat.includes('watch')) return 8;
+  if (cat.includes('jewelry') || cat.includes('ring') || cat.includes('necklace') || cat.includes('bracelet')) return 4;
+  return 16; // general default
+}
+
 function mapEbayStatusToInternal(
   status: string | undefined,
 ): PlatformOrder['status'] {
@@ -305,7 +314,12 @@ export class EbayAdapter implements PlatformSDK {
     const ebayFields = listing.platformFields as {
       item_specifics?: Record<string, string>;
       category_id?: string | number;
+      shipping_weight_oz?: number;
     };
+
+    // Shipping weight defaults by category broad group — eBay requires this to publish.
+    // Overridable via platform_fields.shipping_weight_oz on the listing.
+    const shippingWeightOz = ebayFields.shipping_weight_oz ?? defaultShippingWeightOz(listing.category);
 
     // Step 1: Create/update inventory item
     const inventoryBody = {
@@ -317,6 +331,10 @@ export class EbayAdapter implements PlatformSDK {
       },
       condition: mapConditionToEbay(listing.condition),
       availability: { shipToLocationAvailability: { quantity: 1 } },
+      packageWeightAndSize: {
+        weight: { unit: 'OUNCE', value: shippingWeightOz },
+        packageType: 'MAILING_BOX_EXTRA_SMALL',
+      },
     };
     console.log('[ebay] PUT inventory_item body:', JSON.stringify(inventoryBody));
     await this.ebayFetch(
