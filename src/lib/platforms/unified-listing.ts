@@ -1,6 +1,21 @@
 import type { Listing, Photo, PricingComp } from '@/types/listings';
 import type { UnifiedListing } from './types';
 
+// Maps verbose Style values (as Claude generates them) to clean eBay-accepted Type values.
+// eBay requires "Type" for many categories; when absent we fall back to Style via this map.
+const STYLE_TO_TYPE: Record<string, string> = {
+  'Backpack': 'Backpack',
+  'Tote': 'Tote',
+  'Wallet': 'Wallet',
+  'Wallet on Chain (WOC)': 'Wallet on Chain',
+  'Shoulder Bag / Crossbody': 'Shoulder Bag',
+  'Pochette / Wristlet / Clutch': 'Wristlet',
+  'Zip Coin Purse / Small Zip Wallet': 'Wallet',
+  'Pendant Necklace': 'Necklace',
+  'Bangle': 'Bangle',
+  'Bypass / Wrap Ring': 'Band',
+};
+
 const CONDITION_LABEL: Record<string, string> = {
   new_without_tags: 'New without tags',
   like_new: 'Like New',
@@ -77,9 +92,12 @@ export async function buildUnifiedListingForEbay(
     .filter((i) => i.confirmed)
     .map((i) => i.item);
 
+  const rawSpecifics = (ebayFields.item_specifics as Record<string, string> ?? {});
   const item_specifics: Record<string, string> = {
-    ...(ebayFields.item_specifics as Record<string, string> ?? {}),
-    Condition: CONDITION_LABEL[listing.condition ?? ''] ?? (ebayFields.item_specifics as Record<string, string>)?.Condition ?? '',
+    ...rawSpecifics,
+    // eBay requires "Type" for many categories; derive from Style via normalization map when absent
+    ...(rawSpecifics['Type'] ? {} : rawSpecifics['Style'] ? { Type: STYLE_TO_TYPE[rawSpecifics['Style']] ?? rawSpecifics['Style'] } : {}),
+    Condition: CONDITION_LABEL[listing.condition ?? ''] ?? rawSpecifics['Condition'] ?? '',
     Inclusions: confirmedInclusions.length > 0
       ? (() => {
           let s = '';

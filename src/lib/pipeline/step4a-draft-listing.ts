@@ -144,7 +144,7 @@ ${rulesSection}Rules:
 - Canonical title: brand + model + key attributes, not platform-specific
 - eBay title: exactly 80 chars or fewer, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
 - Poshmark title: natural, 60 chars max
-- eBay item specifics: brand, style/model, color, material, condition, size/dimensions where relevant
+- eBay item specifics: ALWAYS include "Type" (e.g. "Necklace", "Shoulder Bag", "Wallet", "Ring", "Bracelet", "Tote", "Backpack") — eBay requires it; also include brand, style/model, color, material, condition, size/dimensions where relevant
 - If a Sizing line is present, present it as a compact size comparison in the description (e.g. "Sizing: US 8.5 · EU 39 · UK 6") and, if a Sizing note is present, weave it into the description as a natural sentence — never invent, alter, or omit these numbers.${titleSizeString ? `\n- SNEAKERS REQUIRED: all three titles (canonical, eBay, Poshmark) MUST include the gender (${measurementsRow?.gender === 'mens' ? "Men's" : "Women's"}) and the size string "${titleSizeString}" — these are non-negotiable, never omit them` : ''}
 - eBay category_id: use standard eBay category ID numbers (Handbags: 169291, Sneakers: 155202, Electronics/phones: 9355, Clothing tops: 53159)
 - Descriptions should be factual, buyer-oriented, no filler phrases like "don't miss out"
