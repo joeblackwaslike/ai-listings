@@ -305,21 +305,20 @@ export class EbayAdapter implements PlatformSDK {
     };
 
     // Step 1: Create/update inventory item
+    const inventoryBody = {
+      product: {
+        title: listing.title,
+        description: listing.description,
+        imageUrls: listing.imageUrls,
+        aspects: mapItemSpecificsToAspects(ebayFields.item_specifics),
+      },
+      condition: mapConditionToEbay(listing.condition),
+      availability: { shipToLocationAvailability: { quantity: 1 } },
+    };
+    console.log('[ebay] PUT inventory_item body:', JSON.stringify(inventoryBody));
     await this.ebayFetch(
       `${this.baseUrl}/sell/inventory/v1/inventory_item/${sku}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify({
-          product: {
-            title: listing.title,
-            description: listing.description,
-            imageUrls: listing.imageUrls,
-            aspects: mapItemSpecificsToAspects(ebayFields.item_specifics),
-          },
-          condition: mapConditionToEbay(listing.condition),
-          availability: { shipToLocationAvailability: { quantity: 1 } },
-        }),
-      },
+      { method: 'PUT', body: JSON.stringify(inventoryBody) },
       token,
     );
 
