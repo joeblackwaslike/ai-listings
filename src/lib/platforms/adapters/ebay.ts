@@ -85,7 +85,7 @@ export function mapItemSpecificsToAspects(
   return Object.fromEntries(
     Object.entries(itemSpecifics)
       .filter(([, value]) => value !== undefined && value !== null && value !== '')
-      .map(([key, value]) => [key, [value]]),
+      .map(([key, value]) => [key, [value.slice(0, 65)]]),
   );
 }
 

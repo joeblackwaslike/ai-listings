@@ -172,7 +172,7 @@ ${rulesSection}Use the rewrite_listing tool to produce all updated fields.
 Rules:
 - canonical_title: max 80 chars, brand + model + key attributes, not platform-specific
 - canonical_description: factual, buyer-oriented Markdown; include a "**Condition**" section with the condition grade and notes; no filler ("don't miss out", "rare find")
-- ebay_title: max 80 chars, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
+- ebay_title: max 80 chars, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware"); NEVER include "like new", "like-new", "as new", or similar phrases — eBay bans them from titles
 - ebay_description: plain text ONLY — no Markdown, no HTML, no tables, no emojis; eBay does not render them; include a "Condition:" section with grade and notes
 - poshmark_title: max 50 chars, natural language
 - poshmark_description: plain text; minimal emojis only if they genuinely help; include a condition section${sizingSection ? `\n- If a Sizing line is present, present it as a compact size comparison in the description (e.g. "Sizing: US 8.5 · EU 39 · UK 6") and, if a Sizing note is present, weave it into the description as a natural sentence — never invent, alter, or omit these numbers` : ''}${titleSizeString ? `\n- SNEAKERS REQUIRED: all three titles (canonical, eBay, Poshmark) MUST include the gender (${listing.gender === 'mens' ? "Men's" : "Women's"}) and the size string "${titleSizeString}" — these are non-negotiable, never omit them` : ''}
