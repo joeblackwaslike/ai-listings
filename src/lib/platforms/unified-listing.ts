@@ -80,7 +80,17 @@ export async function buildUnifiedListingForEbay(
   const item_specifics: Record<string, string> = {
     ...(ebayFields.item_specifics as Record<string, string> ?? {}),
     Condition: CONDITION_LABEL[listing.condition ?? ''] ?? (ebayFields.item_specifics as Record<string, string>)?.Condition ?? '',
-    Inclusions: confirmedInclusions.length > 0 ? confirmedInclusions.join(', ') : 'None',
+    Inclusions: confirmedInclusions.length > 0
+      ? (() => {
+          let s = '';
+          for (const item of confirmedInclusions) {
+            const next = s ? `${s}, ${item}` : item;
+            if (next.length > 65) break;
+            s = next;
+          }
+          return s || confirmedInclusions[0].slice(0, 65);
+        })()
+      : 'None',
   };
 
   return {
