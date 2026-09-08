@@ -371,8 +371,11 @@ export class EbayAdapter implements PlatformSDK {
     );
     const existingOffer = existingOffers.offers?.[0];
 
+    // If a published offer exists, update it in place. If it's an unpublished draft (no
+    // listingId), delete it — stale drafts can't be reliably updated and cause error 25713.
+    // Always POST fresh after deleting to guarantee a clean state.
     let offer: { offerId: string };
-    if (existingOffer) {
+    if (existingOffer?.listingId) {
       await this.ebayFetch(
         `${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
         { method: 'PUT', body: JSON.stringify(offerBody) },
@@ -380,6 +383,13 @@ export class EbayAdapter implements PlatformSDK {
       );
       offer = { offerId: existingOffer.offerId };
     } else {
+      if (existingOffer) {
+        await this.ebayFetch(
+          `${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
+          { method: 'DELETE' },
+          token,
+        );
+      }
       offer = await this.ebayFetch<{ offerId: string }>(
         `${this.baseUrl}/sell/inventory/v1/offer`,
         { method: 'POST', body: JSON.stringify(offerBody) },
