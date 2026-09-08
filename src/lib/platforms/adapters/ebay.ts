@@ -333,7 +333,6 @@ export class EbayAdapter implements PlatformSDK {
       availability: { shipToLocationAvailability: { quantity: 1 } },
       packageWeightAndSize: {
         weight: { unit: 'OUNCE', value: shippingWeightOz },
-        packageType: 'MAILING_BOX_EXTRA_SMALL',
       },
     };
     console.log('[ebay] PUT inventory_item body:', JSON.stringify(inventoryBody));
