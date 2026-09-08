@@ -105,7 +105,7 @@ export async function buildUnifiedListingForEbay(
     platformFields: {
       item_specifics,
       category_id: ebayFields.category_id,
-      condition_description: listing.condition_notes ?? undefined,
+      condition_description: listing.condition_notes ? listing.condition_notes.slice(0, 1000) : undefined,
     },
   };
 }
