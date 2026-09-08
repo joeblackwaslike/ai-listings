@@ -176,7 +176,7 @@ Rules:
 - ebay_description: plain text ONLY — no Markdown, no HTML, no tables, no emojis; eBay does not render them; include a "Condition:" section with grade and notes
 - poshmark_title: max 50 chars, natural language
 - poshmark_description: plain text; minimal emojis only if they genuinely help; include a condition section${sizingSection ? `\n- If a Sizing line is present, present it as a compact size comparison in the description (e.g. "Sizing: US 8.5 · EU 39 · UK 6") and, if a Sizing note is present, weave it into the description as a natural sentence — never invent, alter, or omit these numbers` : ''}${titleSizeString ? `\n- SNEAKERS REQUIRED: all three titles (canonical, eBay, Poshmark) MUST include the gender (${listing.gender === 'mens' ? "Men's" : "Women's"}) and the size string "${titleSizeString}" — these are non-negotiable, never omit them` : ''}
-- condition_notes: polished prose that merges AI photo observations with the condition notes above — no contradictions with the description
+- condition_notes: polished prose that merges AI photo observations with the condition notes above — no contradictions with the description; maximum 1000 characters
 - Do NOT open canonical_description or poshmark_description with a key-value specification block (Style:, Collection:, Material:, Hardware:, etc.) — start with a flowing prose paragraph that describes the piece naturally
 - No invented condition details — only what is in the condition and condition_notes fields above
 - Inclusions/accessories: ONLY list items from the "Confirmed inclusions" line above — never add, infer, or imply accessories based on brand knowledge, product type, or typical packaging (e.g. auth cards, receipts, care booklets not in the list)`
@@ -202,7 +202,8 @@ Rules:
           poshmark_description: { type: 'string' },
           condition_notes: {
             type: 'string',
-            description: 'Polished condition notes reconciled with the description — no contradictions',
+            description: 'Polished condition notes reconciled with the description — no contradictions. Maximum 1000 characters.',
+            maxLength: 1000,
           },
         },
         required: [
