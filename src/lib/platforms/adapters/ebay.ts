@@ -315,6 +315,7 @@ export class EbayAdapter implements PlatformSDK {
       item_specifics?: Record<string, string>;
       category_id?: string | number;
       shipping_weight_oz?: number;
+      condition_description?: string;
     };
 
     // Shipping weight defaults by category broad group — eBay requires this to publish.
@@ -330,6 +331,7 @@ export class EbayAdapter implements PlatformSDK {
         aspects: mapItemSpecificsToAspects(ebayFields.item_specifics),
       },
       condition: mapConditionToEbay(listing.condition),
+      ...(ebayFields.condition_description ? { conditionDescription: ebayFields.condition_description } : {}),
       availability: { shipToLocationAvailability: { quantity: 1 } },
       packageWeightAndSize: {
         weight: { unit: 'OUNCE', value: shippingWeightOz },
