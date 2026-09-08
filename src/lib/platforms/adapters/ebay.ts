@@ -18,7 +18,7 @@ import eBayApi from '@hendt/ebay-api';
 interface EbayError {
   errorId?: number;
   message?: string;
-  errors?: Array<{ message: string; longMessage?: string; parameters?: Array<{ name: string; value: string }> }>;
+  errors?: Array<{ errorId?: number; message: string; longMessage?: string; parameters?: Array<{ name: string; value: string }> }>;
 }
 
 interface EbayInventoryItem {
@@ -275,6 +275,7 @@ export class EbayAdapter implements PlatformSDK {
         const firstErr = errBody.errors?.[0];
         const params = firstErr?.parameters?.map(p => `${p.name}=${p.value}`).join(', ');
         message = firstErr?.longMessage ?? firstErr?.message ?? errBody.message ?? message;
+        if (firstErr?.errorId) message = `[${firstErr.errorId}] ${message}`;
         if (params) message += ` (${params})`;
         console.error('[ebay] API error body:', JSON.stringify(errBody));
       } catch {
