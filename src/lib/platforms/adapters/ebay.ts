@@ -64,7 +64,7 @@ function mapConditionToEbay(condition: string): string {
   const map: Record<string, string> = {
     new_with_tags: 'NEW',
     new_without_tags: 'NEW',
-    like_new: 'LIKE_NEW',
+    like_new: 'USED_EXCELLENT',
     very_good: 'USED_EXCELLENT',
     good: 'USED_GOOD',
     fair: 'USED_ACCEPTABLE',
