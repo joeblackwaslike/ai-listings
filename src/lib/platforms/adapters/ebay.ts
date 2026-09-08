@@ -240,6 +240,9 @@ export class EbayAdapter implements PlatformSDK {
   ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
+      // Next.js propagates the browser's Accept-Language (e.g. "en-US,en;q=0.9") to outgoing
+      // fetch() calls; eBay rejects the multi-locale q-value format. Pin to a single locale.
+      'Accept-Language': 'en-US',
       // Required by the Sell Inventory API on write calls (createOffer/inventory_item), or
       // eBay rejects the request with "Invalid value for header Content-Language" — confirmed
       // via a live smoke test against production. This app is US-only (EBAY_US is hardcoded
