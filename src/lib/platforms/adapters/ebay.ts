@@ -67,24 +67,12 @@ function mapConditionToEbay(condition: string): string {
     like_new: 'USED_EXCELLENT',
     very_good: 'USED_EXCELLENT',
     good: 'USED_EXCELLENT',
-    fair: 'USED_ACCEPTABLE',
-    poor: 'FOR_PARTS_OR_NOT_WORKING',
+    fair: 'USED_GOOD',
+    poor: 'USED_GOOD',
   };
   return map[condition] ?? 'USED_GOOD';
 }
 
-function mapConditionIdToEbay(condition: string): number {
-  const map: Record<string, number> = {
-    new_with_tags: 1000,
-    new_without_tags: 1000,
-    like_new: 1500,
-    very_good: 2000,
-    good: 2500,
-    fair: 3000,
-    poor: 7000,
-  };
-  return map[condition] ?? 2500;
-}
 
 // eBay's Sell Inventory API requires `aspects` as Record<string, string[]> (each aspect can
 // have multiple values), but the pipeline/UI store item specifics as flat Record<string, string>.
@@ -480,7 +468,6 @@ export class EbayAdapter implements PlatformSDK {
       }
       if (updates.condition) {
         itemBody.condition = mapConditionToEbay(updates.condition);
-        itemBody.conditionId = mapConditionIdToEbay(updates.condition);
       }
       // Use the SKU from the offer to update the inventory item
       await this.ebayFetch(
