@@ -67,8 +67,8 @@ function mapConditionToEbay(condition: string): string {
     like_new: 'USED_EXCELLENT',
     very_good: 'USED_EXCELLENT',
     good: 'USED_EXCELLENT',
-    fair: 'USED_GOOD',
-    poor: 'USED_GOOD',
+    fair: 'USED_EXCELLENT',
+    poor: 'USED_EXCELLENT',
   };
   return map[condition] ?? 'USED_GOOD';
 }
