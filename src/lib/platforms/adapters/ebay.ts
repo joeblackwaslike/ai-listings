@@ -376,6 +376,7 @@ export class EbayAdapter implements PlatformSDK {
     // Always POST fresh after deleting to guarantee a clean state.
     let offer: { offerId: string };
     if (existingOffer?.listingId) {
+      console.log('[ebay] offer step: PUT existing published offer', existingOffer.offerId);
       await this.ebayFetch(
         `${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
         { method: 'PUT', body: JSON.stringify(offerBody) },
@@ -384,18 +385,21 @@ export class EbayAdapter implements PlatformSDK {
       offer = { offerId: existingOffer.offerId };
     } else {
       if (existingOffer) {
+        console.log('[ebay] offer step: DELETE stale draft offer', existingOffer.offerId);
         await this.ebayFetch(
           `${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
           { method: 'DELETE' },
           token,
         );
       }
+      console.log('[ebay] offer step: POST new offer for sku', sku);
       offer = await this.ebayFetch<{ offerId: string }>(
         `${this.baseUrl}/sell/inventory/v1/offer`,
         { method: 'POST', body: JSON.stringify(offerBody) },
         token,
       );
     }
+    console.log('[ebay] offer step: publish offerId', offer.offerId);
 
     if (!publish) {
       // Draft-only mode (options.publish === false): inventory item + offer are created but
