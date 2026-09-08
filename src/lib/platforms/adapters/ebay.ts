@@ -364,11 +364,24 @@ export class EbayAdapter implements PlatformSDK {
       bestOfferTerms: { bestOfferEnabled: true },
     };
 
-    const existingOffers = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`,
-      { method: 'GET' },
-      token,
-    );
+    // Error 25713 from GET /offer means eBay's offer service has no valid offer for this SKU
+    // (stale internal state after earlier failed attempts). Treat it as "no existing offers".
+    let existingOffers: { offers?: EbayOffer[] };
+    try {
+      existingOffers = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+        `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`,
+        { method: 'GET' },
+        token,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('25713')) {
+        console.log('[ebay] GET offers returned 25713 for sku', sku, '— treating as no existing offers');
+        existingOffers = {};
+      } else {
+        throw err;
+      }
+    }
     const existingOffer = existingOffers.offers?.[0];
 
     // If a published offer exists, update it in place. If it's an unpublished draft (no
