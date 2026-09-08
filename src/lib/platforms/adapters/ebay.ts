@@ -359,6 +359,7 @@ export class EbayAdapter implements PlatformSDK {
         paymentPolicyId: this.creds.paymentPolicyId,
         returnPolicyId: this.creds.returnPolicyId,
       },
+      bestOfferTerms: { bestOfferEnabled: true },
     };
 
     const existingOffers = await this.ebayFetch<{ offers?: EbayOffer[] }>(
