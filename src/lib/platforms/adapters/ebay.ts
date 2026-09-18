@@ -580,6 +580,40 @@ export class EbayAdapter implements PlatformSDK {
     });
   }
 
+  async getOffersBySku(skus: string[]): Promise<PlatformListing[]> {
+    const token = await this.getAccessToken();
+    const statusMap: Record<string, PlatformListing['status']> = {
+      PUBLISHED: 'active', ENDED: 'sold', UNPUBLISHED: 'draft',
+    };
+    const results: PlatformListing[] = [];
+    for (const sku of skus) {
+      try {
+        const res = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+          `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=EBAY_US`,
+          { method: 'GET' },
+          token,
+        );
+        for (const offer of res.offers ?? []) {
+          const priceStr = offer.pricingSummary?.price?.value ?? '0';
+          results.push({
+            platform: 'ebay',
+            platformId: offer.listingId ?? offer.offerId,
+            url: offer.listingId ? `https://www.ebay.com/itm/${offer.listingId}` : '',
+            title: offer.sku,
+            price: Math.round(parseFloat(priceStr) * 100),
+            status: statusMap[offer.status ?? ''] ?? 'active',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            raw: offer as unknown as Record<string, unknown>,
+          });
+        }
+      } catch (err) {
+        console.warn(`[ebay] getOffersBySku: failed for sku=${sku}:`, err);
+      }
+    }
+    return results;
+  }
+
   // ---- Orders ---------------------------------------------------------------
 
   async getOrders(since?: Date): Promise<PlatformOrder[]> {
