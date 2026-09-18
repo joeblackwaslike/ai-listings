@@ -56,6 +56,10 @@ export const syncEbayPrices = inngest.createFunction(
           for (const listing of dbListings) {
             const offer = offerBySku.get(listing.sku as string)
             if (!offer || offer.status !== 'active') continue
+            if (offer.price === 0) {
+              console.warn(`[sync-ebay-prices] skipping sku=${listing.sku}: price=0 (parse failure — check getOffersBySku logs)`)
+              continue
+            }
             if (offer.price !== listing.final_price_cents) {
               const { error: updateError } = await supabase
                 .from('listings')
