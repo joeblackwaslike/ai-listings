@@ -1,727 +1,840 @@
+import eBayApi from "@hendt/ebay-api";
+import { plaintextToEbayHtml } from "../ebay-description";
+import { searchEbaySoldComps } from "../ebay-soldcomps";
+import {
+	AuthExpiredError,
+	PlatformError,
+	UnsupportedOperationError,
+} from "../errors";
 import type {
-  PlatformSDK,
-  PlatformComp,
-  PlatformListing,
-  PlatformOrder,
-  PlatformNotification,
-  PlatformThread,
-  PlatformMessage,
-  TrackingInfo,
-  UnifiedListing,
-} from '../types';
-import { AuthExpiredError, PlatformError, UnsupportedOperationError } from '../errors';
-import { searchEbaySoldComps } from '../ebay-soldcomps';
-import { plaintextToEbayHtml } from '../ebay-description';
-import eBayApi from '@hendt/ebay-api';
+	PlatformComp,
+	PlatformListing,
+	PlatformMessage,
+	PlatformNotification,
+	PlatformOrder,
+	PlatformSDK,
+	PlatformThread,
+	TrackingInfo,
+	UnifiedListing,
+} from "../types";
 
 // ---- Internal eBay API shape types ----------------------------------------
 
 interface EbayError {
-  errorId?: number;
-  message?: string;
-  errors?: Array<{ errorId?: number; message: string; longMessage?: string; parameters?: Array<{ name: string; value: string }> }>;
+	errorId?: number;
+	message?: string;
+	errors?: Array<{
+		errorId?: number;
+		message: string;
+		longMessage?: string;
+		parameters?: Array<{ name: string; value: string }>;
+	}>;
 }
 
 interface EbayInventoryItem {
-  sku: string;
-  product?: {
-    title?: string;
-    imageUrls?: string[];
-  };
-  condition?: string;
-  availability?: {
-    shipToLocationAvailability?: { quantity?: number };
-  };
+	sku: string;
+	product?: {
+		title?: string;
+		imageUrls?: string[];
+	};
+	condition?: string;
+	availability?: {
+		shipToLocationAvailability?: { quantity?: number };
+	};
 }
 
 interface EbayOffer {
-  offerId: string;
-  sku: string;
-  pricingSummary?: { price?: { value?: string } };
-  listingId?: string;
-  status?: string;
+	offerId: string;
+	sku: string;
+	pricingSummary?: { price?: { value?: string } };
+	listingId?: string;
+	status?: string;
 }
 
 interface EbayOrder {
-  orderId: string;
-  lineItems?: Array<{
-    /** Order line item ID — used as lineItemId in Sell Fulfillment v1 API */
-    lineItemId?: string;
-    legacyItemId?: string;
-  }>;
-  buyer?: { username?: string };
-  pricingSummary?: { total?: { value?: string }; priceSubtotal?: { value?: string } };
-  orderFulfillmentStatus?: string;
-  creationDate?: string;
-  fulfillmentStartInstructions?: Array<{
-    shippingStep?: { shipTo?: { contactAddress?: { addressLine1?: string; city?: string; stateOrProvince?: string; postalCode?: string; countryCode?: string } } };
-  }>;
-  lineItemsFulfillmentSummary?: Array<{ shipmentTrackingNumber?: string }>;
+	orderId: string;
+	lineItems?: Array<{
+		/** Order line item ID — used as lineItemId in Sell Fulfillment v1 API */
+		lineItemId?: string;
+		legacyItemId?: string;
+	}>;
+	buyer?: { username?: string };
+	pricingSummary?: {
+		total?: { value?: string };
+		priceSubtotal?: { value?: string };
+	};
+	orderFulfillmentStatus?: string;
+	creationDate?: string;
+	fulfillmentStartInstructions?: Array<{
+		shippingStep?: {
+			shipTo?: {
+				contactAddress?: {
+					addressLine1?: string;
+					city?: string;
+					stateOrProvince?: string;
+					postalCode?: string;
+					countryCode?: string;
+				};
+			};
+		};
+	}>;
+	lineItemsFulfillmentSummary?: Array<{ shipmentTrackingNumber?: string }>;
 }
 
 // ---- Condition helpers -----------------------------------------------------
 
 function mapConditionToEbay(condition: string): string {
-  const map: Record<string, string> = {
-    new_with_tags: 'NEW',
-    new_without_tags: 'NEW',
-    like_new: 'USED_EXCELLENT',
-    very_good: 'USED_EXCELLENT',
-    good: 'USED_EXCELLENT',
-    fair: 'USED_EXCELLENT',
-    poor: 'USED_EXCELLENT',
-  };
-  return map[condition] ?? 'USED_GOOD';
+	const map: Record<string, string> = {
+		new_with_tags: "NEW",
+		new_without_tags: "NEW",
+		like_new: "USED_EXCELLENT",
+		very_good: "USED_EXCELLENT",
+		good: "USED_EXCELLENT",
+		fair: "USED_EXCELLENT",
+		poor: "USED_EXCELLENT",
+	};
+	return map[condition] ?? "USED_GOOD";
 }
-
 
 // eBay's Sell Inventory API requires `aspects` as Record<string, string[]> (each aspect can
 // have multiple values), but the pipeline/UI store item specifics as flat Record<string, string>.
 // This mapping lives here (not in the unified-listing mapper) because it's an eBay Sell API
 // wire-format quirk, not a general unified-listing concept.
 export function mapItemSpecificsToAspects(
-  itemSpecifics: Record<string, string> | undefined,
+	itemSpecifics: Record<string, string> | undefined,
 ): Record<string, string[]> {
-  if (!itemSpecifics) return {};
-  return Object.fromEntries(
-    Object.entries(itemSpecifics)
-      .filter(([, value]) => value !== undefined && value !== null && value !== '')
-      .map(([key, value]) => [key, [value.slice(0, 65)]]),
-  );
+	if (!itemSpecifics) return {};
+	return Object.fromEntries(
+		Object.entries(itemSpecifics)
+			.filter(
+				([, value]) => value !== undefined && value !== null && value !== "",
+			)
+			.map(([key, value]) => [key, [value.slice(0, 65)]]),
+	);
 }
 
 function defaultShippingWeightOz(category: string): number {
-  const cat = (category ?? '').toLowerCase();
-  if (cat.includes('shoe') || cat.includes('sneaker') || cat.includes('boot')) return 32;
-  if (cat.includes('bag') || cat.includes('handbag') || cat.includes('purse')) return 24;
-  if (cat.includes('watch')) return 8;
-  if (cat.includes('jewelry') || cat.includes('ring') || cat.includes('necklace') || cat.includes('bracelet')) return 4;
-  return 16; // general default
+	const cat = (category ?? "").toLowerCase();
+	if (cat.includes("shoe") || cat.includes("sneaker") || cat.includes("boot"))
+		return 32;
+	if (cat.includes("bag") || cat.includes("handbag") || cat.includes("purse"))
+		return 24;
+	if (cat.includes("watch")) return 8;
+	if (
+		cat.includes("jewelry") ||
+		cat.includes("ring") ||
+		cat.includes("necklace") ||
+		cat.includes("bracelet")
+	)
+		return 4;
+	return 16; // general default
 }
 
 function mapEbayStatusToInternal(
-  status: string | undefined,
-): PlatformOrder['status'] {
-  switch ((status ?? '').toUpperCase()) {
-    case 'FULFILLED':
-      return 'shipped';
-    case 'IN_PROGRESS':
-      return 'pending';
-    case 'CANCELLED':
-      return 'cancelled';
-    default:
-      return 'pending';
-  }
+	status: string | undefined,
+): PlatformOrder["status"] {
+	switch ((status ?? "").toUpperCase()) {
+		case "FULFILLED":
+			return "shipped";
+		case "IN_PROGRESS":
+			return "pending";
+		case "CANCELLED":
+			return "cancelled";
+		default:
+			return "pending";
+	}
 }
 
 // ---- Order mapper -----------------------------------------------------------
 
 function mapEbayOrder(o: EbayOrder): PlatformOrder {
-  const priceStr = o.pricingSummary?.priceSubtotal?.value ?? o.pricingSummary?.total?.value ?? '0';
-  const addressParts = o.fulfillmentStartInstructions?.[0]?.shippingStep?.shipTo?.contactAddress;
-  const shippingAddress = addressParts
-    ? [
-        addressParts.addressLine1,
-        addressParts.city,
-        addressParts.stateOrProvince,
-        addressParts.postalCode,
-        addressParts.countryCode,
-      ]
-        .filter(Boolean)
-        .join(', ')
-    : undefined;
-  const tracking = o.lineItemsFulfillmentSummary?.[0]?.shipmentTrackingNumber;
+	const priceStr =
+		o.pricingSummary?.priceSubtotal?.value ??
+		o.pricingSummary?.total?.value ??
+		"0";
+	const addressParts =
+		o.fulfillmentStartInstructions?.[0]?.shippingStep?.shipTo?.contactAddress;
+	const shippingAddress = addressParts
+		? [
+				addressParts.addressLine1,
+				addressParts.city,
+				addressParts.stateOrProvince,
+				addressParts.postalCode,
+				addressParts.countryCode,
+			]
+				.filter(Boolean)
+				.join(", ")
+		: undefined;
+	const tracking = o.lineItemsFulfillmentSummary?.[0]?.shipmentTrackingNumber;
 
-  return {
-    platform: 'ebay',
-    orderId: o.orderId,
-    listingId: o.lineItems?.[0]?.legacyItemId ?? '',
-    buyerUsername: o.buyer?.username ?? '',
-    salePrice: Math.round(parseFloat(priceStr) * 100),
-    status: mapEbayStatusToInternal(o.orderFulfillmentStatus),
-    createdAt: new Date(o.creationDate ?? Date.now()),
-    shippingAddress,
-    trackingNumber: tracking,
-  };
+	return {
+		platform: "ebay",
+		orderId: o.orderId,
+		listingId: o.lineItems?.[0]?.legacyItemId ?? "",
+		buyerUsername: o.buyer?.username ?? "",
+		salePrice: Math.round(parseFloat(priceStr) * 100),
+		status: mapEbayStatusToInternal(o.orderFulfillmentStatus),
+		createdAt: new Date(o.creationDate ?? Date.now()),
+		shippingAddress,
+		trackingNumber: tracking,
+	};
 }
 
 // ---- EbayAdapter -----------------------------------------------------------
 
 export class EbayAdapter implements PlatformSDK {
-  platform = 'ebay' as const;
-  private creds: {
-    clientId: string;
-    clientSecret: string;
-    refreshToken: string;
-    fulfillmentPolicyId: string;
-    paymentPolicyId: string;
-    returnPolicyId: string;
-    merchantLocationKey: string;
-    sandbox: boolean;
-  };
-  private readonly baseUrl: string;
-  private _client: InstanceType<typeof eBayApi> | null = null;
-  private _accessToken: string | null = null;
-  private _tokenExpiresAt = 0;
+	platform = "ebay" as const;
+	private creds: {
+		clientId: string;
+		clientSecret: string;
+		refreshToken: string;
+		fulfillmentPolicyId: string;
+		paymentPolicyId: string;
+		returnPolicyId: string;
+		merchantLocationKey: string;
+		sandbox: boolean;
+	};
+	private readonly baseUrl: string;
+	private _client: InstanceType<typeof eBayApi> | null = null;
+	private _accessToken: string | null = null;
+	private _tokenExpiresAt = 0;
 
-  // Optional, separate from `creds` above: SoldComps is a distinct third-party API with its
-  // own per-user key (src/lib/user-api-keys.ts's `soldcomps` field), not part of eBay's own
-  // OAuth credential set. Defaults to the env var for call sites that construct this adapter
-  // without a per-user key on hand (e.g. sync-platform-* Inngest functions that only need
-  // eBay's own APIs) -- mcp-server.ts's getAdapter is the one call site that has a userId and
-  // passes the real per-user key through.
-  constructor(
-    creds: {
-      clientId: string;
-      clientSecret: string;
-      refreshToken: string;
-      fulfillmentPolicyId: string;
-      paymentPolicyId: string;
-      returnPolicyId: string;
-      merchantLocationKey: string;
-      sandbox: boolean;
-    },
-    private readonly soldcompsApiKey: string = process.env.SOLDCOMPS_API_KEY ?? ''
-  ) {
-    this.creds = creds;
-    this.baseUrl = creds.sandbox ? 'https://api.sandbox.ebay.com' : 'https://api.ebay.com';
-  }
+	// Optional, separate from `creds` above: SoldComps is a distinct third-party API with its
+	// own per-user key (src/lib/user-api-keys.ts's `soldcomps` field), not part of eBay's own
+	// OAuth credential set. Defaults to the env var for call sites that construct this adapter
+	// without a per-user key on hand (e.g. sync-platform-* Inngest functions that only need
+	// eBay's own APIs) -- mcp-server.ts's getAdapter is the one call site that has a userId and
+	// passes the real per-user key through.
+	constructor(
+		creds: {
+			clientId: string;
+			clientSecret: string;
+			refreshToken: string;
+			fulfillmentPolicyId: string;
+			paymentPolicyId: string;
+			returnPolicyId: string;
+			merchantLocationKey: string;
+			sandbox: boolean;
+		},
+		private readonly soldcompsApiKey: string = process.env.SOLDCOMPS_API_KEY ??
+			"",
+	) {
+		this.creds = creds;
+		this.baseUrl = creds.sandbox
+			? "https://api.sandbox.ebay.com"
+			: "https://api.ebay.com";
+	}
 
-  // Lazy-init the eBay client and return a valid access token.
-  private async getAccessToken(): Promise<string> {
-    // Return cached token if still valid (with 60-second buffer)
-    if (this._accessToken && Date.now() < this._tokenExpiresAt - 60_000) {
-      return this._accessToken;
-    }
+	// Lazy-init the eBay client and return a valid access token.
+	private async getAccessToken(): Promise<string> {
+		// Return cached token if still valid (with 60-second buffer)
+		if (this._accessToken && Date.now() < this._tokenExpiresAt - 60_000) {
+			return this._accessToken;
+		}
 
-    if (!this._client) {
-      this._client = new eBayApi({
-        appId: this.creds.clientId,
-        certId: this.creds.clientSecret,
-        sandbox: this.creds.sandbox,
-        autoRefreshToken: false,
-        scope: [
-          'https://api.ebay.com/oauth/api_scope/sell.inventory',
-          'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
-          'https://api.ebay.com/oauth/api_scope/sell.account',
-        ],
-      });
-      // Seed the OAuth2 layer with the stored refresh token so it can exchange
-      // it for a fresh access token.
-      this._client.oAuth2.setCredentials({
-        refresh_token: this.creds.refreshToken,
-        access_token: '',
-        expires_in: 0,
-        token_type: 'User Access Token',
-        refresh_token_expires_in: 0,
-      });
-    }
+		if (!this._client) {
+			this._client = new eBayApi({
+				appId: this.creds.clientId,
+				certId: this.creds.clientSecret,
+				sandbox: this.creds.sandbox,
+				autoRefreshToken: false,
+				scope: [
+					"https://api.ebay.com/oauth/api_scope/sell.inventory",
+					"https://api.ebay.com/oauth/api_scope/sell.fulfillment",
+					"https://api.ebay.com/oauth/api_scope/sell.account",
+				],
+			});
+			// Seed the OAuth2 layer with the stored refresh token so it can exchange
+			// it for a fresh access token.
+			this._client.oAuth2.setCredentials({
+				refresh_token: this.creds.refreshToken,
+				access_token: "",
+				expires_in: 0,
+				token_type: "User Access Token",
+				refresh_token_expires_in: 0,
+			});
+		}
 
-    try {
-      const token = await this._client.oAuth2.refreshToken();
-      this._accessToken = token.access_token as string;
-      // eBay access tokens expire in 7200 seconds (2h). Use expires_in if available.
-      const expiresIn = (token.expires_in as number | undefined) ?? 7200;
-      this._tokenExpiresAt = Date.now() + expiresIn * 1000;
-      return this._accessToken;
-    } catch (err) {
-      console.error('[ebay] token refresh failed:', err);
-      throw new AuthExpiredError(this.platform);
-    }
-  }
+		try {
+			const token = await this._client.oAuth2.refreshToken();
+			this._accessToken = token.access_token as string;
+			// eBay access tokens expire in 7200 seconds (2h). Use expires_in if available.
+			const expiresIn = (token.expires_in as number | undefined) ?? 7200;
+			this._tokenExpiresAt = Date.now() + expiresIn * 1000;
+			return this._accessToken;
+		} catch (err) {
+			console.error("[ebay] token refresh failed:", err);
+			throw new AuthExpiredError(this.platform);
+		}
+	}
 
-  // Shared fetch helper — throws typed errors on non-2xx responses.
-  private async ebayFetch<T = unknown>(
-    url: string,
-    options: RequestInit,
-    token: string,
-  ): Promise<T> {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-      // Next.js propagates the browser's Accept-Language (e.g. "en-US,en;q=0.9") to outgoing
-      // fetch() calls; eBay rejects the multi-locale q-value format. Pin to a single locale.
-      'Accept-Language': 'en-US',
-      // Required by the Sell Inventory API on write calls (createOffer/inventory_item), or
-      // eBay rejects the request with "Invalid value for header Content-Language" — confirmed
-      // via a live smoke test against production. This app is US-only (EBAY_US is hardcoded
-      // wherever a marketplaceId is sent), so a fixed en-US is correct, not a per-request value.
-      'Content-Language': 'en-US',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(options.headers as Record<string, string> | undefined),
-    };
+	// Shared fetch helper — throws typed errors on non-2xx responses.
+	private async ebayFetch<T = unknown>(
+		url: string,
+		options: RequestInit,
+		token: string,
+	): Promise<T> {
+		const headers: Record<string, string> = {
+			Authorization: `Bearer ${token}`,
+			// Next.js propagates the browser's Accept-Language (e.g. "en-US,en;q=0.9") to outgoing
+			// fetch() calls; eBay rejects the multi-locale q-value format. Pin to a single locale.
+			"Accept-Language": "en-US",
+			// Required by the Sell Inventory API on write calls (createOffer/inventory_item), or
+			// eBay rejects the request with "Invalid value for header Content-Language" — confirmed
+			// via a live smoke test against production. This app is US-only (EBAY_US is hardcoded
+			// wherever a marketplaceId is sent), so a fixed en-US is correct, not a per-request value.
+			"Content-Language": "en-US",
+			...(options.body ? { "Content-Type": "application/json" } : {}),
+			...(options.headers as Record<string, string> | undefined),
+		};
 
-    const res = await fetch(url, { ...options, headers });
+		const res = await fetch(url, { ...options, headers });
 
-    if (res.status === 401) {
-      console.error('[ebay] API returned 401 for', url);
-      throw new AuthExpiredError(this.platform);
-    }
+		if (res.status === 401) {
+			console.error("[ebay] API returned 401 for", url);
+			throw new AuthExpiredError(this.platform);
+		}
 
-    if (!res.ok) {
-      let message = `HTTP ${res.status}`;
-      try {
-        const errBody = (await res.json()) as EbayError;
-        const firstErr = errBody.errors?.[0];
-        const params = firstErr?.parameters?.map(p => `${p.name}=${p.value}`).join(', ');
-        message = firstErr?.longMessage ?? firstErr?.message ?? errBody.message ?? message;
-        if (firstErr?.errorId) message = `[${firstErr.errorId}] ${message}`;
-        if (params) message += ` (${params})`;
-        console.error('[ebay] API error body:', JSON.stringify(errBody));
-      } catch {
-        // ignore parse errors
-      }
-      throw new PlatformError(this.platform, message);
-    }
+		if (!res.ok) {
+			let message = `HTTP ${res.status}`;
+			try {
+				const errBody = (await res.json()) as EbayError;
+				const firstErr = errBody.errors?.[0];
+				const params = firstErr?.parameters
+					?.map((p) => `${p.name}=${p.value}`)
+					.join(", ");
+				message =
+					firstErr?.longMessage ??
+					firstErr?.message ??
+					errBody.message ??
+					message;
+				if (firstErr?.errorId) message = `[${firstErr.errorId}] ${message}`;
+				if (params) message += ` (${params})`;
+				console.error("[ebay] API error body:", JSON.stringify(errBody));
+			} catch {
+				// ignore parse errors
+			}
+			throw new PlatformError(this.platform, message);
+		}
 
-    // 204 No Content — return empty object
-    if (res.status === 204) return {} as T;
+		// 204 No Content — return empty object
+		if (res.status === 204) return {} as T;
 
-    return res.json() as Promise<T>;
-  }
+		return res.json() as Promise<T>;
+	}
 
-  async searchSoldComps(query: string, options?: { limit?: number }): Promise<PlatformComp[]> {
-    const results = await searchEbaySoldComps(query, this.soldcompsApiKey);
-    const mapped = results.map((r) => ({
-      platform: 'ebay',
-      title: r.title,
-      soldPrice: r.priceCents,
-      condition: r.condition,
-      url: r.listingUrl,
-      soldAt: r.soldAt ? new Date(r.soldAt) : null,
-    }));
-    return options?.limit != null ? mapped.slice(0, options.limit) : mapped;
-  }
+	async searchSoldComps(
+		query: string,
+		options?: { limit?: number },
+	): Promise<PlatformComp[]> {
+		const results = await searchEbaySoldComps(query, this.soldcompsApiKey);
+		const mapped = results.map((r) => ({
+			platform: "ebay",
+			title: r.title,
+			soldPrice: r.priceCents,
+			condition: r.condition,
+			url: r.listingUrl,
+			soldAt: r.soldAt ? new Date(r.soldAt) : null,
+		}));
+		return options?.limit != null ? mapped.slice(0, options.limit) : mapped;
+	}
 
-  // ---- Listings -------------------------------------------------------------
+	// ---- Listings -------------------------------------------------------------
 
-  async createListing(
-    listing: UnifiedListing,
-    options?: { publish?: boolean },
-  ): Promise<{ platformId: string; offerId: string; url: string }> {
-    const publish = options?.publish ?? true;
-    const token = await this.getAccessToken();
-    const sku = listing.internalId;
-    const ebayFields = listing.platformFields as {
-      item_specifics?: Record<string, string>;
-      category_id?: string | number;
-      shipping_weight_oz?: number;
-      condition_description?: string;
-    };
+	async createListing(
+		listing: UnifiedListing,
+		options?: { publish?: boolean },
+	): Promise<{ platformId: string; offerId: string; url: string }> {
+		const publish = options?.publish ?? true;
+		const token = await this.getAccessToken();
+		const sku = listing.internalId;
+		const ebayFields = listing.platformFields as {
+			item_specifics?: Record<string, string>;
+			category_id?: string | number;
+			shipping_weight_oz?: number;
+			condition_description?: string;
+		};
 
-    // Shipping weight defaults by category broad group — eBay requires this to publish.
-    // Overridable via platform_fields.shipping_weight_oz on the listing.
-    const shippingWeightOz = ebayFields.shipping_weight_oz ?? defaultShippingWeightOz(listing.category);
+		// Shipping weight defaults by category broad group — eBay requires this to publish.
+		// Overridable via platform_fields.shipping_weight_oz on the listing.
+		const shippingWeightOz =
+			ebayFields.shipping_weight_oz ??
+			defaultShippingWeightOz(listing.category);
 
-    // Step 1: Create/update inventory item
-    const inventoryBody = {
-      product: {
-        title: listing.title,
-        description: plaintextToEbayHtml(listing.description),
-        imageUrls: listing.imageUrls,
-        aspects: mapItemSpecificsToAspects(ebayFields.item_specifics),
-      },
-      condition: mapConditionToEbay(listing.condition),
-      ...(ebayFields.condition_description ? { conditionDescription: ebayFields.condition_description } : {}),
-      availability: { shipToLocationAvailability: { quantity: 1 } },
-      packageWeightAndSize: {
-        weight: { unit: 'OUNCE', value: shippingWeightOz },
-      },
-    };
-    console.log('[ebay] PUT inventory_item body:', JSON.stringify(inventoryBody));
-    await this.ebayFetch(
-      `${this.baseUrl}/sell/inventory/v1/inventory_item/${sku}`,
-      { method: 'PUT', body: JSON.stringify(inventoryBody) },
-      token,
-    );
+		// Step 1: Create/update inventory item
+		const inventoryBody = {
+			product: {
+				title: listing.title,
+				description: plaintextToEbayHtml(listing.description),
+				imageUrls: listing.imageUrls,
+				aspects: mapItemSpecificsToAspects(ebayFields.item_specifics),
+			},
+			condition: mapConditionToEbay(listing.condition),
+			...(ebayFields.condition_description
+				? { conditionDescription: ebayFields.condition_description }
+				: {}),
+			availability: { shipToLocationAvailability: { quantity: 1 } },
+			packageWeightAndSize: {
+				weight: { unit: "OUNCE", value: shippingWeightOz },
+			},
+		};
+		console.log(
+			"[ebay] PUT inventory_item body:",
+			JSON.stringify(inventoryBody),
+		);
+		await this.ebayFetch(
+			`${this.baseUrl}/sell/inventory/v1/inventory_item/${sku}`,
+			{ method: "PUT", body: JSON.stringify(inventoryBody) },
+			token,
+		);
 
-    // Step 2: Create or update offer — POST fails if one already exists for this SKU+marketplace
-    // (e.g. from a previous draft attempt), so check first and PATCH instead.
-    const offerBody = {
-      sku,
-      marketplaceId: 'EBAY_US',
-      format: 'FIXED_PRICE',
-      listingDescription: plaintextToEbayHtml(listing.description),
-      pricingSummary: {
-        price: { value: (listing.price / 100).toFixed(2), currency: 'USD' },
-      },
-      categoryId: String(ebayFields.category_id ?? 9355),
-      merchantLocationKey: this.creds.merchantLocationKey,
-      listingPolicies: {
-        fulfillmentPolicyId: this.creds.fulfillmentPolicyId,
-        paymentPolicyId: this.creds.paymentPolicyId,
-        returnPolicyId: this.creds.returnPolicyId,
-      },
-      bestOfferTerms: { bestOfferEnabled: true },
-    };
+		// Step 2: Create or update offer — POST fails if one already exists for this SKU+marketplace
+		// (e.g. from a previous draft attempt), so check first and PATCH instead.
+		const offerBody = {
+			sku,
+			marketplaceId: "EBAY_US",
+			format: "FIXED_PRICE",
+			listingDescription: plaintextToEbayHtml(listing.description),
+			pricingSummary: {
+				price: { value: (listing.price / 100).toFixed(2), currency: "USD" },
+			},
+			categoryId: String(ebayFields.category_id ?? 9355),
+			merchantLocationKey: this.creds.merchantLocationKey,
+			listingPolicies: {
+				fulfillmentPolicyId: this.creds.fulfillmentPolicyId,
+				paymentPolicyId: this.creds.paymentPolicyId,
+				returnPolicyId: this.creds.returnPolicyId,
+			},
+			bestOfferTerms: { bestOfferEnabled: true },
+		};
 
-    // Error 25713 from GET /offer means eBay's offer service has no valid offer for this SKU
-    // (stale internal state after earlier failed attempts). Treat it as "no existing offers".
-    let existingOffers: { offers?: EbayOffer[] };
-    try {
-      existingOffers = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-        `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`,
-        { method: 'GET' },
-        token,
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('25713')) {
-        console.log('[ebay] GET offers returned 25713 for sku', sku, '— treating as no existing offers');
-        existingOffers = {};
-      } else {
-        throw err;
-      }
-    }
-    const existingOffer = existingOffers.offers?.[0];
+		// Error 25713 from GET /offer means eBay's offer service has no valid offer for this SKU
+		// (stale internal state after earlier failed attempts). Treat it as "no existing offers".
+		let existingOffers: { offers?: EbayOffer[] };
+		try {
+			existingOffers = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+				`${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`,
+				{ method: "GET" },
+				token,
+			);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.includes("25713")) {
+				console.log(
+					"[ebay] GET offers returned 25713 for sku",
+					sku,
+					"— treating as no existing offers",
+				);
+				existingOffers = {};
+			} else {
+				throw err;
+			}
+		}
+		const existingOffer = existingOffers.offers?.[0];
 
-    // If a published offer exists, update it in place. If it's an unpublished draft (no
-    // listingId), delete it — stale drafts can't be reliably updated and cause error 25713.
-    // Always POST fresh after deleting to guarantee a clean state.
-    let offer: { offerId: string };
-    if (existingOffer?.listingId) {
-      console.log('[ebay] offer step: PUT existing published offer', existingOffer.offerId);
-      await this.ebayFetch(
-        `${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
-        { method: 'PUT', body: JSON.stringify(offerBody) },
-        token,
-      );
-      offer = { offerId: existingOffer.offerId };
-    } else {
-      if (existingOffer) {
-        console.log('[ebay] offer step: DELETE stale draft offer', existingOffer.offerId);
-        await this.ebayFetch(
-          `${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
-          { method: 'DELETE' },
-          token,
-        );
-      }
-      console.log('[ebay] offer step: POST new offer for sku', sku);
-      offer = await this.ebayFetch<{ offerId: string }>(
-        `${this.baseUrl}/sell/inventory/v1/offer`,
-        { method: 'POST', body: JSON.stringify(offerBody) },
-        token,
-      );
-    }
-    console.log('[ebay] offer step: publish offerId', offer.offerId);
+		// If a published offer exists, update it in place. If it's an unpublished draft (no
+		// listingId), delete it — stale drafts can't be reliably updated and cause error 25713.
+		// Always POST fresh after deleting to guarantee a clean state.
+		let offer: { offerId: string };
+		if (existingOffer?.listingId) {
+			console.log(
+				"[ebay] offer step: PUT existing published offer",
+				existingOffer.offerId,
+			);
+			await this.ebayFetch(
+				`${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
+				{ method: "PUT", body: JSON.stringify(offerBody) },
+				token,
+			);
+			offer = { offerId: existingOffer.offerId };
+		} else {
+			if (existingOffer) {
+				console.log(
+					"[ebay] offer step: DELETE stale draft offer",
+					existingOffer.offerId,
+				);
+				await this.ebayFetch(
+					`${this.baseUrl}/sell/inventory/v1/offer/${existingOffer.offerId}`,
+					{ method: "DELETE" },
+					token,
+				);
+			}
+			console.log("[ebay] offer step: POST new offer for sku", sku);
+			offer = await this.ebayFetch<{ offerId: string }>(
+				`${this.baseUrl}/sell/inventory/v1/offer`,
+				{ method: "POST", body: JSON.stringify(offerBody) },
+				token,
+			);
+		}
+		console.log("[ebay] offer step: publish offerId", offer.offerId);
 
-    if (!publish) {
-      // Draft-only mode (options.publish === false): inventory item + offer are created but
-      // never published — the draft is visible in Seller Hub for manual inspection. There is
-      // no listingId yet, so platformId/url are empty-string sentinels rather than undefined
-      // to keep the return shape stable for callers.
-      return { platformId: '', offerId: offer.offerId, url: '' };
-    }
+		if (!publish) {
+			// Draft-only mode (options.publish === false): inventory item + offer are created but
+			// never published — the draft is visible in Seller Hub for manual inspection. There is
+			// no listingId yet, so platformId/url are empty-string sentinels rather than undefined
+			// to keep the return shape stable for callers.
+			return { platformId: "", offerId: offer.offerId, url: "" };
+		}
 
-    // Step 3: Publish offer
-    const published = await this.ebayFetch<{ listingId: string }>(
-      `${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}/publish`,
-      { method: 'POST' },
-      token,
-    );
+		// Step 3: Publish offer
+		const published = await this.ebayFetch<{ listingId: string }>(
+			`${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}/publish`,
+			{ method: "POST" },
+			token,
+		);
 
-    return {
-      platformId: published.listingId,
-      offerId: offer.offerId,
-      url: `https://www.ebay.com/itm/${published.listingId}`,
-    };
-  }
+		return {
+			platformId: published.listingId,
+			offerId: offer.offerId,
+			url: `https://www.ebay.com/itm/${published.listingId}`,
+		};
+	}
 
-  async updateListing(
-    platformId: string,
-    updates: Partial<UnifiedListing>,
-  ): Promise<void> {
-    const token = await this.getAccessToken();
+	async updateListing(
+		platformId: string,
+		updates: Partial<UnifiedListing>,
+	): Promise<void> {
+		const token = await this.getAccessToken();
 
-    // Retrieve current offers for this listing to find the offerId
-    const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      `${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
-      { method: 'GET' },
-      token,
-    );
-    const offer = offersRes.offers?.[0];
-    if (!offer) throw new PlatformError(this.platform, `No offer found for listing ${platformId}`);
+		// Retrieve current offers for this listing to find the offerId
+		const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+			`${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
+			{ method: "GET" },
+			token,
+		);
+		const offer = offersRes.offers?.[0];
+		if (!offer)
+			throw new PlatformError(
+				this.platform,
+				`No offer found for listing ${platformId}`,
+			);
 
-    const body: Record<string, unknown> = {};
-    if (updates.price !== undefined) {
-      body.pricingSummary = {
-        price: { value: (updates.price / 100).toFixed(2), currency: 'USD' },
-      };
-    }
-    if (updates.description !== undefined) {
-      body.listingDescription = plaintextToEbayHtml(updates.description);
-    }
+		const body: Record<string, unknown> = {};
+		if (updates.price !== undefined) {
+			body.pricingSummary = {
+				price: { value: (updates.price / 100).toFixed(2), currency: "USD" },
+			};
+		}
+		if (updates.description !== undefined) {
+			body.listingDescription = plaintextToEbayHtml(updates.description);
+		}
 
-    await this.ebayFetch(
-      `${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}`,
-      { method: 'PUT', body: JSON.stringify(body) },
-      token,
-    );
+		await this.ebayFetch(
+			`${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}`,
+			{ method: "PUT", body: JSON.stringify(body) },
+			token,
+		);
 
-    // If title/images/condition changed — update inventory item too.
-    // Description-only updates are handled via listingDescription on the offer above;
-    // the inventory item product.description endpoint rejects hyphenated SKUs (error 25707).
-    if (updates.title || updates.imageUrls || updates.condition) {
-      const itemBody: Record<string, unknown> = {};
-      if (updates.title || updates.imageUrls) {
-        itemBody.product = {
-          ...(updates.title ? { title: updates.title } : {}),
-          ...(updates.imageUrls ? { imageUrls: updates.imageUrls } : {}),
-        };
-      }
-      if (updates.condition) {
-        itemBody.condition = mapConditionToEbay(updates.condition);
-      }
-      // Use the SKU from the offer to update the inventory item
-      await this.ebayFetch(
-        `${this.baseUrl}/sell/inventory/v1/inventory_item/${offer.sku}`,
-        { method: 'PUT', body: JSON.stringify(itemBody) },
-        token,
-      );
-    }
-  }
+		// If title/images/condition changed — update inventory item too.
+		// Description-only updates are handled via listingDescription on the offer above;
+		// the inventory item product.description endpoint rejects hyphenated SKUs (error 25707).
+		if (updates.title || updates.imageUrls || updates.condition) {
+			const itemBody: Record<string, unknown> = {};
+			if (updates.title || updates.imageUrls) {
+				itemBody.product = {
+					...(updates.title ? { title: updates.title } : {}),
+					...(updates.imageUrls ? { imageUrls: updates.imageUrls } : {}),
+				};
+			}
+			if (updates.condition) {
+				itemBody.condition = mapConditionToEbay(updates.condition);
+			}
+			// Use the SKU from the offer to update the inventory item
+			await this.ebayFetch(
+				`${this.baseUrl}/sell/inventory/v1/inventory_item/${offer.sku}`,
+				{ method: "PUT", body: JSON.stringify(itemBody) },
+				token,
+			);
+		}
+	}
 
-  async updateOfferDescription(sku: string, description: string): Promise<void> {
-    const token = await this.getAccessToken()
-    const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`,
-      { method: 'GET' },
-      token,
-    )
-    const offer = offersRes.offers?.[0]
-    if (!offer) throw new PlatformError(this.platform, `No offer found for SKU ${sku}`)
-    await this.ebayFetch(
-      `${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}`,
-      { method: 'PUT', body: JSON.stringify({ listingDescription: plaintextToEbayHtml(description) }) },
-      token,
-    )
-  }
+	async updateOfferDescription(
+		sku: string,
+		description: string,
+	): Promise<void> {
+		const token = await this.getAccessToken();
+		const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+			`${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`,
+			{ method: "GET" },
+			token,
+		);
+		const offer = offersRes.offers?.[0];
+		if (!offer)
+			throw new PlatformError(this.platform, `No offer found for SKU ${sku}`);
+		await this.ebayFetch(
+			`${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}`,
+			{
+				method: "PUT",
+				body: JSON.stringify({
+					listingDescription: plaintextToEbayHtml(description),
+				}),
+			},
+			token,
+		);
+	}
 
-  async deleteListing(platformId: string): Promise<void> {
-    const token = await this.getAccessToken();
+	async deleteListing(platformId: string): Promise<void> {
+		const token = await this.getAccessToken();
 
-    // Find offer by listing id, then withdraw it
-    const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      `${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
-      { method: 'GET' },
-      token,
-    );
-    const offer = offersRes.offers?.[0];
-    if (!offer) throw new PlatformError(this.platform, `No offer found for listing ${platformId}`);
+		// Find offer by listing id, then withdraw it
+		const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+			`${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
+			{ method: "GET" },
+			token,
+		);
+		const offer = offersRes.offers?.[0];
+		if (!offer)
+			throw new PlatformError(
+				this.platform,
+				`No offer found for listing ${platformId}`,
+			);
 
-    await this.ebayFetch(
-      `${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}/withdraw`,
-      { method: 'POST' },
-      token,
-    );
-  }
+		await this.ebayFetch(
+			`${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}/withdraw`,
+			{ method: "POST" },
+			token,
+		);
+	}
 
-  async getListing(platformId: string): Promise<PlatformListing> {
-    const token = await this.getAccessToken();
+	async getListing(platformId: string): Promise<PlatformListing> {
+		const token = await this.getAccessToken();
 
-    const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      `${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
-      { method: 'GET' },
-      token,
-    );
-    const offer = offersRes.offers?.[0];
-    if (!offer) throw new PlatformError(this.platform, `Listing ${platformId} not found`);
+		const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+			`${this.baseUrl}/sell/inventory/v1/offer?listing_id=${platformId}`,
+			{ method: "GET" },
+			token,
+		);
+		const offer = offersRes.offers?.[0];
+		if (!offer)
+			throw new PlatformError(this.platform, `Listing ${platformId} not found`);
 
-    // Fetch inventory item for title/images
-    const item = await this.ebayFetch<EbayInventoryItem>(
-      `${this.baseUrl}/sell/inventory/v1/inventory_item/${offer.sku}`,
-      { method: 'GET' },
-      token,
-    );
+		// Fetch inventory item for title/images
+		const item = await this.ebayFetch<EbayInventoryItem>(
+			`${this.baseUrl}/sell/inventory/v1/inventory_item/${offer.sku}`,
+			{ method: "GET" },
+			token,
+		);
 
-    const priceStr = offer.pricingSummary?.price?.value ?? '0';
-    const statusMap: Record<string, PlatformListing['status']> = {
-      PUBLISHED: 'active',
-      ENDED: 'sold',
-      UNPUBLISHED: 'draft',
-    };
+		const priceStr = offer.pricingSummary?.price?.value ?? "0";
+		const statusMap: Record<string, PlatformListing["status"]> = {
+			PUBLISHED: "active",
+			ENDED: "sold",
+			UNPUBLISHED: "draft",
+		};
 
-    return {
-      platform: 'ebay',
-      platformId,
-      url: `https://www.ebay.com/itm/${platformId}`,
-      title: item.product?.title ?? '',
-      price: Math.round(parseFloat(priceStr) * 100),
-      status: statusMap[offer.status ?? ''] ?? 'active',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      raw: { offer, item } as Record<string, unknown>,
-    };
-  }
+		return {
+			platform: "ebay",
+			platformId,
+			url: `https://www.ebay.com/itm/${platformId}`,
+			title: item.product?.title ?? "",
+			price: Math.round(parseFloat(priceStr) * 100),
+			status: statusMap[offer.status ?? ""] ?? "active",
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			raw: { offer, item } as Record<string, unknown>,
+		};
+	}
 
-  async getMyListings(filters?: { status?: string }): Promise<PlatformListing[]> {
-    const token = await this.getAccessToken();
-    const internalToEbay: Record<string, string> = { active: 'PUBLISHED', draft: 'UNPUBLISHED', sold: 'ENDED' };
-    const wantStatus = filters?.status ? (internalToEbay[filters.status] ?? filters.status.toUpperCase()) : null;
-    const statusMap: Record<string, PlatformListing['status']> = {
-      PUBLISHED: 'active',
-      ENDED: 'sold',
-      UNPUBLISHED: 'draft',
-    };
+	async getMyListings(filters?: {
+		status?: string;
+	}): Promise<PlatformListing[]> {
+		const token = await this.getAccessToken();
+		const internalToEbay: Record<string, string> = {
+			active: "PUBLISHED",
+			draft: "UNPUBLISHED",
+			sold: "ENDED",
+		};
+		const wantStatus = filters?.status
+			? (internalToEbay[filters.status] ?? filters.status.toUpperCase())
+			: null;
+		const statusMap: Record<string, PlatformListing["status"]> = {
+			PUBLISHED: "active",
+			ENDED: "sold",
+			UNPUBLISHED: "draft",
+		};
 
-    // GET /sell/inventory/v1/offer requires sku — list all SKUs via inventory_item first
-    const allSkus: string[] = [];
-    let itemsUrl: string | null = `${this.baseUrl}/sell/inventory/v1/inventory_item?limit=200`;
-    while (itemsUrl) {
-      const page: { inventoryItems?: { sku: string }[]; next?: string } = await this.ebayFetch<{ inventoryItems?: { sku: string }[]; next?: string }>(itemsUrl, { method: 'GET' }, token);
-      allSkus.push(...(page.inventoryItems ?? []).map((i) => i.sku));
-      itemsUrl = page.next ?? null;
-    }
+		// GET /sell/inventory/v1/offer requires sku — list all SKUs via inventory_item first
+		const allSkus: string[] = [];
+		let itemsUrl: string | null =
+			`${this.baseUrl}/sell/inventory/v1/inventory_item?limit=200`;
+		while (itemsUrl) {
+			const page: { inventoryItems?: { sku: string }[]; next?: string } =
+				await this.ebayFetch<{
+					inventoryItems?: { sku: string }[];
+					next?: string;
+				}>(itemsUrl, { method: "GET" }, token);
+			allSkus.push(...(page.inventoryItems ?? []).map((i) => i.sku));
+			itemsUrl = page.next ?? null;
+		}
 
-    const allOffers: EbayOffer[] = [];
-    for (const sku of allSkus) {
-      const res: { offers?: EbayOffer[] } = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-        `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=EBAY_US`,
-        { method: 'GET' },
-        token,
-      );
-      allOffers.push(...(res.offers ?? []).filter((o) => !wantStatus || o.status === wantStatus));
-    }
+		const allOffers: EbayOffer[] = [];
+		for (const sku of allSkus) {
+			const res: { offers?: EbayOffer[] } = await this.ebayFetch<{
+				offers?: EbayOffer[];
+			}>(
+				`${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=EBAY_US`,
+				{ method: "GET" },
+				token,
+			);
+			allOffers.push(
+				...(res.offers ?? []).filter(
+					(o) => !wantStatus || o.status === wantStatus,
+				),
+			);
+		}
 
-    return allOffers.map((offer) => {
-      const priceStr = offer.pricingSummary?.price?.value ?? '0';
-      return {
-        platform: 'ebay',
-        platformId: offer.listingId ?? offer.offerId,
-        url: offer.listingId ? `https://www.ebay.com/itm/${offer.listingId}` : '',
-        title: offer.sku,
-        price: Math.round(parseFloat(priceStr) * 100),
-        status: statusMap[offer.status ?? ''] ?? 'active',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        raw: offer as unknown as Record<string, unknown>,
-      };
-    });
-  }
+		return allOffers.map((offer) => {
+			const priceStr = offer.pricingSummary?.price?.value ?? "0";
+			return {
+				platform: "ebay",
+				platformId: offer.listingId ?? offer.offerId,
+				url: offer.listingId
+					? `https://www.ebay.com/itm/${offer.listingId}`
+					: "",
+				title: offer.sku,
+				price: Math.round(parseFloat(priceStr) * 100),
+				status: statusMap[offer.status ?? ""] ?? "active",
+				createdAt: new Date(),
+				updatedAt: new Date(),
+				raw: offer as unknown as Record<string, unknown>,
+			};
+		});
+	}
 
-  async getOffersBySku(skus: string[]): Promise<PlatformListing[]> {
-    const token = await this.getAccessToken();
-    const statusMap: Record<string, PlatformListing['status']> = {
-      PUBLISHED: 'active', ENDED: 'sold', UNPUBLISHED: 'draft',
-    };
-    const results: PlatformListing[] = [];
-    for (const sku of skus) {
-      try {
-        const res = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-          `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=EBAY_US`,
-          { method: 'GET' },
-          token,
-        );
-        for (const offer of res.offers ?? []) {
-          const priceStr = offer.pricingSummary?.price?.value ?? '0';
-          results.push({
-            platform: 'ebay',
-            platformId: offer.listingId ?? offer.offerId,
-            url: offer.listingId ? `https://www.ebay.com/itm/${offer.listingId}` : '',
-            title: offer.sku,
-            price: Math.round(parseFloat(priceStr) * 100),
-            status: statusMap[offer.status ?? ''] ?? 'active',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            raw: offer as unknown as Record<string, unknown>,
-          });
-        }
-      } catch (err) {
-        console.warn(`[ebay] getOffersBySku: failed for sku=${sku}:`, err);
-      }
-    }
-    return results;
-  }
+	async getOffersBySku(skus: string[]): Promise<PlatformListing[]> {
+		const token = await this.getAccessToken();
+		const statusMap: Record<string, PlatformListing["status"]> = {
+			PUBLISHED: "active",
+			ENDED: "sold",
+			UNPUBLISHED: "draft",
+		};
+		const results: PlatformListing[] = [];
+		for (const sku of skus) {
+			try {
+				const res = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+					`${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=EBAY_US`,
+					{ method: "GET" },
+					token,
+				);
+				for (const offer of res.offers ?? []) {
+					const priceStr = offer.pricingSummary?.price?.value ?? "0";
+					results.push({
+						platform: "ebay",
+						platformId: offer.listingId ?? offer.offerId,
+						url: offer.listingId
+							? `https://www.ebay.com/itm/${offer.listingId}`
+							: "",
+						title: offer.sku,
+						price: Math.round(parseFloat(priceStr) * 100),
+						status: statusMap[offer.status ?? ""] ?? "active",
+						createdAt: new Date(),
+						updatedAt: new Date(),
+						raw: offer as unknown as Record<string, unknown>,
+					});
+				}
+			} catch (err) {
+				console.warn(`[ebay] getOffersBySku: failed for sku=${sku}:`, err);
+			}
+		}
+		return results;
+	}
 
-  // ---- Orders ---------------------------------------------------------------
+	// ---- Orders ---------------------------------------------------------------
 
-  async getOrders(since?: Date): Promise<PlatformOrder[]> {
-    const token = await this.getAccessToken();
-    const filter = since ? `creationdate:[${since.toISOString()}..]` : '';
-    const baseParams = new URLSearchParams({ limit: '50' });
-    if (filter) baseParams.set('filter', filter);
+	async getOrders(since?: Date): Promise<PlatformOrder[]> {
+		const token = await this.getAccessToken();
+		const filter = since ? `creationdate:[${since.toISOString()}..]` : "";
+		const baseParams = new URLSearchParams({ limit: "50" });
+		if (filter) baseParams.set("filter", filter);
 
-    const allOrders: EbayOrder[] = [];
-    let nextUrl: string | null = `${this.baseUrl}/sell/fulfillment/v1/order?${baseParams.toString()}`;
+		const allOrders: EbayOrder[] = [];
+		let nextUrl: string | null =
+			`${this.baseUrl}/sell/fulfillment/v1/order?${baseParams.toString()}`;
 
-    while (nextUrl) {
-      const page: { orders?: EbayOrder[]; next?: string } = await this.ebayFetch<{ orders?: EbayOrder[]; next?: string }>(nextUrl, { method: 'GET' }, token);
-      allOrders.push(...(page.orders ?? []));
-      nextUrl = page.next ?? null;
-    }
+		while (nextUrl) {
+			const page: { orders?: EbayOrder[]; next?: string } =
+				await this.ebayFetch<{ orders?: EbayOrder[]; next?: string }>(
+					nextUrl,
+					{ method: "GET" },
+					token,
+				);
+			allOrders.push(...(page.orders ?? []));
+			nextUrl = page.next ?? null;
+		}
 
-    return allOrders.map(mapEbayOrder);
-  }
+		return allOrders.map(mapEbayOrder);
+	}
 
-  async getOrder(orderId: string): Promise<PlatformOrder> {
-    const token = await this.getAccessToken();
-    const order = await this.ebayFetch<EbayOrder>(
-      `${this.baseUrl}/sell/fulfillment/v1/order/${orderId}`,
-      { method: 'GET' },
-      token,
-    );
-    return mapEbayOrder(order);
-  }
+	async getOrder(orderId: string): Promise<PlatformOrder> {
+		const token = await this.getAccessToken();
+		const order = await this.ebayFetch<EbayOrder>(
+			`${this.baseUrl}/sell/fulfillment/v1/order/${orderId}`,
+			{ method: "GET" },
+			token,
+		);
+		return mapEbayOrder(order);
+	}
 
-  async markShipped(orderId: string, tracking: TrackingInfo): Promise<void> {
-    const token = await this.getAccessToken();
+	async markShipped(orderId: string, tracking: TrackingInfo): Promise<void> {
+		const token = await this.getAccessToken();
 
-    // Fetch order to get lineItemIds
-    const order = await this.ebayFetch<EbayOrder>(
-      `${this.baseUrl}/sell/fulfillment/v1/order/${orderId}`,
-      { method: 'GET' },
-      token,
-    );
+		// Fetch order to get lineItemIds
+		const order = await this.ebayFetch<EbayOrder>(
+			`${this.baseUrl}/sell/fulfillment/v1/order/${orderId}`,
+			{ method: "GET" },
+			token,
+		);
 
-    await this.ebayFetch(
-      `${this.baseUrl}/sell/fulfillment/v1/order/${orderId}/shipping_fulfillment`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          // lineItemId is the Sell Fulfillment v1 identifier — NOT legacyItemId
-          lineItems: (order.lineItems ?? []).map((li) => ({
-            lineItemId: li.lineItemId ?? li.legacyItemId,
-          })),
-          shippedDate: new Date().toISOString(),
-          shippingCarrierCode: tracking.carrier,
-          trackingNumber: tracking.trackingNumber,
-        }),
-      },
-      token,
-    );
-  }
+		await this.ebayFetch(
+			`${this.baseUrl}/sell/fulfillment/v1/order/${orderId}/shipping_fulfillment`,
+			{
+				method: "POST",
+				body: JSON.stringify({
+					// lineItemId is the Sell Fulfillment v1 identifier — NOT legacyItemId
+					lineItems: (order.lineItems ?? []).map((li) => ({
+						lineItemId: li.lineItemId ?? li.legacyItemId,
+					})),
+					shippedDate: new Date().toISOString(),
+					shippingCarrierCode: tracking.carrier,
+					trackingNumber: tracking.trackingNumber,
+				}),
+			},
+			token,
+		);
+	}
 
-  // ---- Notifications --------------------------------------------------------
+	// ---- Notifications --------------------------------------------------------
 
-  // eBay uses webhooks (not polling) for real-time notifications.
-  // The webhook route at /api/webhooks/ebay handles incoming events.
-  async getNotifications(_since?: Date): Promise<PlatformNotification[]> {
-    return [];
-  }
+	// eBay uses webhooks (not polling) for real-time notifications.
+	// The webhook route at /api/webhooks/ebay handles incoming events.
+	async getNotifications(_since?: Date): Promise<PlatformNotification[]> {
+		return [];
+	}
 
-  async markNotificationRead(_notificationId: string): Promise<void> {
-    // Notification state is managed in our own notifications table.
-  }
+	async markNotificationRead(_notificationId: string): Promise<void> {
+		// Notification state is managed in our own notifications table.
+	}
 
-  // ---- Messaging (Trading API — not yet implemented) -------------------------
+	// ---- Messaging (Trading API — not yet implemented) -------------------------
 
-  async getThreads(): Promise<PlatformThread[]> {
-    throw new UnsupportedOperationError(
-      this.platform,
-      'getThreads — eBay Trading API messaging not yet implemented',
-    );
-  }
+	async getThreads(): Promise<PlatformThread[]> {
+		throw new UnsupportedOperationError(
+			this.platform,
+			"getThreads — eBay Trading API messaging not yet implemented",
+		);
+	}
 
-  async getThread(_threadId: string): Promise<PlatformMessage[]> {
-    throw new UnsupportedOperationError(
-      this.platform,
-      'getThread — eBay Trading API messaging not yet implemented',
-    );
-  }
+	async getThread(_threadId: string): Promise<PlatformMessage[]> {
+		throw new UnsupportedOperationError(
+			this.platform,
+			"getThread — eBay Trading API messaging not yet implemented",
+		);
+	}
 
-  async sendMessage(_threadId: string, _body: string): Promise<void> {
-    throw new UnsupportedOperationError(
-      this.platform,
-      'sendMessage — eBay Trading API messaging not yet implemented',
-    );
-  }
+	async sendMessage(_threadId: string, _body: string): Promise<void> {
+		throw new UnsupportedOperationError(
+			this.platform,
+			"sendMessage — eBay Trading API messaging not yet implemented",
+		);
+	}
 }
