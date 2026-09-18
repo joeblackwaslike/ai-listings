@@ -537,22 +537,27 @@ export class EbayAdapter implements PlatformSDK {
 
   async getMyListings(filters?: { status?: string }): Promise<PlatformListing[]> {
     const token = await this.getAccessToken();
-    const statusParam = filters?.status ? `&status=${filters.status.toUpperCase()}` : '';
-    const res = await this.ebayFetch<{ offers?: EbayOffer[] }>(
-      // TODO: implement cursor pagination for more than 200 results (use `next` href from response)
-      `${this.baseUrl}/sell/inventory/v1/offer?marketplace_id=EBAY_US&limit=100${statusParam}`,
-      { method: 'GET' },
-      token,
-    );
+    const internalToEbay: Record<string, string> = { active: 'PUBLISHED', draft: 'UNPUBLISHED', sold: 'ENDED' };
+    const statusParam = filters?.status
+      ? `&status=${internalToEbay[filters.status] ?? filters.status.toUpperCase()}`
+      : '';
+    const statusMap: Record<string, PlatformListing['status']> = {
+      PUBLISHED: 'active',
+      ENDED: 'sold',
+      UNPUBLISHED: 'draft',
+    };
 
-    const offers = res.offers ?? [];
-    return offers.map((offer) => {
+    const allOffers: EbayOffer[] = [];
+    let nextUrl: string | null = `${this.baseUrl}/sell/inventory/v1/offer?marketplace_id=EBAY_US&limit=100${statusParam}`;
+
+    while (nextUrl) {
+      const page: { offers?: EbayOffer[]; next?: string } = await this.ebayFetch<{ offers?: EbayOffer[]; next?: string }>(nextUrl, { method: 'GET' }, token);
+      allOffers.push(...(page.offers ?? []));
+      nextUrl = page.next ?? null;
+    }
+
+    return allOffers.map((offer) => {
       const priceStr = offer.pricingSummary?.price?.value ?? '0';
-      const statusMap: Record<string, PlatformListing['status']> = {
-        PUBLISHED: 'active',
-        ENDED: 'sold',
-        UNPUBLISHED: 'draft',
-      };
       return {
         platform: 'ebay',
         platformId: offer.listingId ?? offer.offerId,
@@ -571,19 +576,20 @@ export class EbayAdapter implements PlatformSDK {
 
   async getOrders(since?: Date): Promise<PlatformOrder[]> {
     const token = await this.getAccessToken();
-    const filter = since
-      ? `creationdate:[${since.toISOString()}...]`
-      : '';
-    // TODO: implement cursor pagination for more than 50 results (use `next` href from response)
-    const params = new URLSearchParams({ limit: '50' });
-    if (filter) params.set('filter', filter);
+    const filter = since ? `creationdate:[${since.toISOString()}...]` : '';
+    const baseParams = new URLSearchParams({ limit: '50' });
+    if (filter) baseParams.set('filter', filter);
 
-    const res = await this.ebayFetch<{ orders?: EbayOrder[] }>(
-      `${this.baseUrl}/sell/fulfillment/v1/order?${params.toString()}`,
-      { method: 'GET' },
-      token,
-    );
-    return (res.orders ?? []).map(mapEbayOrder);
+    const allOrders: EbayOrder[] = [];
+    let nextUrl: string | null = `${this.baseUrl}/sell/fulfillment/v1/order?${baseParams.toString()}`;
+
+    while (nextUrl) {
+      const page: { orders?: EbayOrder[]; next?: string } = await this.ebayFetch<{ orders?: EbayOrder[]; next?: string }>(nextUrl, { method: 'GET' }, token);
+      allOrders.push(...(page.orders ?? []));
+      nextUrl = page.next ?? null;
+    }
+
+    return allOrders.map(mapEbayOrder);
   }
 
   async getOrder(orderId: string): Promise<PlatformOrder> {

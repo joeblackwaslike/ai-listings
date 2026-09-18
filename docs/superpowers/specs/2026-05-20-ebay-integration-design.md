@@ -74,8 +74,10 @@ Flow:
 // getListing(platformId)
 //   - GET /sell/inventory/v1/offer/{offerId}
 
-// getMyListings()
-//   - GET /sell/inventory/v1/offer?marketplace_id=EBAY_US
+// getMyListings(filters?: { status?: string })
+//   - Internal status values: 'active' → PUBLISHED, 'draft' → UNPUBLISHED, 'sold' → ENDED
+//   - GET /sell/inventory/v1/offer?marketplace_id=EBAY_US&status={PUBLISHED|UNPUBLISHED|ENDED}
+//   - Implements cursor pagination for results > 100
 ```
 
 ### Orders
@@ -84,6 +86,7 @@ Flow:
 
 ```typescript
 // getOrders(since?) → GET /sell/fulfillment/v1/order?filter=creationdate:[{since}...]
+//   - Implements cursor pagination for results > 50
 // getOrder(orderId) → GET /sell/fulfillment/v1/order/{orderId}
 // markShipped(orderId, tracking)
 //   → POST /sell/fulfillment/v1/order/{orderId}/shipping_fulfillment

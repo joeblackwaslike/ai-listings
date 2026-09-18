@@ -22,6 +22,7 @@ interface CardListing {
   intake_meta: Record<string, unknown> | null
   suggested_price_cents: number | null
   final_price_cents: number | null
+  sold_price_cents: number | null
   agent_blocked: boolean
   agent_blocked_reason: string | null
   pipeline_step: number
@@ -488,7 +489,11 @@ export function ListingCard({
         <p className="text-xs font-medium text-gray-200 line-clamp-2 leading-snug">
           {listing.title ?? listing.brand ?? 'Untitled'}
         </p>
-        {resolveDisplayPriceCents(listing) != null && (
+        {listing.status === 'sold' && listing.sold_price_cents != null ? (
+          <p className="text-xs text-green-600 font-semibold">
+            Sold {formatPrice(listing.sold_price_cents)}
+          </p>
+        ) : resolveDisplayPriceCents(listing) != null && (
           <p className="text-xs text-emerald-400 font-semibold">
             {formatPrice(resolveDisplayPriceCents(listing) as number)}
           </p>
