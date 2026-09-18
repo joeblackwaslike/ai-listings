@@ -455,7 +455,7 @@ create table listings (
 
   -- Status
   status                text not null default 'intake'
-                          check (status in ('intake','id_gate','in_loop','finalizing','published','archived')),
+                          check (status in ('intake','id_gate','in_loop','finalizing','published','sold','archived')),
   pipeline_step         integer not null default 0,
   pipeline_total        integer not null default 5,        -- 5 for luxury, 4 for non-luxury; updated by pipeline
 
