@@ -28,7 +28,7 @@ export const backfillEbayDescriptions = inngest.createFunction(
 
           const { data: listings, error } = await supabase
             .from('listings')
-            .select('id, sku, platform_fields, listing_urls')
+            .select('id, sku, platform_fields')
             .eq('user_id', userId)
             .neq('status', 'archived')
             .not('listing_urls->>ebay', 'is', null)
@@ -46,24 +46,16 @@ export const backfillEbayDescriptions = inngest.createFunction(
           for (const listing of listings) {
             const ebayFields = (listing.platform_fields as Record<string, Record<string, string>> | null)?.ebay
             const description = ebayFields?.description
-            const listingUrl = (listing.listing_urls as Record<string, string> | null)?.ebay
+            const sku = listing.sku as string
 
-            if (!description || !listingUrl) continue
-
-            // Extract the eBay listing ID from the URL
-            const listingId = listingUrl.split('/itm/')[1]?.split('?')[0]
-            if (!listingId) {
-              console.log(`[backfill-ebay-descriptions] sku=${listing.sku}: could not parse listing ID from URL`)
-              failed++
-              continue
-            }
+            if (!description || !sku) continue
 
             try {
-              await adapter.updateListing(listingId, { description })
-              console.log(`[backfill-ebay-descriptions] sku=${listing.sku}: updated`)
+              await adapter.updateOfferDescription(sku, description)
+              console.log(`[backfill-ebay-descriptions] sku=${sku}: updated`)
               updated++
             } catch (err) {
-              console.error(`[backfill-ebay-descriptions] sku=${listing.sku}: failed`, err)
+              console.error(`[backfill-ebay-descriptions] sku=${sku}: failed`, err)
               failed++
             }
           }

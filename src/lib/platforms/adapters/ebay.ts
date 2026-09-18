@@ -480,6 +480,22 @@ export class EbayAdapter implements PlatformSDK {
     }
   }
 
+  async updateOfferDescription(sku: string, description: string): Promise<void> {
+    const token = await this.getAccessToken()
+    const offersRes = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+      `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`,
+      { method: 'GET' },
+      token,
+    )
+    const offer = offersRes.offers?.[0]
+    if (!offer) throw new PlatformError(this.platform, `No offer found for SKU ${sku}`)
+    await this.ebayFetch(
+      `${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}`,
+      { method: 'PUT', body: JSON.stringify({ listingDescription: plaintextToEbayHtml(description) }) },
+      token,
+    )
+  }
+
   async deleteListing(platformId: string): Promise<void> {
     const token = await this.getAccessToken();
 
