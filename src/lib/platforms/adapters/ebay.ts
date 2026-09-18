@@ -538,22 +538,30 @@ export class EbayAdapter implements PlatformSDK {
   async getMyListings(filters?: { status?: string }): Promise<PlatformListing[]> {
     const token = await this.getAccessToken();
     const internalToEbay: Record<string, string> = { active: 'PUBLISHED', draft: 'UNPUBLISHED', sold: 'ENDED' };
-    const statusParam = filters?.status
-      ? `&status=${internalToEbay[filters.status] ?? filters.status.toUpperCase()}`
-      : '';
+    const wantStatus = filters?.status ? (internalToEbay[filters.status] ?? filters.status.toUpperCase()) : null;
     const statusMap: Record<string, PlatformListing['status']> = {
       PUBLISHED: 'active',
       ENDED: 'sold',
       UNPUBLISHED: 'draft',
     };
 
-    const allOffers: EbayOffer[] = [];
-    let nextUrl: string | null = `${this.baseUrl}/sell/inventory/v1/offer?marketplace_id=EBAY_US&limit=100${statusParam}`;
+    // GET /sell/inventory/v1/offer requires sku — list all SKUs via inventory_item first
+    const allSkus: string[] = [];
+    let itemsUrl: string | null = `${this.baseUrl}/sell/inventory/v1/inventory_item?limit=200`;
+    while (itemsUrl) {
+      const page: { inventoryItems?: { sku: string }[]; next?: string } = await this.ebayFetch<{ inventoryItems?: { sku: string }[]; next?: string }>(itemsUrl, { method: 'GET' }, token);
+      allSkus.push(...(page.inventoryItems ?? []).map((i) => i.sku));
+      itemsUrl = page.next ?? null;
+    }
 
-    while (nextUrl) {
-      const page: { offers?: EbayOffer[]; next?: string } = await this.ebayFetch<{ offers?: EbayOffer[]; next?: string }>(nextUrl, { method: 'GET' }, token);
-      allOffers.push(...(page.offers ?? []));
-      nextUrl = page.next ?? null;
+    const allOffers: EbayOffer[] = [];
+    for (const sku of allSkus) {
+      const res: { offers?: EbayOffer[] } = await this.ebayFetch<{ offers?: EbayOffer[] }>(
+        `${this.baseUrl}/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=EBAY_US`,
+        { method: 'GET' },
+        token,
+      );
+      allOffers.push(...(res.offers ?? []).filter((o) => !wantStatus || o.status === wantStatus));
     }
 
     return allOffers.map((offer) => {
