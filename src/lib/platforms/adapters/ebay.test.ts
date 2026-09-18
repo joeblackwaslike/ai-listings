@@ -541,3 +541,174 @@ test("updateOfferDescription throws error when no offer is found for SKU", async
 		);
 	}
 });
+
+test("getApplicationToken uses client_credentials grant and caches the token", async () => {
+	const adapter = new EbayAdapter({
+		clientId: "test-client-id",
+		clientSecret: "test-client-secret",
+		redirectUri: "http://localhost",
+		sandbox: false,
+	});
+
+	let tokenRequestCount = 0;
+	let capturedRequest: {
+		url: string;
+		method?: string;
+		headers?: Record<string, string>;
+		body?: string;
+	} | null = null;
+
+	// Mock the global fetch to intercept token requests
+	const originalFetch = global.fetch;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	(global as any).fetch = async (url: string, options?: RequestInit) => {
+		if (url.includes("/identity/v1/oauth2/token")) {
+			tokenRequestCount++;
+			capturedRequest = {
+				url,
+				method: options?.method,
+				headers: options?.headers as Record<string, string>,
+				body: options?.body as string,
+			};
+			return {
+				ok: true,
+				json: async () => ({
+					access_token: "app-token-12345",
+					expires_in: 3600,
+				}),
+			} as Response;
+		}
+		return originalFetch(url, options);
+	};
+
+	try {
+		// First call should fetch a new token
+		const token1 = await (adapter as any).getApplicationToken();
+		assert.equal(token1, "app-token-12345", "should return the token");
+		assert.equal(tokenRequestCount, 1, "should make one token request");
+
+		// Verify the request used client_credentials grant
+		assert.ok(capturedRequest?.url.includes("api.ebay.com"), "should use production domain");
+		assert.equal(capturedRequest?.method, "POST", "should use POST method");
+		assert.ok(
+			capturedRequest?.headers?.Authorization?.includes("Basic "),
+			"should use Basic auth",
+		);
+		assert.ok(
+			capturedRequest?.body?.includes("grant_type=client_credentials"),
+			"should use client_credentials grant type",
+		);
+
+		// Second call should return cached token without making another request
+		const token2 = await (adapter as any).getApplicationToken();
+		assert.equal(token2, "app-token-12345", "should return the same cached token");
+		assert.equal(tokenRequestCount, 1, "should not make another token request (cached)");
+	} finally {
+		// Restore original fetch
+		global.fetch = originalFetch;
+	}
+});
+
+test("getPricesByListingId uses getApplicationToken instead of getAccessToken", async () => {
+	const adapter = new EbayAdapter({
+		clientId: "test",
+		clientSecret: "test",
+		redirectUri: "http://localhost",
+	});
+
+	let usedAppToken = false;
+	let usedAccessToken = false;
+
+	// Override getApplicationToken to track usage
+	adapter.getApplicationToken = async () => {
+		usedAppToken = true;
+		return "app-token";
+	};
+
+	// Override getAccessToken to track if it's called
+	adapter.getAccessToken = async () => {
+		usedAccessToken = true;
+		return "user-token";
+	};
+
+	// Mock ebayFetch to return price data
+	adapter.ebayFetch = async () => ({
+		price: { value: "99.99" },
+	});
+
+	await adapter.getPricesByListingId(["item-123"]);
+
+	assert.ok(usedAppToken, "should use getApplicationToken");
+	assert.ok(!usedAccessToken, "should not use getAccessToken");
+});
+
+test("getApplicationToken sends correct client_credentials request with api_scope", async () => {
+	const adapter = new EbayAdapter({
+		clientId: "my-client-id",
+		clientSecret: "my-client-secret",
+		redirectUri: "http://localhost",
+		sandbox: true,
+	});
+
+	const capturedRequests: Array<{
+		url: string;
+		body: string;
+		authHeader: string;
+	}> = [];
+
+	const originalFetch = global.fetch;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	(global as any).fetch = async (url: string, options?: RequestInit) => {
+		if (url.includes("/identity/v1/oauth2/token")) {
+			capturedRequests.push({
+				url,
+				body: options?.body as string,
+				authHeader: (options?.headers as Record<string, string>)
+					?.Authorization,
+			});
+			return {
+				ok: true,
+				json: async () => ({
+					access_token: "test-app-token",
+					expires_in: 3600,
+				}),
+			} as Response;
+		}
+		return originalFetch(url, options);
+	};
+
+	try {
+		await (adapter as any).getApplicationToken();
+
+		assert.equal(capturedRequests.length, 1, "should make one token request");
+		const req = capturedRequests[0];
+
+		// Verify sandbox domain
+		assert.ok(
+			req.url.includes("api.sandbox.ebay.com"),
+			"should use sandbox domain",
+		);
+
+		// Verify grant_type=client_credentials
+		assert.ok(
+			req.body.includes("grant_type=client_credentials"),
+			"should use client_credentials grant type",
+		);
+
+		// Verify api_scope is requested
+		assert.ok(
+			req.body.includes("scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope"),
+			"should request api_scope for Browse API access",
+		);
+
+		// Verify Basic auth with correct credentials
+		const expectedAuth = `Basic ${Buffer.from("my-client-id:my-client-secret").toString("base64")}`;
+		assert.equal(
+			req.authHeader,
+			expectedAuth,
+			"should use correct Basic auth credentials",
+		);
+	} finally {
+		global.fetch = originalFetch;
+	}
+});

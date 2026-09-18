@@ -270,7 +270,6 @@ export class EbayAdapter implements PlatformSDK {
 		}
 	}
 
-	// Shared fetch helper — throws typed errors on non-2xx responses.
 	/** Application-level token for public Browse API calls (no user scope needed). */
 	private async getApplicationToken(): Promise<string> {
 		if (this._appToken && Date.now() < this._appTokenExpiresAt - 60_000) {
@@ -299,6 +298,7 @@ export class EbayAdapter implements PlatformSDK {
 		return this._appToken;
 	}
 
+	// Shared fetch helper — throws typed errors on non-2xx responses.
 	private async ebayFetch<T = unknown>(
 		url: string,
 		options: RequestInit,
