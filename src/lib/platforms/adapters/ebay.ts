@@ -807,10 +807,12 @@ export class EbayAdapter implements PlatformSDK {
 
 	// eBay uses webhooks (not polling) for real-time notifications.
 	// The webhook route at /api/webhooks/ebay handles incoming events.
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async getNotifications(_since?: Date): Promise<PlatformNotification[]> {
 		return [];
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async markNotificationRead(_notificationId: string): Promise<void> {
 		// Notification state is managed in our own notifications table.
 	}
@@ -824,6 +826,7 @@ export class EbayAdapter implements PlatformSDK {
 		);
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async getThread(_threadId: string): Promise<PlatformMessage[]> {
 		throw new UnsupportedOperationError(
 			this.platform,
@@ -831,6 +834,7 @@ export class EbayAdapter implements PlatformSDK {
 		);
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async sendMessage(_threadId: string, _body: string): Promise<void> {
 		throw new UnsupportedOperationError(
 			this.platform,

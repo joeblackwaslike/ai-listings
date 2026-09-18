@@ -198,7 +198,8 @@ test('getMyListings maps eBay "PUBLISHED" status to internal "active" status', a
 		returnPolicyId: "test",
 		merchantLocationKey: "test",
 		sandbox: true,
-	}) as any; // biome-ignore lint/suspicious/noExplicitAny: test mock
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	}) as any;
 
 	adapter.getAccessToken = async () => "test-token";
 	adapter.ebayFetch = async () => ({
@@ -225,7 +226,8 @@ test('getMyListings maps eBay "ENDED" status to internal "sold" status', async (
 		returnPolicyId: "test",
 		merchantLocationKey: "test",
 		sandbox: true,
-	}) as any; // biome-ignore lint/suspicious/noExplicitAny: test mock
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	}) as any;
 
 	adapter.getAccessToken = async () => "test-token";
 	adapter.ebayFetch = async () => ({
@@ -252,7 +254,8 @@ test('getMyListings maps eBay "UNPUBLISHED" status to internal "draft" status', 
 		returnPolicyId: "test",
 		merchantLocationKey: "test",
 		sandbox: true,
-	}) as any; // biome-ignore lint/suspicious/noExplicitAny: test mock
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	}) as any;
 
 	adapter.getAccessToken = async () => "test-token";
 	adapter.ebayFetch = async () => ({
@@ -280,7 +283,8 @@ test("updateListing with description-only change does not call inventory_item en
 		returnPolicyId: "test",
 		merchantLocationKey: "test",
 		sandbox: true,
-	}) as any; // biome-ignore lint/suspicious/noExplicitAny: test mock
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	}) as any;
 	const capturedUrls: string[] = [];
 
 	adapter.getAccessToken = async () => "test-token";
@@ -331,7 +335,8 @@ test("updateListing with title change calls inventory_item endpoint with title b
 		returnPolicyId: "test",
 		merchantLocationKey: "test",
 		sandbox: true,
-	}) as any; // biome-ignore lint/suspicious/noExplicitAny: test mock
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	}) as any;
 	const capturedRequests: Array<{ url: string; body?: string }> = [];
 
 	adapter.getAccessToken = async () => "test-token";
@@ -394,7 +399,8 @@ test("updateListing with imageUrls does not include description in inventory_ite
 		returnPolicyId: "test",
 		merchantLocationKey: "test",
 		sandbox: true,
-	}) as any; // biome-ignore lint/suspicious/noExplicitAny: test mock
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	}) as any;
 	const capturedRequests: Array<{ url: string; body?: string }> = [];
 
 	adapter.getAccessToken = async () => "test-token";
