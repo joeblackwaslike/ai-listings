@@ -9,9 +9,10 @@ import { IntakeModal } from './IntakeModal'
 
 interface DashboardHeaderProps {
   listingsCount: number
+  showSold?: boolean
 }
 
-export function DashboardHeader({ listingsCount }: DashboardHeaderProps) {
+export function DashboardHeader({ listingsCount, showSold = false }: DashboardHeaderProps) {
   const [modalOpen, setModalOpen] = useState(false)
 
   async function handleTextSubmit(entries: string[]) {
@@ -47,6 +48,12 @@ export function DashboardHeader({ listingsCount }: DashboardHeaderProps) {
         <h1 className="text-xl font-semibold tracking-tight">AI Listings</h1>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-600">{listingsCount} listings</span>
+          <Link
+            href={showSold ? '/dashboard' : '/dashboard?showSold=1'}
+            className="text-xs text-zinc-400 hover:text-white transition-colors"
+          >
+            {showSold ? 'Hide sold' : 'Show sold'}
+          </Link>
           <button
             onClick={() => setModalOpen(true)}
             className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-800 text-zinc-400 hover:text-white hover:bg-gray-700 transition-colors"

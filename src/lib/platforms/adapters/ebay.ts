@@ -49,7 +49,7 @@ interface EbayOrder {
     legacyItemId?: string;
   }>;
   buyer?: { username?: string };
-  pricingSummary?: { total?: { value?: string } };
+  pricingSummary?: { total?: { value?: string }; priceSubtotal?: { value?: string } };
   orderFulfillmentStatus?: string;
   creationDate?: string;
   fulfillmentStartInstructions?: Array<{
@@ -116,7 +116,7 @@ function mapEbayStatusToInternal(
 // ---- Order mapper -----------------------------------------------------------
 
 function mapEbayOrder(o: EbayOrder): PlatformOrder {
-  const priceStr = o.pricingSummary?.total?.value ?? '0';
+  const priceStr = o.pricingSummary?.priceSubtotal?.value ?? o.pricingSummary?.total?.value ?? '0';
   const addressParts = o.fulfillmentStartInstructions?.[0]?.shippingStep?.shipTo?.contactAddress;
   const shippingAddress = addressParts
     ? [

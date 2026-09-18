@@ -176,7 +176,7 @@ On failure: photo is flagged with the specific issue. User is notified via toast
   sku: string                  // HB-0042
 
   // Status
-  status: 'intake' | 'id_gate' | 'in_loop' | 'finalizing' | 'published' | 'archived'
+  status: 'intake' | 'id_gate' | 'in_loop' | 'finalizing' | 'published' | 'sold' | 'archived'
   pipeline_step: number        // current step (1–5) for dashboard progress display
   pipeline_total: number       // total steps (5 for luxury, 4 for non-luxury)
 
@@ -194,6 +194,8 @@ On failure: photo is flagged with the specific issue. User is notified via toast
   suggested_price_cents: number
   final_price_cents: number
   confidence_score: number     // 0–100
+  sold_price_cents: number | null  // actual sale price when listing sold
+  sold_at: timestamptz | null      // when listing was marked sold
 
   // Plans
   auth_plan: AuthStep[]        // [{ step, guidance, status, photo_required }]

@@ -41,6 +41,9 @@ function getBadge(listing: BadgeInput): { label: string; className: string } {
   if (listing.status === 'published') {
     return { label: 'Published', className: 'bg-purple-900/60 text-purple-300' }
   }
+  if (listing.status === 'sold') {
+    return { label: 'Sold', className: 'bg-green-900/60 text-green-300' }
+  }
   if (listing.status === 'archived') {
     return { label: 'Archived', className: 'bg-gray-800 text-gray-600' }
   }

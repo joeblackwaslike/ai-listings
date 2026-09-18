@@ -13,6 +13,7 @@ import { conditionReassessment } from '@/lib/inngest/functions/condition-reasses
 import { autoRecoverPipeline } from '@/lib/inngest/functions/auto-recover-pipeline'
 import { descriptionRewrite } from '@/lib/inngest/functions/description-rewrite'
 import { batchQualityCheck } from '@/lib/inngest/functions/batch-quality-check'
+import { syncEbayPrices } from '@/lib/inngest/functions/sync-ebay-prices'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -24,6 +25,7 @@ export const { GET, POST, PUT } = serve({
     syncPlatformNotifications,
     syncPlatformMessages,
     syncPlatformOrders,
+    syncEbayPrices,
     textIntakePipeline,
     autoDiscountCron,
     conditionReassessment,

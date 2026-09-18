@@ -211,7 +211,7 @@ Each Inngest step retries up to 3 times with exponential backoff + jitter. After
 | --- | --- | --- |
 | `id` | uuid PK | |
 | `sku` | text | HB-0042 format, unique |
-| `status` | text | intake \| in_loop \| finalizing \| published \| archived |
+| `status` | text | intake \| in_loop \| finalizing \| published \| sold \| archived |
 | `title` | text | Canonical title — brand + model + key attributes |
 | `description` | text | Canonical description |
 | `category` | text | handbag \| clothing \| sneakers \| electronics \| jewelry \| other |
@@ -220,6 +220,8 @@ Each Inngest step retries up to 3 times with exponential backoff + jitter. After
 | `suggested_price_cents` | integer | |
 | `final_price_cents` | integer | User-confirmed price |
 | `confidence_score` | integer | 0–100 |
+| `sold_price_cents` | integer | Actual sale price when listing is marked sold |
+| `sold_at` | timestamptz | Timestamp when listing was marked sold |
 | `inclusions` | jsonb | `[{ item, included, notes }]` — what comes with the item |
 | `auth_plan` | jsonb | `[{ step, guidance, status, photo_required }]` |
 | `photo_plan` | jsonb | `[{ shot, description, required, photo_type }]` |

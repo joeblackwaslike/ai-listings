@@ -7,7 +7,8 @@ export type ListingStatus =
   | 'copy_review'
   | 'finalizing'
   | 'published'
-  | 'archived';
+  | 'archived'
+  | 'sold';
 
 export type ListingCategory =
   | 'handbag'
@@ -247,6 +248,8 @@ export interface Listing {
   price_to_move_cents: number | null;
   price_to_move_discount_pct: number | null;
   retail_price_cents: number | null;
+  sold_price_cents: number | null;
+  sold_at: string | null;
   retail_price_source: string | null;
   retail_price_url: string | null;
   retail_promo_note: string | null;

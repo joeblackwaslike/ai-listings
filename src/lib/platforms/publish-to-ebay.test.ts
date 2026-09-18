@@ -30,6 +30,8 @@ function fixtureListing(overrides: Partial<Listing> = {}): Listing {
     price_to_move_cents: null,
     price_to_move_discount_pct: null,
     retail_price_cents: null,
+    sold_price_cents: null,
+    sold_at: null,
     retail_price_source: null,
     retail_price_url: null,
     retail_promo_note: null,

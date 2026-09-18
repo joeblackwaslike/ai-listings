@@ -28,6 +28,8 @@ function fixtureListing(overrides: Partial<Listing> = {}): Listing {
     price_to_move_cents: null,
     price_to_move_discount_pct: null,
     retail_price_cents: null,
+    sold_price_cents: null,
+    sold_at: null,
     retail_price_source: null,
     retail_price_url: null,
     retail_promo_note: null,
@@ -92,8 +94,9 @@ test('buildUnifiedListingForEbay maps title/description/item_specifics from plat
   assert.equal(result.title, 'Coach Handbag — Like New')
   assert.equal(result.description, 'eBay-optimized description')
   assert.deepEqual(result.platformFields, {
-    item_specifics: { Brand: 'Coach', Material: 'Leather' },
+    item_specifics: { Brand: 'Coach', Material: 'Leather', Condition: 'Like New', Inclusions: 'None' },
     category_id: '169291',
+    condition_description: undefined,
   })
 })
 

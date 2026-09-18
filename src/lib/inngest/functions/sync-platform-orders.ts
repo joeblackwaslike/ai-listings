@@ -5,6 +5,7 @@ import { PoshmarkAdapter } from '@/lib/platforms/adapters/poshmark'
 import { MercariAdapter } from '@/lib/platforms/adapters/mercari'
 import { EtsyAdapter } from '@/lib/platforms/adapters/etsy'
 import { getEbayCreds, getPoshmarkCreds, getMercariCreds } from '@/lib/platforms/credentials'
+import { getEbayListingIdPattern } from '@/lib/platforms/ebay-utils'
 
 const PLATFORM_CRED_KEYS = [
   { platform: 'ebay', credKey: 'ebay_refresh_token' },
@@ -17,12 +18,28 @@ export const syncPlatformOrders = inngest.createFunction(
   {
     id: 'sync-platform-orders',
     name: 'Sync Platform Orders',
-    triggers: [{ cron: '*/15 * * * *' }],
+    triggers: [
+      { cron: '*/15 * * * *' },
+      { event: 'sync/orders.backfill' },
+    ],
   },
-  async ({ step }) => {
+  async ({ event, step }) => {
     await step.run('sync-orders', async () => {
       const supabase = getSupabaseAdmin()
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      const eventData = (event as unknown as { data?: { since?: string } }).data
+
+      let since: Date
+      if (eventData?.since) {
+        const parsed = new Date(eventData.since)
+        if (Number.isNaN(parsed.getTime())) {
+          console.error(`[sync-platform-orders] invalid since date: ${eventData.since}`)
+          since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+        } else {
+          since = parsed
+        }
+      } else {
+        since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      }
 
       for (const { platform, credKey } of PLATFORM_CRED_KEYS) {
         const { data: rows } = await supabase
@@ -77,6 +94,27 @@ export const syncPlatformOrders = inngest.createFunction(
                     buyerUsername: order.buyerUsername,
                   },
                 })
+              }
+
+              if (order.platform === 'ebay' && order.listingId && order.status !== 'cancelled') {
+                const { data: listing, error: lookupError } = await supabase
+                  .from('listings')
+                  .select('id, status')
+                  .eq('user_id', userId)
+                  .like('listing_urls->>ebay', getEbayListingIdPattern(order.listingId))
+                  .maybeSingle()
+                if (lookupError) throw lookupError
+                if (listing && listing.status === 'published') {
+                  const { error: updateError } = await supabase
+                    .from('listings')
+                    .update({
+                      status: 'sold',
+                      sold_price_cents: order.salePrice,
+                      sold_at: order.createdAt.toISOString(),
+                    })
+                    .eq('id', listing.id)
+                  if (updateError) throw updateError
+                }
               }
             }
           } catch (err) {
