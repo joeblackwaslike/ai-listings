@@ -96,15 +96,16 @@ export const syncPlatformOrders = inngest.createFunction(
                 })
               }
 
-              if (order.platform === 'ebay' && order.listingId) {
-                const { data: listing } = await supabase
+              if (order.platform === 'ebay' && order.listingId && order.status !== 'cancelled') {
+                const { data: listing, error: lookupError } = await supabase
                   .from('listings')
                   .select('id, status')
                   .eq('user_id', userId)
                   .like('listing_urls->>ebay', getEbayListingIdPattern(order.listingId))
                   .maybeSingle()
+                if (lookupError) throw lookupError
                 if (listing && listing.status === 'published') {
-                  await supabase
+                  const { error: updateError } = await supabase
                     .from('listings')
                     .update({
                       status: 'sold',
@@ -112,6 +113,7 @@ export const syncPlatformOrders = inngest.createFunction(
                       sold_at: order.createdAt.toISOString(),
                     })
                     .eq('id', listing.id)
+                  if (updateError) throw updateError
                 }
               }
             }

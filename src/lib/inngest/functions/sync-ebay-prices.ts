@@ -33,17 +33,19 @@ export const syncEbayPrices = inngest.createFunction(
 
           for (const pl of listings) {
             if (pl.status !== 'active' || !pl.platformId) continue
-            const { data: listing } = await supabase
+            const { data: listing, error: lookupError } = await supabase
               .from('listings')
               .select('id, final_price_cents')
               .eq('user_id', userId)
               .like('listing_urls->>ebay', getEbayListingIdPattern(pl.platformId))
               .maybeSingle()
+            if (lookupError) throw lookupError
             if (listing && listing.final_price_cents !== pl.price) {
-              await supabase
+              const { error: updateError } = await supabase
                 .from('listings')
                 .update({ final_price_cents: pl.price })
                 .eq('id', listing.id)
+              if (updateError) throw updateError
             }
           }
         } catch (err) {

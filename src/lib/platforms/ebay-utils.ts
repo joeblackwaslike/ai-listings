@@ -4,5 +4,5 @@ export function escapeLikePattern(value: string): string {
 
 export function getEbayListingIdPattern(listingId: string): string {
   const escaped = escapeLikePattern(listingId)
-  return `%/itm/${escaped}`
+  return `%/itm/${escaped}%`
 }
