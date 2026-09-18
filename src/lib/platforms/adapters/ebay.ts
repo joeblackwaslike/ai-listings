@@ -465,7 +465,6 @@ export class EbayAdapter implements PlatformSDK {
       if (updates.title || updates.imageUrls) {
         itemBody.product = {
           ...(updates.title ? { title: updates.title } : {}),
-          ...(updates.description ? { description: plaintextToEbayHtml(updates.description) } : {}),
           ...(updates.imageUrls ? { imageUrls: updates.imageUrls } : {}),
         };
       }
