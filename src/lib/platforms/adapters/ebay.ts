@@ -299,6 +299,34 @@ export class EbayAdapter implements PlatformSDK {
 	}
 
 	// Shared fetch helper — throws typed errors on non-2xx responses.
+	/** Application-level token for public Browse API calls (no user scope needed). */
+	private async getApplicationToken(): Promise<string> {
+		if (this._appToken && Date.now() < this._appTokenExpiresAt - 60_000) {
+			return this._appToken;
+		}
+		const domain = this.creds.sandbox
+			? "api.sandbox.ebay.com"
+			: "api.ebay.com";
+		const credentials = Buffer.from(
+			`${this.creds.clientId}:${this.creds.clientSecret}`,
+		).toString("base64");
+		const res = await fetch(`https://${domain}/identity/v1/oauth2/token`, {
+			method: "POST",
+			headers: {
+				Authorization: `Basic ${credentials}`,
+				"Content-Type": "application/x-www-form-urlencoded",
+			},
+			body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
+		});
+		if (!res.ok) {
+			throw new PlatformError(this.platform, `App token request failed: HTTP ${res.status}`);
+		}
+		const data = (await res.json()) as { access_token: string; expires_in: number };
+		this._appToken = data.access_token;
+		this._appTokenExpiresAt = Date.now() + data.expires_in * 1000;
+		return this._appToken;
+	}
+
 	private async ebayFetch<T = unknown>(
 		url: string,
 		options: RequestInit,
