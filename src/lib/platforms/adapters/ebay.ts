@@ -716,9 +716,6 @@ export class EbayAdapter implements PlatformSDK {
 					{ method: "GET" },
 					token,
 				);
-				if (res.offers?.[0]) {
-					console.log(`[ebay] getOffersBySku raw offer[0] for sku=${sku}:`, JSON.stringify(res.offers[0]))
-				}
 				for (const offer of res.offers ?? []) {
 					const priceStr = offer.pricingSummary?.price?.value ?? "0";
 					results.push({
