@@ -576,7 +576,7 @@ export class EbayAdapter implements PlatformSDK {
 
   async getOrders(since?: Date): Promise<PlatformOrder[]> {
     const token = await this.getAccessToken();
-    const filter = since ? `creationdate:[${since.toISOString()}...]` : '';
+    const filter = since ? `creationdate:[${since.toISOString().replace(/\.\d{3}Z$/, 'Z')}...]` : '';
     const baseParams = new URLSearchParams({ limit: '50' });
     if (filter) baseParams.set('filter', filter);
 

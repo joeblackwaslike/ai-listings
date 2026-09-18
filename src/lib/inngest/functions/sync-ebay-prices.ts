@@ -29,7 +29,7 @@ export const syncEbayPrices = inngest.createFunction(
           const creds = await getEbayCreds(userId)
           if (!creds) continue
           const adapter = new EbayAdapter(creds)
-          const listings = await adapter.getMyListings({ status: 'active' })
+          const listings = await adapter.getMyListings()
 
           for (const pl of listings) {
             if (pl.status !== 'active' || !pl.platformId) continue
