@@ -2,6 +2,7 @@ import { inngest } from '@/lib/inngest/client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
 import { getEbayCreds } from '@/lib/platforms/credentials'
+import { getEbayListingIdPattern } from '@/lib/platforms/ebay-utils'
 
 export const syncEbayPrices = inngest.createFunction(
   {
@@ -36,7 +37,7 @@ export const syncEbayPrices = inngest.createFunction(
               .from('listings')
               .select('id, final_price_cents')
               .eq('user_id', userId)
-              .like('listing_urls->>ebay', `%/itm/${pl.platformId}`)
+              .like('listing_urls->>ebay', getEbayListingIdPattern(pl.platformId))
               .maybeSingle()
             if (listing && listing.final_price_cents !== pl.price) {
               await supabase

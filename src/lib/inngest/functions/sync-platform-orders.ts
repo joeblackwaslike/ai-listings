@@ -5,6 +5,7 @@ import { PoshmarkAdapter } from '@/lib/platforms/adapters/poshmark'
 import { MercariAdapter } from '@/lib/platforms/adapters/mercari'
 import { EtsyAdapter } from '@/lib/platforms/adapters/etsy'
 import { getEbayCreds, getPoshmarkCreds, getMercariCreds } from '@/lib/platforms/credentials'
+import { getEbayListingIdPattern } from '@/lib/platforms/ebay-utils'
 
 const PLATFORM_CRED_KEYS = [
   { platform: 'ebay', credKey: 'ebay_refresh_token' },
@@ -26,9 +27,19 @@ export const syncPlatformOrders = inngest.createFunction(
     await step.run('sync-orders', async () => {
       const supabase = getSupabaseAdmin()
       const eventData = (event as unknown as { data?: { since?: string } }).data
-      const since = eventData?.since
-        ? new Date(eventData.since)
-        : new Date(Date.now() - 24 * 60 * 60 * 1000)
+
+      let since: Date
+      if (eventData?.since) {
+        const parsed = new Date(eventData.since)
+        if (Number.isNaN(parsed.getTime())) {
+          console.error(`[sync-platform-orders] invalid since date: ${eventData.since}`)
+          since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+        } else {
+          since = parsed
+        }
+      } else {
+        since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      }
 
       for (const { platform, credKey } of PLATFORM_CRED_KEYS) {
         const { data: rows } = await supabase
@@ -90,7 +101,7 @@ export const syncPlatformOrders = inngest.createFunction(
                   .from('listings')
                   .select('id, status')
                   .eq('user_id', userId)
-                  .like('listing_urls->>ebay', `%/itm/${order.listingId}`)
+                  .like('listing_urls->>ebay', getEbayListingIdPattern(order.listingId))
                   .maybeSingle()
                 if (listing && listing.status === 'published') {
                   await supabase
