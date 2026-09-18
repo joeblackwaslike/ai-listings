@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import { AuthExpiredError, PlatformError, UnsupportedOperationError } from '../errors';
 import { searchEbaySoldComps } from '../ebay-soldcomps';
+import { plaintextToEbayHtml } from '../ebay-description';
 import eBayApi from '@hendt/ebay-api';
 
 // ---- Internal eBay API shape types ----------------------------------------
@@ -315,7 +316,7 @@ export class EbayAdapter implements PlatformSDK {
     const inventoryBody = {
       product: {
         title: listing.title,
-        description: listing.description,
+        description: plaintextToEbayHtml(listing.description),
         imageUrls: listing.imageUrls,
         aspects: mapItemSpecificsToAspects(ebayFields.item_specifics),
       },
@@ -339,7 +340,7 @@ export class EbayAdapter implements PlatformSDK {
       sku,
       marketplaceId: 'EBAY_US',
       format: 'FIXED_PRICE',
-      listingDescription: listing.description,
+      listingDescription: plaintextToEbayHtml(listing.description),
       pricingSummary: {
         price: { value: (listing.price / 100).toFixed(2), currency: 'USD' },
       },
@@ -447,7 +448,7 @@ export class EbayAdapter implements PlatformSDK {
       };
     }
     if (updates.description !== undefined) {
-      body.listingDescription = updates.description;
+      body.listingDescription = plaintextToEbayHtml(updates.description);
     }
 
     await this.ebayFetch(
@@ -462,7 +463,7 @@ export class EbayAdapter implements PlatformSDK {
       if (updates.title || updates.imageUrls || updates.description) {
         itemBody.product = {
           ...(updates.title ? { title: updates.title } : {}),
-          ...(updates.description ? { description: updates.description } : {}),
+          ...(updates.description ? { description: plaintextToEbayHtml(updates.description) } : {}),
           ...(updates.imageUrls ? { imageUrls: updates.imageUrls } : {}),
         };
       }
