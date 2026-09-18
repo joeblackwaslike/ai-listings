@@ -716,9 +716,6 @@ export class EbayAdapter implements PlatformSDK {
 					{ method: "GET" },
 					token,
 				);
-				if (res.offers?.[0]) {
-					console.log(`[ebay] getOffersBySku raw offer[0] for sku=${sku}:`, JSON.stringify(res.offers[0]))
-				}
 				for (const offer of res.offers ?? []) {
 					const priceStr = offer.pricingSummary?.price?.value ?? "0";
 					results.push({
@@ -740,6 +737,35 @@ export class EbayAdapter implements PlatformSDK {
 			}
 		}
 		return results;
+	}
+
+	/**
+	 * Fetches the current buyer-facing price for each listing via the Browse API.
+	 * GET /offer returns pricingSummary:{} (empty) — Browse API is the correct source.
+	 * Returns a map of listingId → price in cents; excludes listings where price is 0.
+	 */
+	async getPricesByListingId(
+		listingIds: string[],
+	): Promise<Map<string, number>> {
+		const token = await this.getAccessToken();
+		const priceMap = new Map<string, number>();
+		for (const listingId of listingIds) {
+			try {
+				const res = await this.ebayFetch<{ price?: { value?: string } }>(
+					`${this.baseUrl}/buy/browse/v1/item/v1|${listingId}|0`,
+					{ method: "GET" },
+					token,
+				);
+				const cents = Math.round(parseFloat(res.price?.value ?? "0") * 100);
+				if (cents > 0) priceMap.set(listingId, cents);
+			} catch (err) {
+				console.warn(
+					`[ebay] getPricesByListingId: failed for listingId=${listingId}:`,
+					err,
+				);
+			}
+		}
+		return priceMap;
 	}
 
 	// ---- Orders ---------------------------------------------------------------
