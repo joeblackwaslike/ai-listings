@@ -4,13 +4,24 @@ import type { ListingWithCover } from '@/components/dashboard/ListingCard'
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ showSold?: string }>
+}) {
   const supabase = await createClient()
+  const params = await searchParams
+  const showSold = params.showSold === '1'
 
-  const { data: listings } = await supabase
+  let query = supabase
     .from('listings')
-    .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, final_price_cents, agent_blocked, agent_blocked_reason, pipeline_step, pipeline_total, skip_background_removal')
+    .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, final_price_cents, sold_price_cents, sold_at, agent_blocked, agent_blocked_reason, pipeline_step, pipeline_total, skip_background_removal')
     .neq('status', 'archived')
+  if (!showSold) {
+    query = query.neq('status', 'sold')
+  }
+
+  const { data: listings } = await query
     .order('created_at', { ascending: false })
     .limit(100)
 
@@ -44,7 +55,7 @@ export default async function DashboardPage() {
   return (
     <main className="max-w-screen-2xl mx-auto px-6 py-8 space-y-6">
       <AutoRefresh />
-      <DashboardHeader listingsCount={listingsWithCovers.length} />
+      <DashboardHeader listingsCount={listingsWithCovers.length} showSold={showSold} />
       <ListingsGrid initialListings={listingsWithCovers} />
     </main>
   )

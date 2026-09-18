@@ -17,12 +17,18 @@ export const syncPlatformOrders = inngest.createFunction(
   {
     id: 'sync-platform-orders',
     name: 'Sync Platform Orders',
-    triggers: [{ cron: '*/15 * * * *' }],
+    triggers: [
+      { cron: '*/15 * * * *' },
+      { event: 'sync/orders.backfill' },
+    ],
   },
-  async ({ step }) => {
+  async ({ event, step }) => {
     await step.run('sync-orders', async () => {
       const supabase = getSupabaseAdmin()
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      const eventData = (event as unknown as { data?: { since?: string } }).data
+      const since = eventData?.since
+        ? new Date(eventData.since)
+        : new Date(Date.now() - 24 * 60 * 60 * 1000)
 
       for (const { platform, credKey } of PLATFORM_CRED_KEYS) {
         const { data: rows } = await supabase
@@ -77,6 +83,26 @@ export const syncPlatformOrders = inngest.createFunction(
                     buyerUsername: order.buyerUsername,
                   },
                 })
+              }
+
+              if (order.platform === 'ebay' && order.listingId) {
+                const ebayUrl = `https://www.ebay.com/itm/${order.listingId}`
+                const { data: listing } = await supabase
+                  .from('listings')
+                  .select('id, status')
+                  .eq('user_id', userId)
+                  .eq('listing_urls->>ebay', ebayUrl)
+                  .maybeSingle()
+                if (listing && listing.status === 'published') {
+                  await supabase
+                    .from('listings')
+                    .update({
+                      status: 'sold',
+                      sold_price_cents: order.salePrice,
+                      sold_at: order.createdAt.toISOString(),
+                    })
+                    .eq('id', listing.id)
+                }
               }
             }
           } catch (err) {
