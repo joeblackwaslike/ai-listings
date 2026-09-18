@@ -32,12 +32,11 @@ export const syncEbayPrices = inngest.createFunction(
 
           for (const pl of listings) {
             if (pl.status !== 'active' || !pl.platformId) continue
-            const ebayUrl = `https://www.ebay.com/itm/${pl.platformId}`
             const { data: listing } = await supabase
               .from('listings')
               .select('id, final_price_cents')
               .eq('user_id', userId)
-              .eq('listing_urls->>ebay', ebayUrl)
+              .like('listing_urls->>ebay', `%/itm/${pl.platformId}`)
               .maybeSingle()
             if (listing && listing.final_price_cents !== pl.price) {
               await supabase

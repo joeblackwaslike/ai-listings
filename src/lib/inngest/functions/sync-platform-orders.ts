@@ -86,12 +86,11 @@ export const syncPlatformOrders = inngest.createFunction(
               }
 
               if (order.platform === 'ebay' && order.listingId) {
-                const ebayUrl = `https://www.ebay.com/itm/${order.listingId}`
                 const { data: listing } = await supabase
                   .from('listings')
                   .select('id, status')
                   .eq('user_id', userId)
-                  .eq('listing_urls->>ebay', ebayUrl)
+                  .like('listing_urls->>ebay', `%/itm/${order.listingId}`)
                   .maybeSingle()
                 if (listing && listing.status === 'published') {
                   await supabase
