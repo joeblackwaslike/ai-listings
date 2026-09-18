@@ -457,13 +457,14 @@ export class EbayAdapter implements PlatformSDK {
       token,
     );
 
-    // If title/images/condition changed — update inventory item too
-    if (updates.title || updates.imageUrls || updates.condition || updates.description) {
+    // If title/images/condition changed — update inventory item too.
+    // Description-only updates are handled via listingDescription on the offer above;
+    // the inventory item product.description endpoint rejects hyphenated SKUs (error 25707).
+    if (updates.title || updates.imageUrls || updates.condition) {
       const itemBody: Record<string, unknown> = {};
-      if (updates.title || updates.imageUrls || updates.description) {
+      if (updates.title || updates.imageUrls) {
         itemBody.product = {
           ...(updates.title ? { title: updates.title } : {}),
-          ...(updates.description ? { description: plaintextToEbayHtml(updates.description) } : {}),
           ...(updates.imageUrls ? { imageUrls: updates.imageUrls } : {}),
         };
       }
