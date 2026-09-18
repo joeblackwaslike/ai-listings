@@ -3,9 +3,15 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
 import { getEbayCreds } from '@/lib/platforms/credentials'
 
+const EBAY_LISTING_ID_RE = /\/itm\/(\d+)/
+
+function extractListingId(url: string): string | null {
+  return EBAY_LISTING_ID_RE.exec(url)?.[1] ?? null
+}
+
 /**
  * One-shot recovery: restores listings whose final_price_cents was zeroed by the
- * broken sync-ebay-prices run. Only writes prices > 0 fetched from eBay.
+ * broken sync-ebay-prices run. Uses Browse API to get real prices from eBay.
  * Trigger: ebay/restore-prices
  */
 export const restoreEbayPrices = inngest.createFunction(
@@ -30,10 +36,9 @@ export const restoreEbayPrices = inngest.createFunction(
           const creds = await getEbayCreds(userId)
           if (!creds) continue
 
-          // Target only listings with price=0 that have eBay URLs
           const { data: zeroed, error } = await supabase
             .from('listings')
-            .select('id, sku, final_price_cents')
+            .select('id, sku, final_price_cents, listing_urls')
             .eq('user_id', userId)
             .eq('final_price_cents', 0)
             .not('listing_urls->>ebay', 'is', null)
@@ -45,34 +50,37 @@ export const restoreEbayPrices = inngest.createFunction(
           }
           console.log(`[restore-ebay-prices] userId=${userId}: found ${zeroed.length} zeroed listings`)
 
-          const skus = zeroed.map((l) => l.sku as string).filter(Boolean)
-          const adapter = new EbayAdapter(creds)
-          const offers = await adapter.getOffersBySku(skus)
-          console.log(`[restore-ebay-prices] userId=${userId}: got ${offers.length} offers from eBay`)
+          const listingIdToRow = new Map<string, typeof zeroed[number]>()
+          for (const row of zeroed) {
+            const ebayUrl = (row.listing_urls as Record<string, string> | null)?.ebay
+            if (!ebayUrl) continue
+            const listingId = extractListingId(ebayUrl)
+            if (listingId) listingIdToRow.set(listingId, row)
+          }
 
-          const offerBySku = new Map(offers.map((o) => [o.title, o]))
+          const adapter = new EbayAdapter(creds)
+          const priceMap = await adapter.getPricesByListingId([...listingIdToRow.keys()])
+          console.log(`[restore-ebay-prices] userId=${userId}: got prices for ${priceMap.size}/${listingIdToRow.size} listings`)
 
           let restored = 0
           let skipped = 0
-          for (const listing of zeroed) {
-            const offer = offerBySku.get(listing.sku as string)
-            if (!offer) {
-              console.warn(`[restore-ebay-prices] sku=${listing.sku}: no offer found`)
-              skipped++
-              continue
-            }
-            if (offer.price === 0) {
-              console.warn(`[restore-ebay-prices] sku=${listing.sku}: offer.price=0 — price field still not parsed correctly, check logs above`)
-              skipped++
-              continue
-            }
+          for (const [listingId, ebayPrice] of priceMap) {
+            const row = listingIdToRow.get(listingId)
+            if (!row) continue
             const { error: updateError } = await supabase
               .from('listings')
-              .update({ final_price_cents: offer.price })
-              .eq('id', listing.id)
+              .update({ final_price_cents: ebayPrice })
+              .eq('id', row.id)
             if (updateError) throw updateError
-            console.log(`[restore-ebay-prices] restored sku=${listing.sku}: 0 → ${offer.price}`)
+            console.log(`[restore-ebay-prices] restored sku=${row.sku}: 0 → ${ebayPrice}`)
             restored++
+          }
+          for (const [listingId] of listingIdToRow) {
+            if (!priceMap.has(listingId)) {
+              const row = listingIdToRow.get(listingId)
+              console.warn(`[restore-ebay-prices] sku=${row?.sku}: no price from Browse API`)
+              skipped++
+            }
           }
           console.log(`[restore-ebay-prices] userId=${userId}: restored=${restored} skipped=${skipped}`)
         } catch (err) {
