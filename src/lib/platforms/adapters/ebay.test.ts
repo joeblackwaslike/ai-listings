@@ -102,7 +102,7 @@ test('getOrders paginates through multiple pages using next URL', async () => {
   let callCount = 0
 
   adapter.getAccessToken = async () => 'test-token'
-  adapter.ebayFetch = async (url: string) => {
+  adapter.ebayFetch = async () => {
     callCount++
 
     if (callCount === 1) {
@@ -170,4 +170,131 @@ test('getMyListings maps eBay "UNPUBLISHED" status to internal "draft" status', 
 
   const listings = await adapter.getMyListings()
   assert.equal(listings[0].status, 'draft', 'should map UNPUBLISHED to draft')
+})
+
+// updateListing tests for description-only vs other updates
+test('updateListing with description-only change does not call inventory_item endpoint', async () => {
+  const adapter = new EbayAdapter({ clientId: 'test', clientSecret: 'test', redirectUri: 'http://localhost' })
+  const capturedUrls: string[] = []
+
+  adapter.getAccessToken = async () => 'test-token'
+  adapter.ebayFetch = async (url: string) => {
+    capturedUrls.push(url)
+    // Return different responses based on the endpoint
+    if (url.includes('/offer?listing_id=')) {
+      return {
+        offers: [
+          {
+            listingId: 'item1',
+            offerId: 'offer-123',
+            sku: 'test-sku-123',
+            pricingSummary: { price: { value: '10.00' } },
+          },
+        ],
+      }
+    }
+    return {}
+  }
+
+  await adapter.updateListing('item1', { description: 'New description' })
+
+  // Should call offer endpoint to update description
+  const offerCalls = capturedUrls.filter(url => url.includes('/offer/offer-123'))
+  assert.equal(offerCalls.length, 1, 'should call offer endpoint once')
+
+  // Should NOT call inventory_item endpoint
+  const inventoryItemCalls = capturedUrls.filter(url => url.includes('/inventory_item/'))
+  assert.equal(inventoryItemCalls.length, 0, 'should not call inventory_item endpoint for description-only update')
+})
+
+test('updateListing with title change calls inventory_item endpoint with title but not description', async () => {
+  const adapter = new EbayAdapter({ clientId: 'test', clientSecret: 'test', redirectUri: 'http://localhost' })
+  const capturedRequests: Array<{ url: string; body?: string }> = []
+
+  adapter.getAccessToken = async () => 'test-token'
+  adapter.ebayFetch = async (url: string, options?: Record<string, unknown>) => {
+    capturedRequests.push({
+      url,
+      body: typeof options?.body === 'string' ? options.body : undefined,
+    })
+    if (url.includes('/offer?listing_id=')) {
+      return {
+        offers: [
+          {
+            listingId: 'item1',
+            offerId: 'offer-123',
+            sku: 'test-sku-123',
+            pricingSummary: { price: { value: '10.00' } },
+          },
+        ],
+      }
+    }
+    return {}
+  }
+
+  await adapter.updateListing('item1', { title: 'New Title', description: 'New description' })
+
+  // Should call inventory_item endpoint
+  const inventoryItemCall = capturedRequests.find(req => req.url.includes('/inventory_item/test-sku-123'))
+  assert.ok(inventoryItemCall, 'should call inventory_item endpoint')
+
+  // Parse the body and verify it contains title but not description
+  if (inventoryItemCall?.body) {
+    const body = JSON.parse(inventoryItemCall.body)
+    assert.ok(body.product?.title === 'New Title', 'should include title in product')
+    assert.equal(
+      body.product?.description,
+      undefined,
+      'should not include description in inventory_item product'
+    )
+  }
+})
+
+test('updateListing with imageUrls does not include description in inventory_item update', async () => {
+  const adapter = new EbayAdapter({ clientId: 'test', clientSecret: 'test', redirectUri: 'http://localhost' })
+  const capturedRequests: Array<{ url: string; body?: string }> = []
+
+  adapter.getAccessToken = async () => 'test-token'
+  adapter.ebayFetch = async (url: string, options?: Record<string, unknown>) => {
+    capturedRequests.push({
+      url,
+      body: typeof options?.body === 'string' ? options.body : undefined,
+    })
+    if (url.includes('/offer?listing_id=')) {
+      return {
+        offers: [
+          {
+            listingId: 'item1',
+            offerId: 'offer-123',
+            sku: 'test-sku-123',
+            pricingSummary: { price: { value: '10.00' } },
+          },
+        ],
+      }
+    }
+    return {}
+  }
+
+  await adapter.updateListing('item1', {
+    imageUrls: ['http://example.com/img1.jpg'],
+    description: 'New description',
+  })
+
+  // Should call inventory_item endpoint
+  const inventoryItemCall = capturedRequests.find(req => req.url.includes('/inventory_item/test-sku-123'))
+  assert.ok(inventoryItemCall, 'should call inventory_item endpoint')
+
+  // Parse the body and verify it contains imageUrls but not description
+  if (inventoryItemCall?.body) {
+    const body = JSON.parse(inventoryItemCall.body)
+    assert.ok(
+      Array.isArray(body.product?.imageUrls),
+      'should include imageUrls in product'
+    )
+    assert.equal(
+      body.product?.description,
+      undefined,
+      'should not include description in inventory_item product'
+    )
+  }
 })
