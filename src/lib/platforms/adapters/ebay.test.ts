@@ -504,14 +504,61 @@ test("updateOfferDescription looks up offer by SKU and updates listingDescriptio
 	);
 	assert.ok(updateCall, "should call PUT /offer/offer-456");
 
-	// Verify the body contains listingDescription formatted as HTML
+	// Verify the body contains listingDescription formatted as HTML and bestOfferTerms
 	if (updateCall?.body) {
 		const body = JSON.parse(updateCall.body);
 		assert.ok(
 			body.listingDescription,
 			"should include listingDescription in request body",
 		);
+		assert.equal(
+			body.bestOfferTerms?.bestOfferEnabled,
+			true,
+			"should include bestOfferTerms.bestOfferEnabled=true to prevent eBay PUT from clearing it",
+		);
 	}
+});
+
+test("updateListing always includes bestOfferTerms in offer PUT body", async () => {
+	const adapter = new EbayAdapter({
+		clientId: "test",
+		clientSecret: "test",
+		refreshToken: "test",
+		fulfillmentPolicyId: "test",
+		paymentPolicyId: "test",
+		returnPolicyId: "test",
+		merchantLocationKey: "test",
+		sandbox: true,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	}) as any;
+	const capturedRequests: Array<{ url: string; method?: string; body?: string }> = [];
+
+	adapter.getAccessToken = async () => "test-token";
+	adapter.ebayFetch = async (url: string, options?: Record<string, unknown>) => {
+		capturedRequests.push({
+			url,
+			method: typeof options?.method === "string" ? options.method : "GET",
+			body: typeof options?.body === "string" ? options.body : undefined,
+		});
+		if (url.includes("/offer?listing_id=")) {
+			return { offers: [{ listingId: "item1", offerId: "offer-123", sku: "test-sku" }] };
+		}
+		return {};
+	};
+
+	await adapter.updateListing("item1", { price: 2500 });
+
+	const putCall = capturedRequests.find(
+		(req) => req.url.includes("/offer/offer-123") && req.method === "PUT",
+	);
+	assert.ok(putCall, "should call PUT /offer/offer-123");
+	assert.ok(putCall?.body, "PUT call should have a body");
+	const body = JSON.parse(putCall!.body!);
+	assert.equal(
+		body.bestOfferTerms?.bestOfferEnabled,
+		true,
+		"offer PUT must include bestOfferTerms.bestOfferEnabled=true — eBay PUT replaces the full offer and omitting it disables Best Offer",
+	);
 });
 
 test("updateOfferDescription throws error when no offer is found for SKU", async () => {

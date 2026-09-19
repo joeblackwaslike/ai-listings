@@ -567,7 +567,10 @@ export class EbayAdapter implements PlatformSDK {
 				`No offer found for listing ${platformId}`,
 			);
 
-		const body: Record<string, unknown> = {};
+		// eBay PUT /offer is a full replacement — always include bestOfferTerms or it gets cleared.
+		const body: Record<string, unknown> = {
+			bestOfferTerms: { bestOfferEnabled: true },
+		};
 		if (updates.price !== undefined) {
 			body.pricingSummary = {
 				price: { value: (updates.price / 100).toFixed(2), currency: "USD" },
@@ -623,7 +626,9 @@ export class EbayAdapter implements PlatformSDK {
 			`${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}`,
 			{
 				method: "PUT",
+				// eBay PUT /offer is a full replacement — include bestOfferTerms or it gets cleared.
 				body: JSON.stringify({
+					bestOfferTerms: { bestOfferEnabled: true },
 					listingDescription: plaintextToEbayHtml(description),
 				}),
 			},

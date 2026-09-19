@@ -1,7 +1,8 @@
 import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import type { ListingCategory, ConditionValue, PhotoShot, Inclusion } from '@/types/listings'
+import { CATEGORY_PREFIXES } from '@/types/listings'
 import type { ProductIdData } from './step1-product-id'
-import { pushPipelineStep } from './supabase-push'
+import { pushPipelineStep, getSupabaseAdmin } from './supabase-push'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { toPublicUrl } from './to-public-url'
 import { getInclusionChecklist } from '@/lib/inclusions'
@@ -290,6 +291,21 @@ Category reference sequences (illustrative, not rigid — reason about this spec
 
   console.log('[step2] Claude responded')
   const isLuxury = LUXURY_BRANDS.has(output.brand)
+
+  // Correct the SKU if Claude Vision changed the category from what step1 guessed.
+  // Step1 locks a SKU immediately using a regex-based category; step2 has the authoritative
+  // category. Mint a new sequential SKU under the correct prefix via generate_sku so there
+  // is no risk of colliding with an existing SKU that happens to share the same number.
+  const correctPrefix = CATEGORY_PREFIXES[output.category as ListingCategory]
+  const step1Prefix = step1.sku.split('-')[0]
+  if (correctPrefix && step1Prefix !== correctPrefix) {
+    const supabase = getSupabaseAdmin()
+    const { data: newSku, error: skuError } = await supabase.rpc('generate_sku', { prefix: correctPrefix })
+    if (skuError) throw new Error(`step2: generate_sku failed — ${skuError.message}`)
+    await supabase.from('listings').update({ sku: newSku }).eq('id', listingId)
+    console.log(`[step2] corrected SKU: ${step1.sku} → ${newSku} (category: ${step1.category} → ${output.category})`)
+    step1.sku = newSku as string
+  }
 
   await pushPipelineStep(listingId, {
     pipeline_step: 2,
