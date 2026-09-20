@@ -37,6 +37,7 @@ export function MessageThreadPanel({ platform, threadId, onClose }: MessageThrea
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [replyText, setReplyText] = useState('')
+  const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   async function load() {
@@ -66,6 +67,26 @@ export function MessageThreadPanel({ platform, threadId, onClose }: MessageThrea
   }, [messages])
 
   const platformLabel = platform.charAt(0).toUpperCase() + platform.slice(1).replace(/_/g, ' ')
+
+  async function handleSend() {
+    const body = replyText.trim()
+    if (!body || sending) return
+    setSending(true)
+    try {
+      const res = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, threadId, body }),
+      })
+      if (res.ok) {
+        const { message } = await res.json() as { message: Message }
+        if (message) setMessages((prev) => [...prev, message])
+        setReplyText('')
+      }
+    } finally {
+      setSending(false)
+    }
+  }
 
   // Try to extract source URL from any message metadata
   const sourceUrl = messages
@@ -150,16 +171,13 @@ export function MessageThreadPanel({ platform, threadId, onClose }: MessageThrea
             className="flex-1 resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 outline-none ring-1 ring-gray-700 transition focus:ring-blue-500"
           />
           <button
-            disabled
-            title="Send (not yet implemented)"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white opacity-40 cursor-not-allowed"
+            disabled={sending || !replyText.trim()}
+            onClick={() => void handleSend()}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition-opacity hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Send size={15} />
           </button>
         </div>
-        <p className="mt-1.5 text-[10px] text-gray-600">
-          Sending via {platformLabel} not yet available.
-        </p>
       </div>
     </div>
   )

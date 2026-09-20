@@ -51,6 +51,22 @@ interface EbayOffer {
 	status?: string;
 }
 
+interface EbayConversationMessage {
+	messageId: string;
+	sender?: { username?: string };
+	body?: string;
+	createdDate?: string;
+	read?: boolean;
+}
+
+interface EbayConversation {
+	conversationId: string;
+	unreadMessageCount?: number;
+	buyer?: { username?: string };
+	latestMessage?: EbayConversationMessage;
+	itemId?: string;
+}
+
 interface EbayOrder {
 	orderId: string;
 	lineItems?: Array<{
@@ -244,6 +260,8 @@ export class EbayAdapter implements PlatformSDK {
 					"https://api.ebay.com/oauth/api_scope/sell.inventory",
 					"https://api.ebay.com/oauth/api_scope/sell.fulfillment",
 					"https://api.ebay.com/oauth/api_scope/sell.account",
+					"https://api.ebay.com/oauth/api_scope/sell.negotiation",
+					"https://api.ebay.com/oauth/api_scope/sell.messaging",
 				],
 			});
 			// Seed the OAuth2 layer with the stored refresh token so it can exchange
@@ -270,35 +288,6 @@ export class EbayAdapter implements PlatformSDK {
 		}
 	}
 
-	/** Application-level token for public Browse API calls (no user scope needed). */
-	private async getApplicationToken(): Promise<string> {
-		if (this._appToken && Date.now() < this._appTokenExpiresAt - 60_000) {
-			return this._appToken;
-		}
-		const domain = this.creds.sandbox
-			? "api.sandbox.ebay.com"
-			: "api.ebay.com";
-		const credentials = Buffer.from(
-			`${this.creds.clientId}:${this.creds.clientSecret}`,
-		).toString("base64");
-		const res = await fetch(`https://${domain}/identity/v1/oauth2/token`, {
-			method: "POST",
-			headers: {
-				Authorization: `Basic ${credentials}`,
-				"Content-Type": "application/x-www-form-urlencoded",
-			},
-			body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
-		});
-		if (!res.ok) {
-			throw new PlatformError(this.platform, `App token request failed: HTTP ${res.status}`);
-		}
-		const data = (await res.json()) as { access_token: string; expires_in: number };
-		this._appToken = data.access_token;
-		this._appTokenExpiresAt = Date.now() + data.expires_in * 1000;
-		return this._appToken;
-	}
-
-	// Shared fetch helper — throws typed errors on non-2xx responses.
 	/** Application-level token for public Browse API calls (no user scope needed). */
 	private async getApplicationToken(): Promise<string> {
 		if (this._appToken && Date.now() < this._appTokenExpiresAt - 60_000) {
@@ -913,25 +902,87 @@ export class EbayAdapter implements PlatformSDK {
 	// ---- Messaging (Trading API — not yet implemented) -------------------------
 
 	async getThreads(): Promise<PlatformThread[]> {
-		throw new UnsupportedOperationError(
-			this.platform,
-			"getThreads — eBay Trading API messaging not yet implemented",
+		const token = await this.getAccessToken();
+		const data = await this.ebayFetch<{ conversations?: EbayConversation[] }>(
+			`${this.baseUrl}/sell/messaging/v1/conversation`,
+			{ method: "GET" },
+			token,
+		);
+		return (data.conversations ?? []).map((c) => {
+			const lastMsg = c.latestMessage;
+			const platformMessage: PlatformMessage = {
+				platform: this.platform,
+				threadId: c.conversationId,
+				messageId: lastMsg?.messageId ?? '',
+				from: lastMsg?.sender?.username ?? c.buyer?.username ?? 'unknown',
+				body: lastMsg?.body ?? '',
+				sentAt: new Date(lastMsg?.createdDate ?? Date.now()),
+				read: (c.unreadMessageCount ?? 0) === 0,
+			};
+			return {
+				platform: this.platform,
+				threadId: c.conversationId,
+				withUser: c.buyer?.username ?? 'unknown',
+				lastMessage: platformMessage,
+				unreadCount: c.unreadMessageCount ?? 0,
+				listingId: c.itemId,
+			};
+		});
+	}
+
+	async getThread(threadId: string): Promise<PlatformMessage[]> {
+		const token = await this.getAccessToken();
+		const data = await this.ebayFetch<{ messages?: EbayConversationMessage[] }>(
+			`${this.baseUrl}/sell/messaging/v1/conversation/${encodeURIComponent(threadId)}/message`,
+			{ method: "GET" },
+			token,
+		);
+		return (data.messages ?? []).map((m) => ({
+			platform: this.platform,
+			threadId,
+			messageId: m.messageId,
+			from: m.sender?.username ?? 'unknown',
+			body: m.body ?? '',
+			sentAt: new Date(m.createdDate ?? Date.now()),
+			read: m.read ?? false,
+		}));
+	}
+
+	async sendMessage(threadId: string, body: string): Promise<void> {
+		const token = await this.getAccessToken();
+		await this.ebayFetch(
+			`${this.baseUrl}/sell/messaging/v1/conversation/${encodeURIComponent(threadId)}/send_message`,
+			{ method: "POST", body: JSON.stringify({ body }) },
+			token,
 		);
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	async getThread(_threadId: string): Promise<PlatformMessage[]> {
-		throw new UnsupportedOperationError(
-			this.platform,
-			"getThread — eBay Trading API messaging not yet implemented",
-		);
-	}
-
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	async sendMessage(_threadId: string, _body: string): Promise<void> {
-		throw new UnsupportedOperationError(
-			this.platform,
-			"sendMessage — eBay Trading API messaging not yet implemented",
-		);
+	async replyToOffer(
+		offerId: string,
+		action: 'accept' | 'decline' | 'counter',
+		counterPrice?: number,
+	): Promise<void> {
+		const token = await this.getAccessToken();
+		if (action === 'counter' && counterPrice !== undefined) {
+			await this.ebayFetch(
+				`${this.baseUrl}/sell/negotiation/v1/offer/${encodeURIComponent(offerId)}/counter_offer`,
+				{
+					method: "POST",
+					body: JSON.stringify({
+						counterOffer: {
+							price: { currency: "USD", value: counterPrice.toFixed(2) },
+						},
+					}),
+				},
+				token,
+			);
+		} else {
+			const endpoint = action === 'accept' ? 'accept' : 'decline';
+			await this.ebayFetch(
+				`${this.baseUrl}/sell/negotiation/v1/offer/${encodeURIComponent(offerId)}/${endpoint}`,
+				{ method: "POST", body: "{}" },
+				token,
+			);
+		}
 	}
 }
