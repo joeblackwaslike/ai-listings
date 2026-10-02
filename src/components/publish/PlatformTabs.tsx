@@ -39,7 +39,7 @@ function buildPoshmarkCopyAll(listing: Listing): string {
     `Title: ${p.title}`,
     `Category: ${p.category}`,
     `Size: ${p.size}`,
-    p.original_price != null ? `Original Price: $${p.original_price}` : '',
+    p.original_price_cents != null ? `Original Price: $${(p.original_price_cents / 100).toFixed(2)}` : '',
     ``,
     `Description:`,
     p.description,
@@ -264,8 +264,8 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
                   <CopyField label="Title" value={poshmark.title} />
                   <CopyField label="Category" value={poshmark.category} />
                   <CopyField label="Size" value={poshmark.size} />
-                  {poshmark.original_price != null && (
-                    <CopyField label="Original Price" value={`$${poshmark.original_price}`} />
+                  {poshmark.original_price_cents != null && (
+                    <CopyField label="Original Price" value={`$${(poshmark.original_price_cents / 100).toFixed(2)}`} />
                   )}
                   <CopyField label="Description" value={poshmark.description} multiline />
                 </div>

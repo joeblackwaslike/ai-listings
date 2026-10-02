@@ -115,10 +115,17 @@ export interface PlatformFields {
   };
   poshmark?: {
     title: string;
-    category: string;
-    size: string;
     description: string;
-    original_price?: number;
+    department: string;
+    category: string;
+    subcategory?: string;
+    size: string;
+    colors: string[];
+    style_tags: string[];
+    original_price_cents?: number;
+    min_price_cents?: number;
+    smart_sell?: boolean;
+    listing_id?: string;
   };
   [platform: string]: Record<string, unknown> | undefined;
 }

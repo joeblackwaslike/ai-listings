@@ -11,7 +11,7 @@ import type {
   UnifiedListing,
   TrackingInfo,
 } from '../types';
-import { UnsupportedOperationError, AuthExpiredError, PlatformError } from '../errors';
+import { UnsupportedOperationError, AuthExpiredError, PlatformError, PoshmarkCreatePendingError } from '../errors';
 
 // ---------------------------------------------------------------------------
 // Helper functions
@@ -201,10 +201,7 @@ export class PoshmarkAdapter implements PlatformSDK {
   // Poshmark create requires CSRF from the /create-listing page — not yet
   // reverse-engineered to the point where it can be automated reliably.
   async createListing(_listing: UnifiedListing): Promise<{ platformId: string; url: string }> {
-    throw new UnsupportedOperationError(
-      this.platform,
-      'createListing — requires CSRF from /create-listing page (reverse-engineered endpoint, not yet implemented)',
-    );
+    throw new PoshmarkCreatePendingError()
   }
 
   async deleteListing(_platformId: string): Promise<void> {

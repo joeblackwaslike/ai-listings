@@ -51,9 +51,9 @@ function deriveChecks(listing: Listing): AuditCheck[] {
     pass: poshTitle.length > 0,
   })
   checks.push({
-    label: 'Poshmark title ≤ 60 chars',
-    pass: poshTitle.length > 0 && poshTitle.length <= 60,
-    detail: poshTitle.length > 0 ? `${poshTitle.length}/60` : undefined,
+    label: 'Poshmark title ≤ 80 chars',
+    pass: poshTitle.length > 0 && poshTitle.length <= 80,
+    detail: poshTitle.length > 0 ? `${poshTitle.length}/80` : undefined,
   })
 
   const poshDesc = poshmark?.description ?? ''
