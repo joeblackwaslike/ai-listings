@@ -260,8 +260,8 @@ export class EbayAdapter implements PlatformSDK {
 					"https://api.ebay.com/oauth/api_scope/sell.inventory",
 					"https://api.ebay.com/oauth/api_scope/sell.fulfillment",
 					"https://api.ebay.com/oauth/api_scope/sell.account",
-					"https://api.ebay.com/oauth/api_scope/sell.negotiation",
-					"https://api.ebay.com/oauth/api_scope/sell.messaging",
+					// sell.negotiation + sell.messaging require eBay API access approval
+					// before they can be added here or to the OAuth consent URL
 				],
 			});
 			// Seed the OAuth2 layer with the stored refresh token so it can exchange
