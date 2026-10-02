@@ -127,13 +127,20 @@ export async function publishListingToPoshmark(
   options?: { draft?: boolean; photoIds?: string[] },
 ): Promise<PoshmarkPublishResult> {
   const draft = options?.draft ?? false
-  const { unified } = await buildUnifiedListingForPoshmark(listing, photos, { photoIds: options?.photoIds })
+  const { unified, extras } = await buildUnifiedListingForPoshmark(listing, photos, { photoIds: options?.photoIds })
+
+  // Merge Poshmark-specific extras into platformFields so createListing receives them
+  // without changing the UnifiedListing interface used by other platforms.
+  const unifiedWithExtras: UnifiedListing = {
+    ...unified,
+    platformFields: { ...unified.platformFields, ...extras },
+  }
 
   if (draft) {
     return { platformId: '', url: '' }
   }
 
-  const result = await adapter.createListing(unified)
+  const result = await adapter.createListing(unifiedWithExtras)
 
   const currentPlatformFields = listing.platform_fields as PlatformFields
   const updatedPlatformFields: PlatformFields = {
