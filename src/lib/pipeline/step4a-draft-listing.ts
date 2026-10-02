@@ -147,7 +147,7 @@ Use the generate_listing tool to produce the full listing.
 ${rulesSection}Rules:
 - Canonical title: brand + model + key attributes, not platform-specific
 - eBay title: exactly 80 chars or fewer, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
-- Poshmark title: natural, 60 chars max
+- Poshmark title: natural, 80 chars max
 - Poshmark department: must be exactly one of: Women, Men, Kids, Home, Pets, Electronics
 - Poshmark category: must be a valid Poshmark category slug matching the department (e.g. "Jeans", "Sneakers", "Handbags"). Match what Poshmark actually calls it on poshmark.com.
 - Poshmark subcategory: if a subcategory applies (e.g. "Boot_Cut" for Jeans), use the Poshmark display slug; otherwise null

@@ -2,6 +2,8 @@
 // Re-generate: see docs/superpowers/plans/2026-10-02-poshmark-publishing-pipeline.md Task 3.
 // Key format: "Department/Category" or "Department/Category/Subcategory" using Poshmark display slugs.
 
+import { PlatformError } from './errors'
+
 export interface PoshmarkCategoryIds {
   departmentId: string
   categoryId: string
@@ -761,6 +763,6 @@ export function lookupPoshmarkCategory(
     ? `${department}/${category}/${subcategory}`
     : `${department}/${category}`
   const ids = POSHMARK_CATEGORY_MAP[key]
-  if (!ids) throw new Error(`Unknown Poshmark category: ${key}`)
+  if (!ids) throw new PlatformError('poshmark', `Unknown Poshmark category: ${key}`)
   return ids
 }

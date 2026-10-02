@@ -4,7 +4,7 @@ import { getPoshmarkCreds } from '@/lib/platforms/credentials'
 import { PoshmarkAdapter } from '@/lib/platforms/adapters/poshmark'
 import { publishListingToPoshmark } from '@/lib/platforms/publish-to-poshmark'
 import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
-import { PoshmarkCreatePendingError } from '@/lib/platforms/errors'
+import { PoshmarkCreatePendingError, PlatformError } from '@/lib/platforms/errors'
 import type { Listing, Photo } from '@/types/listings'
 
 export async function POST(
@@ -116,6 +116,9 @@ export async function POST(
         { ok: false, error: 'poshmark_create_pending', message: 'Poshmark publishing is not yet available — the create listing endpoint is pending reverse-engineering.' },
         { status: 501 }
       )
+    }
+    if (err instanceof PlatformError) {
+      return Response.json({ error: err.message }, { status: 422 })
     }
     console.error('[post-to-poshmark]', err)
     return Response.json({ error: err instanceof Error ? err.message : 'Unexpected error' }, { status: 500 })
