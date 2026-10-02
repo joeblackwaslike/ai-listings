@@ -254,7 +254,7 @@ Use the generate_listing tool. Rules:
           canonical: { type: 'string', description: 'Buyer-oriented Markdown. Opens with 1-2 descriptive prose sentences about the item (NOT a bullet list or key-value headers). Followed by a "**Condition**" section. No filler.' },
           ebay_title: { type: 'string', description: 'eBay title, max 80 chars' },
           ebay_description: { type: 'string', description: 'Plain text only — no Markdown, no HTML, no tables, no emojis. Must include condition.' },
-          poshmark_title: { type: 'string', description: 'Poshmark title, max 60 chars' },
+          poshmark_title: { type: 'string', description: 'Poshmark title, max 80 chars' },
           poshmark_description: { type: 'string', description: 'Plain text; minimal emojis only. Must include condition.' },
           seo_keywords: { type: 'array', items: { type: 'string' } },
         },
