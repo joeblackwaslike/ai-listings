@@ -47,6 +47,8 @@ export async function buildProviderAuthUrl(
       'https://api.ebay.com/oauth/api_scope/sell.inventory',
       'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
       'https://api.ebay.com/oauth/api_scope/sell.account',
+      'https://api.ebay.com/oauth/api_scope/sell.negotiation',
+      'https://api.ebay.com/oauth/api_scope/sell.messaging',
     ].join(' ')
     const u = new URL('https://auth.ebay.com/oauth2/authorize')
     u.searchParams.set('client_id', clientId)
