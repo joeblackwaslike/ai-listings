@@ -18,8 +18,12 @@ interface DraftOutput {
   ebay_item_specifics: Record<string, string>
   poshmark_title: string
   poshmark_description: string
+  poshmark_department: string
   poshmark_category: string
+  poshmark_subcategory: string | null
   poshmark_size: string
+  poshmark_colors: string[]
+  poshmark_style_tags: string[]
   suggested_price_cents: number
   seo_keywords: string[]
 }
@@ -144,6 +148,11 @@ ${rulesSection}Rules:
 - Canonical title: brand + model + key attributes, not platform-specific
 - eBay title: exactly 80 chars or fewer, keyword-rich (buyers search "Chanel Classic Flap Medium Black Gold Hardware")
 - Poshmark title: natural, 60 chars max
+- Poshmark department: must be exactly one of: Women, Men, Kids, Home, Pets, Electronics
+- Poshmark category: must be a valid Poshmark category slug matching the department (e.g. "Jeans", "Sneakers", "Handbags"). Match what Poshmark actually calls it on poshmark.com.
+- Poshmark subcategory: if a subcategory applies (e.g. "Boot_Cut" for Jeans), use the Poshmark display slug; otherwise null
+- Poshmark colors: up to 2, from the allowed list only
+- Poshmark style_tags: exactly 3 aesthetic/style descriptors for this specific item
 - eBay item specifics: ALWAYS include "Type" (e.g. "Necklace", "Shoulder Bag", "Wallet", "Ring", "Bracelet", "Tote", "Backpack") and "Style" (e.g. "Pendant Necklace", "Crossbody Bag", "Zip-Around Wallet") — eBay requires both; also include brand, model, color, material, condition, size/dimensions where relevant
 - If a Sizing line is present, present it as a compact size comparison in the description (e.g. "Sizing: US 8.5 · EU 39 · UK 6") and, if a Sizing note is present, weave it into the description as a natural sentence — never invent, alter, or omit these numbers.${titleSizeString ? `\n- SNEAKERS REQUIRED: all three titles (canonical, eBay, Poshmark) MUST include the gender (${measurementsRow?.gender === 'mens' ? "Men's" : "Women's"}) and the size string "${titleSizeString}" — these are non-negotiable, never omit them` : ''}
 - eBay category_id: use standard eBay category ID numbers (Handbags: 169291, Sneakers: 155202, Electronics/phones: 9355, Clothing tops: 53159)
@@ -176,8 +185,26 @@ ${rulesSection}Rules:
           },
           poshmark_title: { type: 'string', description: 'Max 80 characters' },
           poshmark_description: { type: 'string' },
+          poshmark_department: {
+            type: 'string',
+            description: 'Poshmark department. Must be exactly one of: Women, Men, Kids, Home, Pets, Electronics',
+          },
           poshmark_category: { type: 'string' },
+          poshmark_subcategory: {
+            type: ['string', 'null'],
+            description: 'Poshmark subcategory display slug (e.g. "Boot_Cut", "Ankle_&_Cropped"). Null if no subcategory fits.',
+          },
           poshmark_size: { type: 'string' },
+          poshmark_colors: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Up to 2 colors. Choose only from: Black, White, Gray, Red, Pink, Orange, Yellow, Green, Blue, Purple, Brown, Tan, Beige, Gold, Silver, Cream, Nude, Multicolor',
+          },
+          poshmark_style_tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Exactly 3 freeform style/aesthetic tags that describe this item (e.g. "Vintage", "Y2K", "Streetwear", "Minimalist", "Luxury", "Athleisure")',
+          },
           suggested_price_cents: {
             type: 'integer',
             description: 'Suggested listing price in cents',
@@ -197,8 +224,12 @@ ${rulesSection}Rules:
           'ebay_item_specifics',
           'poshmark_title',
           'poshmark_description',
+          'poshmark_department',
           'poshmark_category',
+          'poshmark_subcategory',
           'poshmark_size',
+          'poshmark_colors',
+          'poshmark_style_tags',
           'suggested_price_cents',
           'seo_keywords',
         ],
@@ -232,8 +263,12 @@ ${rulesSection}Rules:
       poshmark: {
         title: draft.poshmark_title,
         description: draft.poshmark_description,
+        department: draft.poshmark_department,
         category: draft.poshmark_category,
+        subcategory: draft.poshmark_subcategory ?? undefined,
         size: draft.poshmark_size,
+        colors: draft.poshmark_colors,
+        style_tags: draft.poshmark_style_tags,
       },
     },
   })
