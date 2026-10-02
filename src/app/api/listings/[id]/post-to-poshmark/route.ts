@@ -50,12 +50,17 @@ export async function POST(
     )
   }
 
-  if (
-    !pm.title || !pm.description || !pm.department || !pm.category ||
-    !pm.size || !pm.colors?.length || !pm.style_tags?.length
-  ) {
+  const missingFields: string[] = []
+  if (!pm.title) missingFields.push('title')
+  if (!pm.description) missingFields.push('description')
+  if (!pm.department) missingFields.push('department')
+  if (!pm.category) missingFields.push('category')
+  if (!pm.size) missingFields.push('size')
+  if (!pm.colors?.length) missingFields.push('colors')
+  if (!pm.style_tags?.length) missingFields.push('style_tags')
+  if (missingFields.length > 0) {
     return Response.json(
-      { error: 'Poshmark fields incomplete — title, description, department, category, size, colors, and style_tags are all required' },
+      { error: `Poshmark fields incomplete: ${missingFields.join(', ')}. Re-run step 4 to regenerate.` },
       { status: 400 }
     )
   }
@@ -74,8 +79,8 @@ export async function POST(
 
   let body: { photo_ids?: string[]; draft?: boolean } = {}
   try {
-    const text = await req.text()
-    if (text) body = JSON.parse(text)
+    const raw = await req.json()
+    if (raw && typeof raw === 'object') body = raw
   } catch {
     // empty or invalid body is fine
   }
@@ -108,11 +113,11 @@ export async function POST(
   } catch (err) {
     if (err instanceof PoshmarkCreatePendingError) {
       return Response.json(
-        { ok: false, error: 'poshmark_create_pending', message: (err as Error).message },
+        { ok: false, error: 'poshmark_create_pending', message: 'Poshmark publishing is not yet available — the create listing endpoint is pending reverse-engineering.' },
         { status: 501 }
       )
     }
     console.error('[post-to-poshmark]', err)
-    return Response.json({ error: (err as Error).message }, { status: 500 })
+    return Response.json({ error: err instanceof Error ? err.message : 'Unexpected error' }, { status: 500 })
   }
 }
