@@ -174,7 +174,7 @@ ${rulesSection}Rules:
             type: 'object',
             additionalProperties: { type: 'string' },
           },
-          poshmark_title: { type: 'string', description: 'Max 60 characters' },
+          poshmark_title: { type: 'string', description: 'Max 80 characters' },
           poshmark_description: { type: 'string' },
           poshmark_category: { type: 'string' },
           poshmark_size: { type: 'string' },
