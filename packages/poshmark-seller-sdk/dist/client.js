@@ -202,7 +202,7 @@ export class PoshmarkClient {
         }
         const blob = await imgResp.blob();
         const form = new FormData();
-        form.append("img_file", blob, "image.jpg");
+        form.append("file", blob, "image.jpg");
         const result = await this.requestJson({
             method: "POST",
             path: `/api/posts/${encodeURIComponent(postId)}/media/scratch`,
