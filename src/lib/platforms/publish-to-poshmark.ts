@@ -77,6 +77,7 @@ export async function buildUnifiedListingForPoshmark(
     description: pm.description,
     price: priceCents,
     condition: CONDITION_MAP[listing.condition ?? ''] ?? 'ug',
+    category: categoryKey,
     brand: listing.brand ?? '',
     imageUrls: photos.map((p) => p.processed_url ?? p.raw_url),
     platformFields: {
