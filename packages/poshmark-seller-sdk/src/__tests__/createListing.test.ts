@@ -128,6 +128,28 @@ describe("PoshmarkClient.createListing", () => {
     expect(updateBody.post.offer_auto_actions_min_price_amount).toEqual({ val: "35", currency_code: "USD" });
   });
 
+  it("falls back to priceCents for original_price_amount when originalPriceCents is omitted", async () => {
+    const bodies: unknown[] = [];
+    const fetchImpl = vi.fn().mockImplementation((rawUrl: string | URL, init?: RequestInit) => {
+      const url = s(rawUrl);
+      if (init?.body && typeof init.body === "string") bodies.push(JSON.parse(init.body));
+      if (url.includes("/create-listing")) return Promise.resolve(htmlResp(CSRF_HTML));
+      if (url.includes("/users/abc123/posts")) return Promise.resolve(jsonResp({ id: DRAFT_ID }));
+      if (url.includes(PHOTO_URL_1)) return Promise.resolve(new Response(PHOTO_BYTES, { status: 200 }));
+      if (url.includes("/media/scratch")) return Promise.resolve(jsonResp({ id: PHOTO_ID_1 }));
+      if (url.includes(`/posts/${DRAFT_ID}`)) return Promise.resolve(jsonResp({ trace_id: "t" }));
+      if (url.includes("status/published")) return Promise.resolve(jsonResp({ trace_id: "t" }));
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const { originalPriceCents, ...paramsWithoutOriginalPrice } = BASE_PARAMS;
+
+    await makeClient(fetchImpl).createListing(paramsWithoutOriginalPrice);
+
+    const updateBody = bodies.find((b: any) => b?.post?.price_amount) as any;
+    expect(updateBody.post.original_price_amount).toEqual({ val: 55, currency_code: "USD", currency_symbol: "$" });
+  });
+
   it("places cover_shot as first photo and rest in pictures array", async () => {
     const bodies: unknown[] = [];
     const fetchImpl = vi.fn().mockImplementation((rawUrl: string | URL, init?: RequestInit) => {
