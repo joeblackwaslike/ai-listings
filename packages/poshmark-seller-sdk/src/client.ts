@@ -186,13 +186,11 @@ export class PoshmarkClient {
             currency_code: "USD",
             currency_symbol: "$",
           },
-          ...(params.originalPriceCents !== undefined && {
-            original_price_amount: {
-              val: Math.floor(params.originalPriceCents / 100),
-              currency_code: "USD",
-              currency_symbol: "$",
-            },
-          }),
+          original_price_amount: {
+            val: Math.floor((params.originalPriceCents ?? params.priceCents) / 100),
+            currency_code: "USD",
+            currency_symbol: "$",
+          },
           ...(params.smartSell && params.minPriceCents !== undefined && {
             offer_auto_actions_v2_enabled: true,
             offer_auto_actions_min_price_amount: {
@@ -217,15 +215,17 @@ export class PoshmarkClient {
       referer: "https://poshmark.com/create-listing",
     });
 
-    // Step 4: Publish
-    await this.requestJson<{ trace_id: string }>({
-      method: "PUT",
-      path: `/vm-rest/posts/${encodeURIComponent(postId)}/status/published`,
-      query: { app_version: "2.55", pm_version: "2026.40.00" },
-      body: {},
-      csrfToken,
-      referer: "https://poshmark.com/create-listing",
-    });
+    // Step 4: Publish (skipped when draft=true)
+    if (!params.draft) {
+      await this.requestJson<{ trace_id: string }>({
+        method: "PUT",
+        path: `/vm-rest/posts/${encodeURIComponent(postId)}/status/published`,
+        query: { app_version: "2.55", pm_version: "2026.40.00" },
+        body: {},
+        csrfToken,
+        referer: "https://poshmark.com/create-listing",
+      });
+    }
 
     return {
       platformId: postId,
