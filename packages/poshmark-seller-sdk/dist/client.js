@@ -339,6 +339,8 @@ export class PoshmarkClient {
         }
         const response = await this.fetchImpl(url, requestInit);
         if (!response.ok) {
+            const body = await response.text().catch(() => "(unreadable)");
+            console.error(`[poshmark] HTTP ${response.status} ${options.method ?? "GET"} ${url.pathname}: ${body}`);
             throw new PoshmarkHttpError(`Poshmark request failed with HTTP ${response.status}`, {
                 status: response.status,
             });
