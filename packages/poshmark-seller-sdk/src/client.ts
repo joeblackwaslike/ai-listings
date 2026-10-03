@@ -309,6 +309,7 @@ export class PoshmarkClient {
     try {
       const parsed: unknown = JSON.parse(text);
       if (isPoshmarkErrorPayload(parsed)) {
+        console.error(`[poshmark] API error on ${options.method ?? "GET"} ${options.path}: ${JSON.stringify(parsed.error)}`);
         throw new PoshmarkHttpError(
           `Poshmark returned ${parsed.error.statusCode}: ${parsed.error.errorMessage ?? parsed.error.errorType}`,
           { status: parsed.error.statusCode },
