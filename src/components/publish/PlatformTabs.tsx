@@ -61,9 +61,12 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
   const [markingPublished, setMarkingPublished] = useState(false)
   const [copyAllDoneTab, setCopyAllDoneTab] = useState<Platform | null>(null)
   const [postingToEbay, setPostingToEbay] = useState(false)
+  const [postingToPoshmark, setPostingToPoshmark] = useState(false)
   const copyAllDone = copyAllDoneTab === activeTab
 
   const hasAnyUrl = savedUrls.ebay || savedUrls.poshmark
+  const onPoshmark = !!savedUrls.poshmark
+  const onEbay = !!savedUrls.ebay
 
   async function postToEbay() {
     setPostingToEbay(true)
@@ -81,6 +84,24 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
       toast.error('Failed to post listing to eBay')
     } finally {
       setPostingToEbay(false)
+    }
+  }
+
+  async function postToPoshmark() {
+    setPostingToPoshmark(true)
+    try {
+      const res = await fetch(`/api/listings/${listing.id}/post-to-poshmark`, { method: 'POST' })
+      const data = await res.json() as { ok?: boolean; url?: string; error?: string }
+      if (!res.ok || !data.ok) {
+        toast.error(data.error ?? 'Failed to post listing to Poshmark')
+        return
+      }
+      if (data.url) setSavedUrls((prev) => ({ ...prev, poshmark: data.url }))
+      toast.success('Posted to Poshmark')
+    } catch {
+      toast.error('Failed to post listing to Poshmark')
+    } finally {
+      setPostingToPoshmark(false)
     }
   }
 
@@ -140,13 +161,21 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-600">Status:</span>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-            listingStatus === 'published'
-              ? 'bg-purple-900/60 text-purple-300'
-              : 'bg-emerald-900/60 text-emerald-400'
-          }`}>
-            {listingStatus === 'published' ? 'Published' : 'Ready'}
-          </span>
+          {onEbay && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300">
+              eBay ✓
+            </span>
+          )}
+          {onPoshmark && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-pink-900/60 text-pink-300">
+              Poshmark ✓
+            </span>
+          )}
+          {!onEbay && !onPoshmark && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-400">
+              Ready
+            </span>
+          )}
         </div>
         {hasAnyUrl && listingStatus !== 'published' && (
           <button
@@ -156,9 +185,6 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
           >
             {markingPublished ? 'Saving…' : 'Mark as Published'}
           </button>
-        )}
-        {listingStatus === 'published' && (
-          <span className="text-xs text-purple-400">✓ Published</span>
         )}
       </div>
 
@@ -269,23 +295,32 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
                   )}
                   <CopyField label="Description" value={poshmark.description} multiline />
                 </div>
-                <button
-                  onClick={() => void copyAll()}
-                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                >
-                  {copyAllDone ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-500" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                  {copyAllDone ? 'Copied!' : 'Copy all Poshmark fields'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => void postToPoshmark()}
+                    disabled={postingToPoshmark || onPoshmark}
+                    className="px-3 py-2 text-xs font-medium rounded-lg bg-pink-800 text-pink-50 hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {postingToPoshmark ? 'Posting to Poshmark…' : onPoshmark ? 'Posted to Poshmark ✓' : 'Post to Poshmark'}
+                  </button>
+                  <button
+                    onClick={() => void copyAll()}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    {copyAllDone ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    {copyAllDone ? 'Copied!' : 'Copy all Poshmark fields'}
+                  </button>
+                </div>
               </>
             )}
 
             {/* URL input */}
             <div className="space-y-2 pt-2">
-              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Poshmark Listing URL</p>
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Already posted manually? Paste the URL</p>
               {savedUrls.poshmark && (
                 <a
                   href={savedUrls.poshmark}
