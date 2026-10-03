@@ -1,4 +1,4 @@
-export const TITLE_LIMITS: Record<'ebay' | 'poshmark', number> = { ebay: 80, poshmark: 60 }
+export const TITLE_LIMITS: Record<'ebay' | 'poshmark', number> = { ebay: 80, poshmark: 80 }
 
 export interface TitleLengthWarning {
   platform: 'ebay' | 'poshmark'

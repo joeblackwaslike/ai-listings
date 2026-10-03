@@ -15,6 +15,7 @@ import { descriptionRewrite } from '@/lib/inngest/functions/description-rewrite'
 import { batchQualityCheck } from '@/lib/inngest/functions/batch-quality-check'
 import { syncEbayPrices } from '@/lib/inngest/functions/sync-ebay-prices'
 import { backfillEbayDescriptions } from '@/lib/inngest/functions/backfill-ebay-descriptions'
+import { restoreEbayPrices } from '@/lib/inngest/functions/restore-ebay-prices'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -34,5 +35,6 @@ export const { GET, POST, PUT } = serve({
     descriptionRewrite,
     batchQualityCheck,
     backfillEbayDescriptions,
+    restoreEbayPrices,
   ],
 })

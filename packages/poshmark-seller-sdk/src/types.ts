@@ -64,6 +64,31 @@ export interface UpdateListingFields {
   readonly brand?: string;
 }
 
+export interface PoshmarkCreateListingParams {
+  readonly title: string;
+  readonly description: string;
+  readonly priceCents: number;
+  readonly condition: string;
+  readonly brand: string;
+  readonly sku: string;
+  readonly imageUrls: string[];
+  readonly departmentId: string;
+  readonly categoryId: string;
+  readonly subcategoryId?: string;
+  readonly colors: string[];
+  readonly styleTags: string[];
+  readonly size: string;
+  readonly originalPriceCents?: number;
+  readonly minPriceCents?: number;
+  readonly smartSell?: boolean;
+  readonly draft?: boolean;
+}
+
+export interface PoshmarkCreateListingResult {
+  readonly platformId: string;
+  readonly url: string;
+}
+
 export interface SalesPage {
   readonly html: string;
   readonly nextMaxId: string | null;

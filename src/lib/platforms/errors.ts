@@ -32,3 +32,10 @@ export class NotFoundError extends PlatformError {
     this.name = 'NotFoundError';
   }
 }
+
+export class PoshmarkCreatePendingError extends PlatformError {
+  constructor() {
+    super('poshmark', 'createListing not yet implemented');
+    this.name = 'PoshmarkCreatePendingError';
+  }
+}

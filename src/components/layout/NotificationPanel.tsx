@@ -17,6 +17,10 @@ export interface Notification {
   metadata: Record<string, unknown> | null
   read_at: string | null
   created_at: string
+  offer_id: string | null
+  offer_amount: number | null
+  offer_expires_at: string | null
+  buyer_username: string | null
 }
 
 interface NotificationPanelProps {
@@ -45,6 +49,7 @@ export function NotificationPanel({ onClose, onCountChange }: NotificationPanelP
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [thread, setThread] = useState<{ platform: string; threadId: string } | null>(null)
+  const [offerState, setOfferState] = useState<{ id: string; counterMode: boolean; counterAmount: string; loading: boolean } | null>(null)
 
   async function load() {
     try {
@@ -75,6 +80,27 @@ export function NotificationPanel({ onClose, onCountChange }: NotificationPanelP
       prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() }))
     )
     onCountChange(-unreadIds.length)
+  }
+
+  async function handleOfferAction(n: Notification, action: 'accept' | 'decline' | 'counter') {
+    if (action === 'counter' && offerState?.id === n.id && !offerState.counterMode) {
+      setOfferState({ id: n.id, counterMode: true, counterAmount: '', loading: false })
+      return
+    }
+    const counterAmount = action === 'counter' ? parseFloat(offerState?.counterAmount ?? '') : undefined
+    if (action === 'counter' && (!counterAmount || isNaN(counterAmount))) return
+
+    setOfferState((s) => s ? { ...s, loading: true } : { id: n.id, counterMode: false, counterAmount: '', loading: true })
+    await fetch(`/api/notifications/${n.id}/offer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, counterAmount }),
+    })
+    setNotifications((prev) =>
+      prev.map((item) => item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item)
+    )
+    if (!n.read_at) onCountChange(-1)
+    setOfferState(null)
   }
 
   async function handleClick(n: Notification) {
@@ -192,6 +218,63 @@ export function NotificationPanel({ onClose, onCountChange }: NotificationPanelP
                     </div>
                     {n.preview && (
                       <p className="mt-0.5 truncate text-xs text-gray-500">{n.preview}</p>
+                    )}
+                    {n.type === 'offer_received' && n.offer_id && (
+                      <div
+                        className="mt-2 flex flex-col gap-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {offerState?.id === n.id && offerState.counterMode ? (
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="Counter $"
+                              value={offerState.counterAmount}
+                              onChange={(e) => setOfferState((s) => s ? { ...s, counterAmount: e.target.value } : s)}
+                              className="w-24 rounded bg-gray-700 px-2 py-1 text-xs text-gray-100 outline-none ring-1 ring-gray-600 focus:ring-blue-500"
+                            />
+                            <button
+                              onClick={() => void handleOfferAction(n, 'counter')}
+                              disabled={offerState.loading}
+                              className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40"
+                            >
+                              Send
+                            </button>
+                            <button
+                              onClick={() => setOfferState(null)}
+                              className="rounded bg-gray-700 px-2 py-1 text-xs text-gray-300 hover:bg-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => void handleOfferAction(n, 'accept')}
+                              disabled={offerState?.loading && offerState.id === n.id}
+                              className="rounded bg-green-700 px-2 py-1 text-xs font-medium text-white hover:bg-green-600 disabled:opacity-40"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              onClick={() => void handleOfferAction(n, 'decline')}
+                              disabled={offerState?.loading && offerState.id === n.id}
+                              className="rounded bg-red-800 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-40"
+                            >
+                              Decline
+                            </button>
+                            <button
+                              onClick={() => void handleOfferAction(n, 'counter')}
+                              disabled={offerState?.loading && offerState.id === n.id}
+                              className="rounded bg-gray-700 px-2 py-1 text-xs font-medium text-gray-200 hover:bg-gray-600 disabled:opacity-40"
+                            >
+                              Counter
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </li>

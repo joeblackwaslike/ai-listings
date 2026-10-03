@@ -21,6 +21,20 @@ function verifyEbaySignature(rawBody: Buffer, signature: string, clientSecret: s
   }
 }
 
+/** Find the user_id of the eBay-connected seller by looking up user_settings. */
+async function resolveEbayUserId(): Promise<string | null> {
+  const supabase = getAdminClient();
+  const { data } = await supabase
+    .from('user_settings')
+    .select('user_id')
+    .eq('key', 'ebay_refresh_token')
+    .not('value', 'is', null)
+    .neq('value', '')
+    .limit(1)
+    .single();
+  return data?.user_id ?? null;
+}
+
 interface EbayWebhookBody {
   challenge?: string;
   notificationId?: string;
@@ -33,6 +47,8 @@ const TYPE_MAP: Record<string, string> = {
   'FIXED_PRICE_TRANSACTION': 'order_placed',
   'BEST_OFFER': 'offer_received',
   'MESSAGE_CREATED': 'listing_question',
+  'AUTHENTICITY_GUARANTEE_STATUS_CHANGED': 'authenticity_update',
+  'ITEM_FLAGGED_AS_INAUTHENTIC': 'authenticity_alert',
 };
 
 // eBay endpoint verification: GET with ?challenge_code=<token>
@@ -79,20 +95,60 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ challengeResponse: body.challenge });
   }
 
-  const topic = body.metadata?.topic ?? '';
-  const mappedType = TYPE_MAP[topic.toUpperCase()] ?? 'other';
+  const topic = (body.metadata?.topic ?? '').toUpperCase();
+  const mappedType = TYPE_MAP[topic] ?? 'other';
+  const data = body.data ?? {};
 
-  // Insert with user_id=null: webhook events arrive without session context.
-  // A follow-up reconciliation job can match notificationId to a seller account.
+  // Resolve the seller user_id — without it the notification is invisible.
+  const userId = await resolveEbayUserId();
+  if (!userId) {
+    console.warn('[ebay webhook] no eBay-connected user found — discarding event', topic);
+    return NextResponse.json({ received: true });
+  }
+
+  // Build topic-specific fields.
+  let title = topic || 'eBay notification';
+  let preview = JSON.stringify(data).slice(0, 200);
+  let offerFields: Record<string, unknown> = {};
+
+  if (topic === 'BEST_OFFER') {
+    const buyer = (data.buyerUsername as string | undefined) ?? 'buyer';
+    const amount = parseFloat((data.price as { value?: string } | undefined)?.value ?? '0');
+    const offerId = (data.bestOfferId as string | undefined) ?? '';
+    const expiresAt = (data.expirationDate as string | undefined)
+      ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    title = `Offer from ${buyer}`;
+    preview = `$${amount.toFixed(2)} · expires ${new Date(expiresAt).toLocaleString()}`;
+    offerFields = {
+      offer_id: offerId,
+      offer_amount: amount,
+      offer_expires_at: expiresAt,
+      buyer_username: buyer,
+    };
+  } else if (topic === 'MESSAGE_CREATED') {
+    const sender = (data.sender as { username?: string } | undefined)?.username ?? 'buyer';
+    const msgPreview = (data.body as string | undefined)?.slice(0, 100) ?? '';
+    title = `Message from ${sender}`;
+    preview = msgPreview;
+  } else if (topic === 'AUTHENTICITY_GUARANTEE_STATUS_CHANGED') {
+    const status = (data.status as string | undefined) ?? 'UNKNOWN';
+    title = `Authenticity check: ${status}`;
+    preview = `Item ${data.itemId as string | undefined ?? ''} — ${status}`;
+  } else if (topic === 'ITEM_FLAGGED_AS_INAUTHENTIC') {
+    title = 'Item flagged as inauthentic';
+    preview = `Item ${data.itemId as string | undefined ?? ''} reported inauthentic`;
+  }
+
   try {
     const supabase = getAdminClient();
     await supabase.from('notifications').insert({
-      user_id: null,
+      user_id: userId,
       platform: 'ebay',
       type: mappedType,
-      title: topic || 'eBay notification',
-      preview: JSON.stringify(body.data ?? {}).slice(0, 200),
-      metadata: { ...body, platformNotificationId: body.notificationId ?? `ebay-${Date.now()}` },
+      title,
+      preview,
+      metadata: { ...data, platformNotificationId: body.notificationId ?? `ebay-${Date.now()}` },
+      ...offerFields,
     });
   } catch (err) {
     // Log but return 200 — eBay retries on non-2xx which would cause duplicates

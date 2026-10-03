@@ -198,13 +198,32 @@ export class PoshmarkAdapter implements PlatformSDK {
     }
   }
 
-  // Poshmark create requires CSRF from the /create-listing page — not yet
-  // reverse-engineered to the point where it can be automated reliably.
-  async createListing(_listing: UnifiedListing): Promise<{ platformId: string; url: string }> {
-    throw new UnsupportedOperationError(
-      this.platform,
-      'createListing — requires CSRF from /create-listing page (reverse-engineered endpoint, not yet implemented)',
-    );
+  async createListing(listing: UnifiedListing): Promise<{ platformId: string; url: string }> {
+    try {
+      const pf = (listing.platformFields ?? {}) as Record<string, unknown>;
+      const categoryIds = pf.categoryIds as { departmentId: string; categoryId: string; subcategoryId?: string };
+
+      return await this.client.createListing({
+        title: listing.title,
+        description: listing.description ?? '',
+        priceCents: listing.price,
+        condition: listing.condition ?? 'ug',
+        brand: listing.brand ?? '',
+        sku: listing.internalId ?? '',
+        imageUrls: listing.imageUrls ?? [],
+        departmentId: categoryIds.departmentId,
+        categoryId: categoryIds.categoryId,
+        subcategoryId: categoryIds.subcategoryId,
+        colors: (pf.colors as string[]) ?? [],
+        styleTags: (pf.styleTags as string[]) ?? [],
+        size: (pf.size as string) ?? '',
+        originalPriceCents: pf.originalPriceCents as number | undefined,
+        minPriceCents: pf.minPriceCents as number | undefined,
+        smartSell: (pf.smartSell as boolean) ?? false,
+      });
+    } catch (err) {
+      throw mapPoshmarkError(err);
+    }
   }
 
   async deleteListing(_platformId: string): Promise<void> {
