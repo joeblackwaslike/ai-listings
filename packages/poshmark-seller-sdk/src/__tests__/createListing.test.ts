@@ -153,6 +153,31 @@ describe("PoshmarkClient.createListing", () => {
     expect(updateBody.post.pictures).toHaveLength(1);
   });
 
+  it("uploads the photo blob under the 'file' multipart field name", async () => {
+    let uploadForm: FormData | undefined;
+    const fetchImpl = vi.fn().mockImplementation((rawUrl: string | URL, init?: RequestInit) => {
+      const url = s(rawUrl);
+      if (url.includes("/create-listing")) return Promise.resolve(htmlResp(CSRF_HTML));
+      if (url.includes("/users/abc123/posts")) return Promise.resolve(jsonResp({ id: DRAFT_ID }));
+      if (url.includes(PHOTO_URL_1)) return Promise.resolve(new Response(PHOTO_BYTES, { status: 200 }));
+      if (url.includes("/media/scratch")) {
+        uploadForm = init?.body as FormData;
+        return Promise.resolve(jsonResp({ id: PHOTO_ID_1 }));
+      }
+      if (url.includes(`/posts/${DRAFT_ID}`)) return Promise.resolve(jsonResp({ trace_id: "t" }));
+      if (url.includes("status/published")) return Promise.resolve(jsonResp({ trace_id: "t" }));
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    await makeClient(fetchImpl).createListing(BASE_PARAMS);
+
+    expect(uploadForm).toBeInstanceOf(FormData);
+    expect(uploadForm!.has("file")).toBe(true);
+    expect(uploadForm!.has("img_file")).toBe(false);
+    const entry = uploadForm!.get("file") as File;
+    expect(entry.name).toBe("image.jpg");
+  });
+
   it("throws if create draft returns no id", async () => {
     const fetchImpl = makeFetchByUrl({
       "/create-listing": htmlResp(CSRF_HTML),
