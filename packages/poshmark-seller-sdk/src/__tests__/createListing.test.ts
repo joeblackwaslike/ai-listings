@@ -176,4 +176,19 @@ describe("PoshmarkClient.createListing", () => {
       "Photo upload did not return an id",
     );
   });
+
+  it("logs the response body when a request fails with a non-ok HTTP status", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchImpl = makeFetchByUrl({
+      "/create-listing": htmlResp(CSRF_HTML),
+      "/users/abc123/posts": new Response('{"error":"rate limited"}', { status: 429 }),
+    });
+
+    await expect(makeClient(fetchImpl).createListing(BASE_PARAMS)).rejects.toThrow(
+      "Poshmark request failed with HTTP 429",
+    );
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('{"error":"rate limited"}'));
+    consoleErrorSpy.mockRestore();
+  });
 });
