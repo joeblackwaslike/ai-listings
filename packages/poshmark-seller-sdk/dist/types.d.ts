@@ -72,6 +72,7 @@ export interface PoshmarkCreateListingParams {
     readonly originalPriceCents?: number;
     readonly minPriceCents?: number;
     readonly smartSell?: boolean;
+    readonly draft?: boolean;
 }
 export interface PoshmarkCreateListingResult {
     readonly platformId: string;
