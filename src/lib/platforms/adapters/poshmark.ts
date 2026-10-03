@@ -44,20 +44,6 @@ function mapOrderStatus(statusText: string): PlatformOrder['status'] {
   return 'pending';
 }
 
-const POSHMARK_CONDITION_MAP: Record<string, string> = {
-  new_with_tags: 'nwt',
-  new_without_tags: 'nwot',
-  like_new: 'ug',
-  very_good: 'ug',
-  good: 'guc',
-  fair: 'fc',
-  poor: 'pc',
-};
-
-function mapConditionToPoshmark(condition: string): string {
-  return POSHMARK_CONDITION_MAP[condition] ?? 'ug';
-}
-
 function mapPoshmarkError(err: unknown): Error {
   if (err instanceof Error && err.message.includes('401')) {
     return new AuthExpiredError('poshmark');
@@ -221,7 +207,7 @@ export class PoshmarkAdapter implements PlatformSDK {
         title: listing.title,
         description: listing.description ?? '',
         priceCents: listing.price,
-        condition: mapConditionToPoshmark(listing.condition ?? ''),
+        condition: listing.condition ?? 'ug',
         brand: listing.brand ?? '',
         sku: listing.internalId ?? '',
         imageUrls: listing.imageUrls ?? [],

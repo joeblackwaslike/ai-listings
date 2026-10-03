@@ -33,12 +33,9 @@ export class NotFoundError extends PlatformError {
   }
 }
 
-export class PoshmarkCreatePendingError extends Error {
+export class PoshmarkCreatePendingError extends PlatformError {
   constructor() {
-    super(
-      'Poshmark createListing is pending reverse-engineering of POST /vm-rest/posts. ' +
-      'Add the implementation to @local/poshmark-seller-sdk once the endpoint is confirmed.'
-    )
-    this.name = 'PoshmarkCreatePendingError'
+    super('poshmark', 'createListing not yet implemented');
+    this.name = 'PoshmarkCreatePendingError';
   }
 }

@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Listing, Photo, PlatformFields, ListingUrls } from '@/types/listings'
 import type { UnifiedListing } from './types'
-import { lookupPoshmarkCategory } from './poshmark-categories'
-import { toPublicUrl } from '@/lib/pipeline/to-public-url'
+import { POSHMARK_CATEGORY_MAP } from './poshmark-categories'
+import { PlatformError } from './errors'
 
 export interface PoshmarkPublishResult {
   platformId: string
@@ -10,85 +10,65 @@ export interface PoshmarkPublishResult {
 }
 
 export interface PoshmarkPublisher {
-  createListing(listing: UnifiedListing): Promise<{ platformId: string; url: string }>
+  createListing(listing: UnifiedListing): Promise<PoshmarkPublishResult>
 }
 
-export interface PoshmarkListingExtras {
-  categoryIds: ReturnType<typeof lookupPoshmarkCategory>
-  colors: string[]
-  styleTags: string[]
-  originalPriceCents: number | undefined
-  minPriceCents: number | undefined
-  smartSell: boolean
-}
-
-const POSHMARK_CONDITION_MAP: Record<string, string> = {
+const CONDITION_MAP: Record<string, string> = {
   new_with_tags: 'nwt',
-  new_without_tags: 'uln',
+  new_without_tags: 'nwot',
   like_new: 'uln',
-  very_good: 'ug',
+  very_good: 'uln',
   good: 'ug',
   fair: 'uf',
   poor: 'uf',
-  for_parts: 'uf',
 }
 
-/**
- * Selects and orders photos for a Poshmark listing.
- * Studio photos come first (by display_order), auth_card photos appended at end.
- * Total capped at 16. If photoIds override is provided, uses that order instead.
- */
 export function selectPoshmarkPhotos(photos: Photo[], photoIds?: string[]): Photo[] {
-  if (photoIds && photoIds.length > 0) {
+  if (photoIds?.length) {
     const byId = new Map(photos.map((p) => [p.id, p]))
-    return photoIds
-      .map((id) => byId.get(id))
-      .filter((p): p is Photo => p !== undefined)
-      .slice(0, 16)
+    return photoIds.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []))
   }
-
   const studio = photos
     .filter((p) => p.type === 'studio')
     .sort((a, b) => a.display_order - b.display_order)
-
-  const authCards = photos
+  const auth = photos
     .filter((p) => p.type === 'auth_card')
     .sort((a, b) => a.display_order - b.display_order)
+  return [...studio.slice(0, 16 - auth.length), ...auth]
+}
 
-  const combined = [...studio, ...authCards]
-
-  if (combined.length <= 16) return combined
-
-  // If we have more than 16, always include at least 1 auth_card if any exist
-  if (authCards.length > 0) {
-    return [...studio.slice(0, 15), authCards[0]]
-  }
-  return studio.slice(0, 16)
+export interface UnifiedListingExtras {
+  colors: string[]
+  styleTags: string[]
+  categoryIds: { departmentId: string; categoryId: string; subcategoryId?: string }
 }
 
 export async function buildUnifiedListingForPoshmark(
   listing: Listing,
   photos: Photo[],
-  options?: { photoIds?: string[] },
-): Promise<{ unified: UnifiedListing; extras: PoshmarkListingExtras }> {
-  const pm = listing.platform_fields?.poshmark
-  if (!pm) throw new Error('platform_fields.poshmark is missing — run pipeline through step 4 first')
-
-  const selectedPhotos = selectPoshmarkPhotos(photos, options?.photoIds)
-  const imageUrls = await Promise.all(
-    selectedPhotos
-      .map((p) => p.processed_url ?? p.raw_url)
-      .filter(Boolean)
-      .map((url) => toPublicUrl(url as string))
-  )
-
-  const categoryIds = lookupPoshmarkCategory(pm.department, pm.category, pm.subcategory)
-
-  const poshmarkCondition = (listing.condition ? POSHMARK_CONDITION_MAP[listing.condition] : undefined) ?? 'ug'
+): Promise<{ unified: UnifiedListing; extras: UnifiedListingExtras }> {
+  const pm = (listing.platform_fields as PlatformFields)?.poshmark
+  if (!pm) {
+    throw new Error('buildUnifiedListingForPoshmark: platform_fields.poshmark missing — run pipeline step 4 first')
+  }
 
   const priceCents = listing.final_price_cents ?? listing.suggested_price_cents
   if (!priceCents || priceCents <= 0) {
-    throw new Error('buildUnifiedListingForPoshmark: could not resolve a positive price')
+    throw new Error('buildUnifiedListingForPoshmark: no valid price')
+  }
+
+  const categoryKey = pm.subcategory
+    ? `${pm.department}/${pm.category}/${pm.subcategory}`
+    : `${pm.department}/${pm.category}`
+  const categoryIds = POSHMARK_CATEGORY_MAP[categoryKey]
+  if (!categoryIds) {
+    throw new PlatformError('poshmark', `Unknown Poshmark category path: "${categoryKey}" — re-run step 4`)
+  }
+
+  const extras: UnifiedListingExtras = {
+    colors: pm.colors ?? [],
+    styleTags: pm.style_tags ?? [],
+    categoryIds,
   }
 
   const unified: UnifiedListing = {
@@ -96,24 +76,18 @@ export async function buildUnifiedListingForPoshmark(
     title: pm.title,
     description: pm.description,
     price: priceCents,
-    condition: poshmarkCondition,
-    category: pm.category,
+    condition: CONDITION_MAP[listing.condition ?? ''] ?? 'ug',
     brand: listing.brand ?? '',
-    imageUrls,
+    imageUrls: photos.map((p) => p.processed_url ?? p.raw_url),
     platformFields: {
-      department: pm.department,
-      subcategory: pm.subcategory,
+      categoryIds,
+      colors: extras.colors,
+      styleTags: extras.styleTags,
       size: pm.size,
+      originalPriceCents: pm.original_price_cents,
+      minPriceCents: pm.min_price_cents,
+      smartSell: pm.smart_sell,
     },
-  }
-
-  const extras: PoshmarkListingExtras = {
-    categoryIds,
-    colors: pm.colors ?? [],
-    styleTags: pm.style_tags ?? [],
-    originalPriceCents: pm.original_price_cents,
-    minPriceCents: pm.min_price_cents,
-    smartSell: pm.smart_sell ?? false,
   }
 
   return { unified, extras }
@@ -127,34 +101,28 @@ export async function publishListingToPoshmark(
   options?: { draft?: boolean; photoIds?: string[] },
 ): Promise<PoshmarkPublishResult> {
   const draft = options?.draft ?? false
-  const { unified, extras } = await buildUnifiedListingForPoshmark(listing, photos, { photoIds: options?.photoIds })
+  const selected = selectPoshmarkPhotos(photos, options?.photoIds)
+  const { unified } = await buildUnifiedListingForPoshmark(listing, selected)
+  const result = await adapter.createListing(unified)
 
-  // Merge Poshmark-specific extras into platformFields so createListing receives them
-  // without changing the UnifiedListing interface used by other platforms.
-  const unifiedWithExtras: UnifiedListing = {
-    ...unified,
-    platformFields: { ...unified.platformFields, ...extras },
+  const currentPlatformFields = (listing.platform_fields ?? {}) as PlatformFields
+  const updatedPlatformFields: PlatformFields = {
+    ...currentPlatformFields,
+    poshmark: { ...currentPlatformFields.poshmark!, listing_id: result.platformId },
   }
 
   if (draft) {
-    return { platformId: '', url: '' }
+    const { error } = await supabase
+      .from('listings')
+      .update({ platform_fields: updatedPlatformFields })
+      .eq('id', listing.id)
+    if (error) {
+      throw new Error(`publishListingToPoshmark: failed to save draft platform ID — ${error.message}`)
+    }
+    return result
   }
 
-  const result = await adapter.createListing(unifiedWithExtras)
-
-  const currentPlatformFields = listing.platform_fields as PlatformFields
-  const updatedPlatformFields: PlatformFields = {
-    ...currentPlatformFields,
-    poshmark: {
-      ...currentPlatformFields.poshmark!,
-      listing_id: result.platformId,
-    },
-  }
-  const updatedListingUrls: ListingUrls = {
-    ...(listing.listing_urls ?? {}),
-    poshmark: result.url,
-  }
-
+  const updatedListingUrls: ListingUrls = { ...(listing.listing_urls ?? {}), poshmark: result.url }
   const { error: updateError } = await supabase
     .from('listings')
     .update({
