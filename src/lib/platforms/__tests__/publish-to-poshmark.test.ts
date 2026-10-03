@@ -162,6 +162,11 @@ describe('buildUnifiedListingForPoshmark', () => {
     assert.equal(unified.price, 50000)
   })
 
+  it('sets category from department/category/subcategory path', async () => {
+    const { unified } = await buildUnifiedListingForPoshmark(baseListing, [makePhoto({})])
+    assert.equal(unified.category, 'Men/Accessories/Watches')
+  })
+
   it('sets brand and internalId from listing', async () => {
     const { unified } = await buildUnifiedListingForPoshmark(baseListing, [makePhoto({})])
     assert.equal(unified.brand, 'Rolex')
