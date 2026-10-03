@@ -147,13 +147,13 @@ export class PoshmarkClient {
                         ],
                     },
                     price_amount: {
-                        val: Math.round(params.priceCents / 100),
+                        val: Math.floor(params.priceCents / 100),
                         currency_code: "USD",
                         currency_symbol: "$",
                     },
                     ...(params.originalPriceCents !== undefined && {
                         original_price_amount: {
-                            val: Math.round(params.originalPriceCents / 100),
+                            val: Math.floor(params.originalPriceCents / 100),
                             currency_code: "USD",
                             currency_symbol: "$",
                         },
@@ -161,7 +161,7 @@ export class PoshmarkClient {
                     ...(params.smartSell && params.minPriceCents !== undefined && {
                         offer_auto_actions_v2_enabled: true,
                         offer_auto_actions_min_price_amount: {
-                            val: String(Math.round(params.minPriceCents / 100)),
+                            val: String(Math.floor(params.minPriceCents / 100)),
                             currency_code: "USD",
                         },
                     }),

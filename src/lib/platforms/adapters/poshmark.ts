@@ -44,6 +44,20 @@ function mapOrderStatus(statusText: string): PlatformOrder['status'] {
   return 'pending';
 }
 
+const POSHMARK_CONDITION_MAP: Record<string, string> = {
+  new_with_tags: 'nwt',
+  new_without_tags: 'nwot',
+  like_new: 'ug',
+  very_good: 'ug',
+  good: 'guc',
+  fair: 'fc',
+  poor: 'pc',
+};
+
+function mapConditionToPoshmark(condition: string): string {
+  return POSHMARK_CONDITION_MAP[condition] ?? 'ug';
+}
+
 function mapPoshmarkError(err: unknown): Error {
   if (err instanceof Error && err.message.includes('401')) {
     return new AuthExpiredError('poshmark');
@@ -198,30 +212,32 @@ export class PoshmarkAdapter implements PlatformSDK {
     }
   }
 
-  // Poshmark create requires CSRF from the /create-listing page — not yet
-  // reverse-engineered to the point where it can be automated reliably.
   async createListing(listing: UnifiedListing): Promise<{ platformId: string; url: string }> {
-    const pf = (listing.platformFields ?? {}) as Record<string, unknown>;
-    const categoryIds = pf.categoryIds as { departmentId: string; categoryId: string; subcategoryId?: string };
+    try {
+      const pf = (listing.platformFields ?? {}) as Record<string, unknown>;
+      const categoryIds = pf.categoryIds as { departmentId: string; categoryId: string; subcategoryId?: string };
 
-    return this.client.createListing({
-      title: listing.title,
-      description: listing.description ?? '',
-      priceCents: listing.price,
-      condition: listing.condition ?? 'ug',
-      brand: listing.brand ?? '',
-      sku: listing.internalId ?? '',
-      imageUrls: listing.imageUrls ?? [],
-      departmentId: categoryIds.departmentId,
-      categoryId: categoryIds.categoryId,
-      subcategoryId: categoryIds.subcategoryId,
-      colors: (pf.colors as string[]) ?? [],
-      styleTags: (pf.styleTags as string[]) ?? [],
-      size: (pf.size as string) ?? '',
-      originalPriceCents: pf.originalPriceCents as number | undefined,
-      minPriceCents: pf.minPriceCents as number | undefined,
-      smartSell: (pf.smartSell as boolean) ?? false,
-    });
+      return await this.client.createListing({
+        title: listing.title,
+        description: listing.description ?? '',
+        priceCents: listing.price,
+        condition: mapConditionToPoshmark(listing.condition ?? ''),
+        brand: listing.brand ?? '',
+        sku: listing.internalId ?? '',
+        imageUrls: listing.imageUrls ?? [],
+        departmentId: categoryIds.departmentId,
+        categoryId: categoryIds.categoryId,
+        subcategoryId: categoryIds.subcategoryId,
+        colors: (pf.colors as string[]) ?? [],
+        styleTags: (pf.styleTags as string[]) ?? [],
+        size: (pf.size as string) ?? '',
+        originalPriceCents: pf.originalPriceCents as number | undefined,
+        minPriceCents: pf.minPriceCents as number | undefined,
+        smartSell: (pf.smartSell as boolean) ?? false,
+      });
+    } catch (err) {
+      throw mapPoshmarkError(err);
+    }
   }
 
   async deleteListing(_platformId: string): Promise<void> {
