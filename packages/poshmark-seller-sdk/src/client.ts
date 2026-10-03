@@ -4,6 +4,8 @@ import type {
   ClosetListingsResult,
   GetClosetListingsOptions,
   PoshmarkClientOptions,
+  PoshmarkCreateListingParams,
+  PoshmarkCreateListingResult,
   PoshmarkListing,
   PoshmarkPaginatedResponse,
   PoshmarkRequestOptions,
@@ -116,6 +118,156 @@ export class PoshmarkClient {
       referer: `${this.baseUrl.origin}/edit-listing/${encodeURIComponent(id)}`,
       csrfToken,
     });
+  }
+
+  public async createListing(params: PoshmarkCreateListingParams): Promise<PoshmarkCreateListingResult> {
+    const csrfToken = await this.getCreateListingCsrfToken();
+
+    // Step 1: Create draft
+    const draft = await this.requestJson<{ id: string }>({
+      method: "POST",
+      path: `/vm-rest/users/${encodeURIComponent(this.user.id)}/posts`,
+      query: { pm_version: "2026.40.00" },
+      body: {},
+      csrfToken,
+      referer: "https://poshmark.com/create-listing",
+    });
+    const postId = draft?.id;
+    if (!postId) {
+      throw new PoshmarkDataError("Create draft did not return a post id");
+    }
+
+    // Step 2: Upload photos in parallel (Poshmark accepts up to 16)
+    const photoIds = await Promise.all(
+      params.imageUrls.slice(0, 16).map((url) => this.uploadPhoto(postId, url, csrfToken)),
+    );
+    const [coverShotId, ...remainingIds] = photoIds;
+
+    // Step 3: Update draft with all listing fields
+    const sizeDisplay = params.size ?? "";
+    await this.requestJson<{ trace_id: string }>({
+      method: "POST",
+      path: `/vm-rest/posts/${encodeURIComponent(postId)}`,
+      query: { pm_version: "2026.40.00" },
+      body: {
+        post: {
+          external_source: null,
+          external_source_id: null,
+          catalog: {
+            department: params.departmentId,
+            category: params.categoryId,
+            category_features: params.subcategoryId ? [params.subcategoryId] : [],
+          },
+          colors: params.colors,
+          inventory: {
+            size_quantity_revision: 0,
+            status: "available",
+            size_quantities: [
+              {
+                size_id: sizeDisplay,
+                size_obj: {
+                  id: sizeDisplay,
+                  display: sizeDisplay,
+                  display_with_size_set: sizeDisplay,
+                  display_with_size_system: sizeDisplay,
+                  display_with_system_and_set: sizeDisplay,
+                  size_system: "us",
+                },
+                size_system: "us",
+                quantity_available: 1,
+                quantity_sold: 0,
+                size_set_tags: ["standard"],
+                seller_inventory_private_info: {},
+              },
+            ],
+          },
+          price_amount: {
+            val: Math.round(params.priceCents / 100),
+            currency_code: "USD",
+            currency_symbol: "$",
+          },
+          ...(params.originalPriceCents !== undefined && {
+            original_price_amount: {
+              val: Math.round(params.originalPriceCents / 100),
+              currency_code: "USD",
+              currency_symbol: "$",
+            },
+          }),
+          ...(params.smartSell && params.minPriceCents !== undefined && {
+            offer_auto_actions_v2_enabled: true,
+            offer_auto_actions_min_price_amount: {
+              val: String(Math.round(params.minPriceCents / 100)),
+              currency_code: "USD",
+            },
+          }),
+          title: params.title,
+          description: params.description,
+          brand: params.brand || null,
+          condition: params.condition,
+          cover_shot: { id: coverShotId },
+          pictures: remainingIds.map((id) => ({ id })),
+          videos: [],
+          seller_private_info: { sku: params.sku },
+          style_tags: params.styleTags,
+          autolist_draft: false,
+          seller_shipping_discount: { id: null },
+        },
+      },
+      csrfToken,
+      referer: "https://poshmark.com/create-listing",
+    });
+
+    // Step 4: Publish
+    await this.requestJson<{ trace_id: string }>({
+      method: "PUT",
+      path: `/vm-rest/posts/${encodeURIComponent(postId)}/status/published`,
+      query: { app_version: "2.55", pm_version: "2026.40.00" },
+      body: {},
+      csrfToken,
+      referer: "https://poshmark.com/create-listing",
+    });
+
+    return {
+      platformId: postId,
+      url: `https://poshmark.com/listing/${postId}`,
+    };
+  }
+
+  private async uploadPhoto(postId: string, imageUrl: string, csrfToken: string): Promise<string> {
+    const imgResp = await this.fetchImpl(imageUrl);
+    if (!imgResp.ok) {
+      throw new PoshmarkDataError(`Failed to fetch photo for upload: ${imageUrl}`);
+    }
+    const blob = await imgResp.blob();
+    const form = new FormData();
+    form.append("img_file", blob, "image.jpg");
+
+    const result = await this.requestJson<{ id: string }>({
+      method: "POST",
+      path: `/api/posts/${encodeURIComponent(postId)}/media/scratch`,
+      query: { app_type: "web" },
+      body: form,
+      csrfToken,
+      referer: "https://poshmark.com/create-listing",
+    });
+    if (!result?.id) {
+      throw new PoshmarkDataError("Photo upload did not return an id");
+    }
+    return result.id;
+  }
+
+  private async getCreateListingCsrfToken(): Promise<string> {
+    const html = await this.requestText({
+      path: "/create-listing",
+      query: { _: Date.now() },
+      accept: "text/html",
+      referer: DEFAULT_REFERER,
+    });
+    const match = html.match(/<meta[^>]+id=["']csrftoken["'][^>]+content=["']([^"']+)["']/i);
+    if (!match?.[1]) {
+      throw new PoshmarkDataError("Could not find create-listing CSRF token");
+    }
+    return match[1];
   }
 
   public async getSalesPage(maxId?: string): Promise<SalesPage> {

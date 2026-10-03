@@ -1,4 +1,4 @@
-import type { ClosetListingsResult, GetClosetListingsOptions, PoshmarkClientOptions, PoshmarkListing, PoshmarkRequestOptions, PoshmarkSessionUser, SalesPage, UpdateListingFields } from "./types.js";
+import type { ClosetListingsResult, GetClosetListingsOptions, PoshmarkClientOptions, PoshmarkCreateListingParams, PoshmarkCreateListingResult, PoshmarkListing, PoshmarkRequestOptions, PoshmarkSessionUser, SalesPage, UpdateListingFields } from "./types.js";
 export declare class PoshmarkClient {
     private readonly baseUrl;
     private readonly cookieHeader;
@@ -12,6 +12,9 @@ export declare class PoshmarkClient {
     getClosetListings(options?: GetClosetListingsOptions): Promise<ClosetListingsResult>;
     getListing(id: string): Promise<PoshmarkListing>;
     updateListing(id: string, fields: UpdateListingFields): Promise<void>;
+    createListing(params: PoshmarkCreateListingParams): Promise<PoshmarkCreateListingResult>;
+    private uploadPhoto;
+    private getCreateListingCsrfToken;
     getSalesPage(maxId?: string): Promise<SalesPage>;
     getOrderDetailHtml(orderId: string): Promise<string>;
     requestJson<T>(options: PoshmarkRequestOptions): Promise<T>;
