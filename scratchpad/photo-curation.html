@@ -1,0 +1,571 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Photo Curation — Poshmark</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap">
+<style>
+  :root {
+    --bg: #f5f3ee;
+    --surface: #ffffff;
+    --sidebar-bg: #eeece7;
+    --border: #dbd7cf;
+    --text: #1a1816;
+    --text-muted: #7a766e;
+    --accent: #a07840;
+    --accent-dim: rgba(160,120,64,.11);
+    --ok: #3a8a5a;
+    --ok-dim: rgba(58,138,90,.11);
+    --warn: #c44444;
+    --warn-dim: rgba(196,68,68,.11);
+    --photo-overlay: rgba(0,0,0,.42);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c0b10;
+      --surface: #15131b;
+      --sidebar-bg: #100e16;
+      --border: #26233a;
+      --text: #f0ede6;
+      --text-muted: #7b7587;
+      --accent: #bfa06a;
+      --accent-dim: rgba(191,160,106,.12);
+      --ok: #4fa87a;
+      --ok-dim: rgba(79,168,122,.12);
+      --warn: #d4594a;
+      --warn-dim: rgba(212,89,74,.12);
+      --photo-overlay: rgba(0,0,0,.55);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c0b10;
+    --surface: #15131b;
+    --sidebar-bg: #100e16;
+    --border: #26233a;
+    --text: #f0ede6;
+    --text-muted: #7b7587;
+    --accent: #bfa06a;
+    --accent-dim: rgba(191,160,106,.12);
+    --ok: #4fa87a;
+    --ok-dim: rgba(79,168,122,.12);
+    --warn: #d4594a;
+    --warn-dim: rgba(212,89,74,.12);
+    --photo-overlay: rgba(0,0,0,.55);
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f3ee;
+    --surface: #ffffff;
+    --sidebar-bg: #eeece7;
+    --border: #dbd7cf;
+    --text: #1a1816;
+    --text-muted: #7a766e;
+    --accent: #a07840;
+    --accent-dim: rgba(160,120,64,.11);
+    --ok: #3a8a5a;
+    --ok-dim: rgba(58,138,90,.11);
+    --warn: #c44444;
+    --warn-dim: rgba(196,68,68,.11);
+    --photo-overlay: rgba(0,0,0,.42);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .header-left h1 {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    font-size: 20px;
+    margin: 0;
+    letter-spacing: .01em;
+  }
+  .header-left .sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .theme-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: .03em;
+    transition: border-color .15s, color .15s;
+  }
+  .theme-toggle:hover { border-color: var(--text-muted); color: var(--text); }
+  .app-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 210px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    padding: 14px 10px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .sidebar-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-muted);
+    padding: 0 6px;
+    margin-bottom: 4px;
+  }
+  .listing-tab {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    background: var(--surface);
+  }
+  .listing-tab:hover { border-color: var(--accent); }
+  .listing-tab.active { border-color: var(--accent); background: var(--accent-dim); }
+  .tab-sku {
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .04em;
+  }
+  .tab-short {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tab-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 7px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 8px;
+    border-radius: 99px;
+  }
+  .tab-badge.ok { background: var(--ok-dim); color: var(--ok); }
+  .tab-badge.warn { background: var(--warn-dim); color: var(--warn); }
+  .main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .listing-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 22px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .listing-title {
+    flex: 1;
+    min-width: 0;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sel-count {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    padding: 4px 12px;
+    border-radius: 99px;
+    transition: background .2s, color .2s;
+  }
+  .sel-count.ok { background: var(--ok-dim); color: var(--ok); }
+  .sel-count.warn { background: var(--warn-dim); color: var(--warn); }
+  .hint-msg {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .grid-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 22px;
+  }
+  .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 9px;
+  }
+  @media (max-width: 640px) { .photo-grid { grid-template-columns: repeat(2, 1fr); } }
+  .photo-card {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 7px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color .15s, transform .12s;
+    background: var(--border);
+  }
+  .photo-card:hover { transform: scale(1.025); z-index: 1; }
+  .photo-card.selected { border-color: var(--accent); }
+  .photo-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .photo-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--photo-overlay);
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .photo-card:not(.selected) .photo-overlay { opacity: 1; }
+  .indicator {
+    position: absolute;
+    bottom: 7px;
+    right: 7px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    pointer-events: none;
+  }
+  .photo-card.selected .indicator { background: var(--accent); color: #fff; }
+  .photo-card:not(.selected) .indicator { background: rgba(255,255,255,.18); color: rgba(255,255,255,.65); }
+  .order-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: rgba(0,0,0,.55);
+    color: rgba(255,255,255,.8);
+    font-size: 9px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-family: ui-monospace, 'SF Mono', monospace;
+    pointer-events: none;
+  }
+  .auth-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 3px;
+    pointer-events: none;
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0) scale(1.025); }
+    20% { transform: translateX(-5px) scale(1.025); }
+    60% { transform: translateX(5px) scale(1.025); }
+  }
+  .shake { animation: shake .28s ease; }
+  .command-bar {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding: 12px 22px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cmd-wrap {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cmd-wrap .hl { color: var(--text); }
+  .copy-btn {
+    flex-shrink: 0;
+    padding: 7px 16px;
+    border-radius: 6px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .copy-btn:hover { opacity: .85; }
+  .copy-btn:disabled { opacity: .35; cursor: not-allowed; }
+  .copied-msg {
+    font-size: 11px;
+    color: var(--ok);
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity .25s;
+    pointer-events: none;
+  }
+  .copied-msg.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="header-left">
+    <h1>Photo Curation</h1>
+    <div class="sub">Select up to 16 photos per listing before publishing to Poshmark</div>
+  </div>
+  <button class="theme-toggle" id="themeBtn">Dark</button>
+</div>
+
+<div class="app-body">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main">
+    <div class="listing-header" id="listingHeader"></div>
+    <div class="grid-scroll">
+      <div class="photo-grid" id="photoGrid"></div>
+    </div>
+    <div class="command-bar" id="commandBar"></div>
+  </div>
+</div>
+
+<script>
+const LISTINGS = [
+  {
+    sku: 'HB-0128',
+    title: 'Chanel Travel Line Zip-Around Wallet Black Nylon Jacquard CC Logo Italy',
+    shortTitle: 'Chanel Travel Line Wallet',
+    photos: [
+      { id: '78edded8-c63e-4eeb-8f10-193779a79627', type: 'studio', order: 0, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-78edded8-c63e-4eeb-8f10-193779a79627.png' },
+      { id: 'a4792b8c-0c71-4121-bbd7-4217096d5767', type: 'studio', order: 2, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-a4792b8c-0c71-4121-bbd7-4217096d5767-override.png' },
+      { id: '546b1e32-1c0c-4157-8338-b8027c05e506', type: 'studio', order: 3, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-546b1e32-1c0c-4157-8338-b8027c05e506.png' },
+      { id: '437c9184-06bc-40e5-8299-ca4856ab5fee', type: 'studio', order: 4, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-437c9184-06bc-40e5-8299-ca4856ab5fee.png' },
+      { id: 'bfca8a23-c82e-476a-9e1b-ad558fd846b7', type: 'studio', order: 5, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-bfca8a23-c82e-476a-9e1b-ad558fd846b7.png' },
+      { id: 'baaceec2-7ae2-40a4-9b3d-0e77bdf42920', type: 'studio', order: 6, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-baaceec2-7ae2-40a4-9b3d-0e77bdf42920.png' },
+      { id: '645326e0-384a-415c-aefe-03e61a076558', type: 'studio', order: 7, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-645326e0-384a-415c-aefe-03e61a076558.png' },
+      { id: 'f01a512e-b2a6-423b-a451-02bbe79332d9', type: 'studio', order: 8, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-f01a512e-b2a6-423b-a451-02bbe79332d9.png' },
+      { id: 'b64b1119-1b90-4807-9d92-856f12fc6d2d', type: 'studio', order: 9, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-b64b1119-1b90-4807-9d92-856f12fc6d2d.png' },
+      { id: 'e048fd98-b40f-4ae1-af68-067005a8b48f', type: 'studio', order: 10, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/1788550389419.jpeg' },
+      { id: 'ad8414aa-aaa1-445b-acd1-7221a25e0a97', type: 'studio', order: 11, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/1788550392014.jpeg' },
+      { id: '77f7322a-ee4c-40fb-ae35-80cf497431d4', type: 'studio', order: 12, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/1788550390578.jpeg' },
+      { id: '0f47953c-9bd5-4d64-8938-6f525009e3c9', type: 'studio', order: 13, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/1788550389485.jpeg' },
+      { id: 'cbb304bf-e688-4e9c-9158-28d5661e8d0e', type: 'studio', order: 14, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/1788550392102.jpeg' },
+      { id: '4b14ee4a-fffe-4e49-a43c-a48e611d5e5c', type: 'studio', order: 15, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/1788550392295.jpeg' },
+      { id: '9d768852-ded0-4479-ba63-3614b253a864', type: 'studio', order: 16, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/1788550390474.jpeg' },
+      { id: 'dd13d61d-d218-4791-8850-7b9d6bc504de', type: 'studio', order: 17, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-dd13d61d-d218-4791-8850-7b9d6bc504de.png' },
+      { id: 'a6efb554-36f6-4acf-baa1-7fbeca490174', type: 'studio', order: 18, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-a6efb554-36f6-4acf-baa1-7fbeca490174.png' },
+      { id: 'c1953143-6e04-43dc-86be-437f3d3b2dda', type: 'studio', order: 19, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-c1953143-6e04-43dc-86be-437f3d3b2dda.png' },
+      { id: 'b37e7d61-c68a-49ad-9aea-005d957a4db2', type: 'studio', order: 20, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-b37e7d61-c68a-49ad-9aea-005d957a4db2.png' },
+      { id: 'b64b0e69-390e-4d77-a23a-6a8ac1375a83', type: 'studio', order: 21, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-b64b0e69-390e-4d77-a23a-6a8ac1375a83.png' },
+      { id: 'ac0880ea-f90a-4951-9388-b1c3b97d5bb9', type: 'studio', order: 22, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/32165294-7f12-46c2-aad4-83c79c598371/processed-ac0880ea-f90a-4951-9388-b1c3b97d5bb9.png' }
+    ]
+  },
+  {
+    sku: 'OT-0052',
+    title: "Jimmy Choo Miami Low-Top Sneaker Black Glitter Women's US 7 EU 37.5 NWT",
+    shortTitle: 'Jimmy Choo Miami Sneaker NWT',
+    photos: [
+      { id: '2b5129f5-4e97-47db-bafd-9ce7c4b9ced9', type: 'studio', order: 0, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-2b5129f5-4e97-47db-bafd-9ce7c4b9ced9.png' },
+      { id: 'd3c465df-4ae8-439b-8cdd-bc4c361f37e0', type: 'studio', order: 1000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-d3c465df-4ae8-439b-8cdd-bc4c361f37e0.png' },
+      { id: 'db0f5db7-854a-4001-8d5a-a714acc17fe3', type: 'studio', order: 2000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-db0f5db7-854a-4001-8d5a-a714acc17fe3.png' },
+      { id: 'b64e7ee1-5688-46ce-a99b-724856b7dfe5', type: 'studio', order: 3000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-b64e7ee1-5688-46ce-a99b-724856b7dfe5.png' },
+      { id: 'c54186ac-4fac-4702-bd75-8ae271d7b0d7', type: 'studio', order: 4000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-c54186ac-4fac-4702-bd75-8ae271d7b0d7.png' },
+      { id: '2ef37baf-2598-4b07-b151-0dacb5a4b7b2', type: 'studio', order: 5000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-2ef37baf-2598-4b07-b151-0dacb5a4b7b2.png' },
+      { id: '54c9756a-4393-461c-8ae2-e5afef4a830f', type: 'studio', order: 6000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-54c9756a-4393-461c-8ae2-e5afef4a830f.png' },
+      { id: '8c692344-24ba-49a2-ad0f-a3d671a02060', type: 'studio', order: 7000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-8c692344-24ba-49a2-ad0f-a3d671a02060.png' },
+      { id: '7270d5be-42d3-4dfc-8f57-48e6d232dd0a', type: 'studio', order: 8000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-7270d5be-42d3-4dfc-8f57-48e6d232dd0a.png' },
+      { id: '98310de0-5abc-4e4e-b66e-32892ec871b2', type: 'studio', order: 9000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-98310de0-5abc-4e4e-b66e-32892ec871b2.png' },
+      { id: 'ae851ea4-a8a0-4f1c-ab1c-9005f51673ff', type: 'studio', order: 10000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-ae851ea4-a8a0-4f1c-ab1c-9005f51673ff.png' },
+      { id: 'd6cd9878-d3ed-4cc1-b7b6-f46ef6010ff4', type: 'studio', order: 11000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-d6cd9878-d3ed-4cc1-b7b6-f46ef6010ff4.png' },
+      { id: '8cc47acd-fb63-458d-859f-5b999fd337a5', type: 'studio', order: 12000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-8cc47acd-fb63-458d-859f-5b999fd337a5.png' },
+      { id: 'a304518f-da21-4b0e-8c24-21238877c629', type: 'studio', order: 13000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-a304518f-da21-4b0e-8c24-21238877c629.png' },
+      { id: '0f050a0f-614d-4560-adba-a942bc06a716', type: 'studio', order: 15000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-0f050a0f-614d-4560-adba-a942bc06a716.png' },
+      { id: 'b5ce0925-635f-4d0f-91f8-290412b40b5e', type: 'studio', order: 16000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-b5ce0925-635f-4d0f-91f8-290412b40b5e.png' },
+      { id: 'cb940d05-5a24-41d3-82cb-c79488f9d56a', type: 'studio', order: 17000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/e044b426-85a0-4996-b49b-220bd1453a5f/processed-cb940d05-5a24-41d3-82cb-c79488f9d56a.png' }
+    ]
+  },
+  {
+    sku: 'OT-0026',
+    title: "Gucci Ace x Doraemon GG Supreme Canvas Sneaker Patch Women's US 7 EU 37.5",
+    shortTitle: 'Gucci Ace Doraemon Sneaker',
+    photos: [
+      { id: '203ec909-6e43-4dc7-b078-01ea802bf9f1', type: 'studio', order: 0, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-203ec909-6e43-4dc7-b078-01ea802bf9f1.png' },
+      { id: '2887897e-c9e8-45de-b481-67b1cec34472', type: 'studio', order: 1000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-2887897e-c9e8-45de-b481-67b1cec34472.png' },
+      { id: 'f743e019-7abe-408a-8dc6-4c2154cdf421', type: 'studio', order: 2000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-f743e019-7abe-408a-8dc6-4c2154cdf421.png' },
+      { id: '787084ba-c2f2-4fa7-99ee-ce17fd95aceb', type: 'studio', order: 3000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-787084ba-c2f2-4fa7-99ee-ce17fd95aceb.png' },
+      { id: '39a0176f-ca6e-440c-98bc-0cdb88fde4c2', type: 'studio', order: 4000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-39a0176f-ca6e-440c-98bc-0cdb88fde4c2.png' },
+      { id: '38311ee9-6458-433c-aedd-4e209c67c283', type: 'studio', order: 5000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-38311ee9-6458-433c-aedd-4e209c67c283.png' },
+      { id: 'a4fa331c-5c3e-4993-9d38-4afd8eaa498b', type: 'studio', order: 6000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-a4fa331c-5c3e-4993-9d38-4afd8eaa498b.png' },
+      { id: '60d40151-01ba-48ad-9131-c9e9df5ec817', type: 'studio', order: 7000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-60d40151-01ba-48ad-9131-c9e9df5ec817.png' },
+      { id: '0a0e9b68-2e83-436b-847f-c673dcd7b6be', type: 'studio', order: 8000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-0a0e9b68-2e83-436b-847f-c673dcd7b6be.png' },
+      { id: '6143d56b-d199-49a8-b86d-e9462602c2ca', type: 'studio', order: 9000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-6143d56b-d199-49a8-b86d-e9462602c2ca.png' },
+      { id: '26acc34e-dc54-42ab-8637-d28441e09d3d', type: 'studio', order: 10000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-26acc34e-dc54-42ab-8637-d28441e09d3d.png' },
+      { id: '4e017df5-3ba8-45db-9fed-4f9fc4c3106b', type: 'studio', order: 11000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/1788774209290.jpeg' },
+      { id: '0f7fdb2a-ac71-4e47-a76b-0fd6fe0e4ab0', type: 'studio', order: 12000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/1788774204672.jpeg' },
+      { id: '29d15abe-0191-41d4-b41f-80a97f331c23', type: 'studio', order: 13000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-29d15abe-0191-41d4-b41f-80a97f331c23.png' },
+      { id: '93116339-eb73-4fe7-81e2-1fbd0e0eb1b9', type: 'studio', order: 14000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/1788774175645.jpeg' },
+      { id: 'f0eb002c-d482-40ec-9eb1-41e8512f0fb1', type: 'studio', order: 15000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-f0eb002c-d482-40ec-9eb1-41e8512f0fb1.png' },
+      { id: 'afc7c40b-ff3a-4b51-9ad6-8fa3148264bb', type: 'studio', order: 16000, url: 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/studio/2575e556-ec55-4c94-ad0d-a23bd77eb8fd/processed-afc7c40b-ff3a-4b51-9ad6-8fa3148264bb.png' }
+    ]
+  }
+];
+
+let activeSku = LISTINGS[0].sku;
+const selections = new Map();
+
+for (const l of LISTINGS) {
+  selections.set(l.sku, new Set(l.photos.slice(0, 16).map(p => p.id)));
+}
+
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    || (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if (isDark) {
+    document.documentElement.setAttribute('data-theme', 'light');
+    themeBtn.textContent = 'Dark';
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    themeBtn.textContent = 'Light';
+  }
+});
+if (window.matchMedia('(prefers-color-scheme: dark)').matches) themeBtn.textContent = 'Light';
+
+function getSelected(sku) { return selections.get(sku); }
+function getCount(sku) { return getSelected(sku).size; }
+
+function renderSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.innerHTML = '<div class="sidebar-label">Listings</div>' + LISTINGS.map(l => {
+    const cnt = getCount(l.sku);
+    const tot = l.photos.length;
+    const ok = cnt <= 16;
+    return `<div class="listing-tab ${l.sku === activeSku ? 'active' : ''}" data-sku="${l.sku}">
+      <div class="tab-sku">${l.sku}</div>
+      <div class="tab-short">${l.shortTitle}</div>
+      <div class="tab-badge ${ok ? 'ok' : 'warn'}">${cnt} / ${tot}${ok ? ' ✓' : ' — remove ' + (cnt - 16)}</div>
+    </div>`;
+  }).join('');
+  sidebar.querySelectorAll('.listing-tab').forEach(el => {
+    el.addEventListener('click', () => { activeSku = el.dataset.sku; render(); });
+  });
+}
+
+function renderHeader() {
+  const l = LISTINGS.find(l => l.sku === activeSku);
+  const cnt = getCount(activeSku);
+  const tot = l.photos.length;
+  const ok = cnt <= 16;
+  document.getElementById('listingHeader').innerHTML = `
+    <div class="listing-title">${l.title}</div>
+    <span class="sel-count ${ok ? 'ok' : 'warn'}">${cnt} of ${tot} selected${ok ? '' : ` — deselect ${cnt - 16}`}</span>
+    ${ok ? '<span class="hint-msg">Ready to publish</span>' : ''}
+  `;
+}
+
+function renderGrid() {
+  const l = LISTINGS.find(l => l.sku === activeSku);
+  const sel = getSelected(activeSku);
+  const grid = document.getElementById('photoGrid');
+  grid.innerHTML = l.photos.map(p => {
+    const selected = sel.has(p.id);
+    return `<div class="photo-card ${selected ? 'selected' : ''}" data-id="${p.id}" data-sku="${activeSku}">
+      <img src="${p.url}" loading="lazy" alt="Photo ${p.order}" draggable="false">
+      <div class="photo-overlay"></div>
+      <div class="order-badge">#${p.order}</div>
+      ${p.type === 'auth_card' ? '<div class="auth-badge">Auth</div>' : ''}
+      <div class="indicator">${selected ? '✓' : '✕'}</div>
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('.photo-card').forEach(el => {
+    el.addEventListener('click', () => togglePhoto(el.dataset.sku, el.dataset.id, el));
+  });
+}
+
+function renderCommandBar() {
+  const l = LISTINGS.find(l => l.sku === activeSku);
+  const sel = getSelected(activeSku);
+  const ok = sel.size <= 16;
+  const sortedIds = l.photos.filter(p => sel.has(p.id)).map(p => p.id);
+  const ids = sortedIds.join(',');
+  const cmd = `npx tsx scripts/publish-one-to-poshmark.ts --sku ${activeSku} --photos "${ids}" --commit`;
+  document.getElementById('commandBar').innerHTML = `
+    <div class="cmd-wrap"><span class="hl">npx tsx scripts/publish-one-to-poshmark.ts</span> --sku <span class="hl">${activeSku}</span> --photos "<span class="hl">${ids.slice(0, 40)}${ids.length > 40 ? '…' : ''}</span>" --commit</div>
+    <span class="copied-msg" id="copiedMsg">Copied!</span>
+    <button class="copy-btn" id="copyBtn" ${ok ? '' : 'disabled'}>Copy command</button>
+  `;
+  document.getElementById('copyBtn').addEventListener('click', () => {
+    navigator.clipboard.writeText(cmd).then(() => {
+      const msg = document.getElementById('copiedMsg');
+      msg.classList.add('show');
+      setTimeout(() => msg.classList.remove('show'), 1800);
+    });
+  });
+}
+
+function togglePhoto(sku, photoId, el) {
+  const sel = getSelected(sku);
+  if (sel.has(photoId)) {
+    sel.delete(photoId);
+  } else {
+    if (sel.size >= 16) {
+      el.classList.add('shake');
+      el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
+      const hdr = document.querySelector('.sel-count');
+      if (hdr) { hdr.classList.add('shake'); hdr.addEventListener('animationend', () => hdr.classList.remove('shake'), { once: true }); }
+      return;
+    }
+    sel.add(photoId);
+  }
+  render();
+}
+
+function render() {
+  renderSidebar();
+  renderHeader();
+  renderGrid();
+  renderCommandBar();
+}
+
+render();
+</script>
+</body>
+</html>
