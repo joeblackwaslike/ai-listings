@@ -556,8 +556,19 @@ export class EbayAdapter implements PlatformSDK {
 				`No offer found for listing ${platformId}`,
 			);
 
-		// eBay PUT /offer is a full replacement — always include bestOfferTerms or it gets cleared.
+		// eBay PUT /offer is a full replacement — fetch the current offer first so we don't
+		// lose required fields (sku, marketplaceId, listingPolicies, categoryId, etc.).
+		// A partial body missing those fields returns error 25707 "invalid SKU".
+		const fullOffer = await this.ebayFetch<Record<string, unknown>>(
+			`${this.baseUrl}/sell/inventory/v1/offer/${offer.offerId}`,
+			{ method: "GET" },
+			token,
+		);
+		// Strip read-only fields eBay rejects in PUT bodies
+		const { offerId: _oid, listingId: _lid, status: _st, ...offerBase } = fullOffer;
+
 		const body: Record<string, unknown> = {
+			...offerBase,
 			bestOfferTerms: { bestOfferEnabled: true },
 		};
 		if (updates.price !== undefined) {
@@ -596,6 +607,38 @@ export class EbayAdapter implements PlatformSDK {
 				token,
 			);
 		}
+	}
+
+	async getRawOffer(offerId: string): Promise<Record<string, unknown>> {
+		const token = await this.getAccessToken();
+		return this.ebayFetch<Record<string, unknown>>(
+			`${this.baseUrl}/sell/inventory/v1/offer/${offerId}`,
+			{ method: "GET" },
+			token,
+		);
+	}
+
+	async updateOfferPrice(
+		offerId: string,
+		priceCents: number,
+		currentOffer?: Record<string, unknown>,
+	): Promise<void> {
+		const token = await this.getAccessToken();
+		const offer = currentOffer ?? (await this.getRawOffer(offerId));
+		// Strip read-only fields; spread the rest as the PUT replacement body
+		const { offerId: _oid, status: _st, listing: _l, ...offerBase } = offer;
+		const body = {
+			...offerBase,
+			pricingSummary: {
+				price: { value: (priceCents / 100).toFixed(2), currency: "USD" },
+			},
+			bestOfferTerms: { bestOfferEnabled: true },
+		};
+		await this.ebayFetch(
+			`${this.baseUrl}/sell/inventory/v1/offer/${offerId}`,
+			{ method: "PUT", body: JSON.stringify(body) },
+			token,
+		);
 	}
 
 	async updateOfferDescription(
