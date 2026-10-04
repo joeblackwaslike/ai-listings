@@ -19,17 +19,15 @@ const DRY_RUN = process.argv.includes('--dry-run')
 const idIdx = process.argv.indexOf('--id')
 const SINGLE_ID = idIdx !== -1 ? process.argv[idIdx + 1] : null
 
-const COLORS = 'Black, White, Gray, Red, Pink, Orange, Yellow, Green, Blue, Purple, Brown, Tan, Beige, Gold, Silver, Cream, Nude, Multicolor'
+const COLORS = 'Black, White, Gray, Red, Pink, Orange, Yellow, Green, Blue, Purple, Brown, Tan, Beige, Gold, Silver, Cream, Nude'
 
 // Color keywords → Poshmark canonical color (checked in order; first match wins per slot)
 const COLOR_KEYWORDS: Array<[RegExp, string]> = [
   [/\bneon\s+green\b|\bgreen\b/i, 'Green'],
-  [/\bneon\s+multi|\bmulticolor|\btie-dye|\bpastel\b|\brainbow\b|\bkaleidoscope\b/i, 'Multicolor'],
   [/\bblack\b/i, 'Black'],
   [/\bwhite\b/i, 'White'],
   [/\bgrey\b|\bgray\b/i, 'Gray'],
   [/\bpink\b|\brose\b|\bfuchsia\b/i, 'Pink'],
-  [/\bneon\b/i, 'Multicolor'],
   [/\bred\b|\bwine\b|\bburgund\b/i, 'Red'],
   [/\borange\b/i, 'Orange'],
   [/\byellow\b|\bcitrus\b/i, 'Yellow'],

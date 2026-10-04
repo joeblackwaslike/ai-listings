@@ -198,7 +198,7 @@ ${rulesSection}Rules:
           poshmark_colors: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Up to 2 colors. Choose only from: Black, White, Gray, Red, Pink, Orange, Yellow, Green, Blue, Purple, Brown, Tan, Beige, Gold, Silver, Cream, Nude, Multicolor',
+            description: 'Up to 2 colors. Choose only from: Black, White, Gray, Red, Pink, Orange, Yellow, Green, Blue, Purple, Brown, Tan, Beige, Gold, Silver, Cream, Nude',
           },
           poshmark_style_tags: {
             type: 'array',

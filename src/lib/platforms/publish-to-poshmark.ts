@@ -65,8 +65,10 @@ export async function buildUnifiedListingForPoshmark(
     throw new PlatformError('poshmark', `Unknown Poshmark category path: "${categoryKey}" — re-run step 4`)
   }
 
+  // ponytail: strip "Multicolor" — Poshmark's API rejects it (confirmed 2026-10-04 HB-0129)
+  const POSHMARK_INVALID_COLORS = new Set(['Multicolor'])
   const extras: UnifiedListingExtras = {
-    colors: pm.colors ?? [],
+    colors: (pm.colors ?? []).filter(c => !POSHMARK_INVALID_COLORS.has(c)),
     styleTags: pm.style_tags ?? [],
     categoryIds,
   }
