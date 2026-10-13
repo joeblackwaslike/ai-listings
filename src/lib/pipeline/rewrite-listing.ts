@@ -6,7 +6,7 @@ import { getUserApiKeys } from '@/lib/user-api-keys'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { getPlatformRules } from '@/lib/platform-rules'
 import { getMeasurementFields } from '@/lib/utils'
-import { formatMeasurementValue } from '@/lib/units'
+import { formatMeasurementsSummary } from '@/lib/units'
 import { buildShoeSizingPromptSection, buildShoeSizingTitleString } from '@/lib/sizing/shoe-conversion'
 import type { ClothingSubType, Inclusion, JewelrySubType, PlatformFields } from '@/types/listings'
 
@@ -120,15 +120,11 @@ export async function runRewriteListing(
         return value !== undefined && value !== null && value !== ''
       })
     : []
-  const measurementsLine =
-    populatedMeasurements.length > 0
-      ? `Measurements: ${populatedMeasurements
-          .map(
-            (field) =>
-              `${field.label}: ${formatMeasurementValue(field, (listing.measurements as Record<string, unknown>)[field.key])}`
-          )
-          .join(', ')}`
-      : ''
+  const measurementsSummary = formatMeasurementsSummary(
+    (listing.measurements ?? {}) as Record<string, unknown>,
+    populatedMeasurements
+  )
+  const measurementsLine = measurementsSummary ? `Measurements: ${measurementsSummary}` : ''
 
   // Only confirmed inclusions go into the prompt
   const confirmedInclusions = ((listing.inclusions ?? []) as Inclusion[]).filter(

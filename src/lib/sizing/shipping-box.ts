@@ -38,6 +38,7 @@ export function computeEstimatedShippingBox(
     }
   }
 
+  // Stored width = Length (longest side), depth = Width; the box lists longest side first.
   const { width, height, depth } = measurements
   if (!isPositiveFiniteNumber(width) || !isPositiveFiniteNumber(height) || !isPositiveFiniteNumber(depth)) return null
   return {

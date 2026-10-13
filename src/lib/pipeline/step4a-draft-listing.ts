@@ -4,7 +4,7 @@ import type { VisionAnalysis } from './step2-vision-analysis'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { getPlatformRules } from '@/lib/platform-rules'
 import { getMeasurementFields } from '@/lib/utils'
-import { formatMeasurementValue } from '@/lib/units'
+import { formatMeasurementsSummary } from '@/lib/units'
 import { buildShoeSizingPromptSection, buildShoeSizingTitleString } from '@/lib/sizing/shoe-conversion'
 import { conditionDelta, adjustForCondition } from './pricing-adjust'
 import type { ClothingSubType, JewelrySubType } from '@/types/listings'
@@ -91,11 +91,11 @@ export async function runStep4aDraftListing(
         return value !== undefined && value !== null && value !== ''
       })
     : []
-  const measurementsLine = populatedMeasurements.length > 0
-    ? `\n- Measurements: ${populatedMeasurements
-        .map((field) => `${field.label}: ${formatMeasurementValue(field, (measurementsRow!.measurements as Record<string, unknown>)[field.key])}`)
-        .join(', ')}`
-    : ''
+  const measurementsSummary = formatMeasurementsSummary(
+    (measurementsRow?.measurements ?? {}) as Record<string, unknown>,
+    populatedMeasurements
+  )
+  const measurementsLine = measurementsSummary ? `\n- Measurements: ${measurementsSummary}` : ''
 
   const listingCondition = (measurementsRow?.condition as string | null) ?? ''
 

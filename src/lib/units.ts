@@ -55,3 +55,18 @@ export function formatDimensions(m: Record<string, unknown>, fields: Measurement
   })
   return parts.length ? parts.join(' × ') : null
 }
+
+/**
+ * Canonical measurements text for prompts: the L × W × H string first (when any box
+ * dimensions are populated), then every other populated field as "Label: value".
+ * Null when no field has a value.
+ */
+export function formatMeasurementsSummary(m: Record<string, unknown>, fields: MeasurementField[]): string | null {
+  const populated = fields.filter((f) => m[f.key] !== undefined && m[f.key] !== null && m[f.key] !== '')
+  const dims = formatDimensions(m, populated)
+  const others = populated
+    .filter((f) => !(f.label in DIMENSION_INITIALS))
+    .map((f) => `${f.label}: ${formatMeasurementValue(f, m[f.key])}`)
+  const parts = dims ? [dims, ...others] : others
+  return parts.length ? parts.join(', ') : null
+}

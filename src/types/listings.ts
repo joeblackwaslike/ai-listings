@@ -196,7 +196,7 @@ export interface Measurements {
   shoe_size_raw?: string;
   // sneakers: physical item dimensions -- one shoe of the pair, not the box. Only
   // sneakers get dedicated L/W/H fields; every other category without sub-type-specific
-  // fields uses the generic width/height/depth above instead.
+  // fields uses the generic width/height/depth above instead (displayed as Length/Width/Height: width = Length, depth = Width).
   item_length_in?: number;
   item_width_in?: number;
   item_height_in?: number;

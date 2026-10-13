@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getMeasurementFields } from '@/lib/utils'
-import { formatMeasurementValue } from '@/lib/units'
+import { formatMeasurementsSummary } from '@/lib/units'
 import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
 import { conditionDelta, adjustForCondition } from '@/lib/pipeline/pricing-adjust'
 import type {
@@ -195,11 +195,11 @@ async function buildDescription(
         return value !== undefined && value !== null && value !== ''
       })
     : []
-  const measurementsLine = populatedMeasurements.length > 0
-    ? `\n- Measurements: ${populatedMeasurements
-        .map((field) => `${field.label}: ${formatMeasurementValue(field, (listing.measurements as Record<string, unknown>)[field.key])}`)
-        .join(', ')}`
-    : ''
+  const measurementsSummary = formatMeasurementsSummary(
+    (listing.measurements ?? {}) as Record<string, unknown>,
+    populatedMeasurements
+  )
+  const measurementsLine = measurementsSummary ? `\n- Measurements: ${measurementsSummary}` : ''
 
   const priceHint = listing.suggested_price_cents
     ? `Suggested price from comps: $${((listing.suggested_price_cents as number) / 100).toFixed(0)}.`
@@ -220,7 +220,7 @@ ${compsText}
 ${priceHint}
 
 Use the generate_listing tool. Rules:
-- canonical: Buyer-oriented Markdown. Open with 1-2 sentences of descriptive prose (what it is, why a buyer wants it). NO bullet lists anywhere. Measurements and what's included go at the end as flowing prose ("Measurements: 8" W × 5" H × 2" D. Includes original box and dust bag.") — NOT bullets. Add a "**Condition**" section using the condition grade and notes. No filler phrases.
+- canonical: Buyer-oriented Markdown. Open with 1-2 sentences of descriptive prose (what it is, why a buyer wants it). NO bullet lists anywhere. Measurements and what's included go at the end as flowing prose ("Measurements: 8" L × 2" W × 5" H. Includes original box and dust bag.") — NOT bullets. Copy the dimensions string from the item's Measurements line verbatim (same order and L/W/H letters); never reorder or relabel it. Add a "**Condition**" section using the condition grade and notes. No filler phrases.
 - eBay title: ≤ 80 chars, keyword-rich (brand + model + key attributes buyers search)
 - ebay_description: plain text ONLY — no Markdown, no HTML, no bullet points, no pipe-separated values. Write a complete description (not just the title repeated). Include a "Condition:" line with grade and notes. Write what's included as a sentence ("Includes original box and dust bag.") — never as a header with pipe-separated values.
 - Poshmark title: ≤ 60 chars, natural language
