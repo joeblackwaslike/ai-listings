@@ -1,6 +1,6 @@
 import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { inngest } from '../client'
-import type { ListingPhotosConfirmedEvent } from '../client'
+import type { StudioBatchReadyEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { blockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { toPublicUrl } from '@/lib/pipeline/to-public-url'
@@ -72,16 +72,27 @@ Return one result per photo using its 0-based index.`,
   }
 }
 
+async function markQualityChecked(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  listingId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('listings')
+    .update({ quality_checked_at: new Date().toISOString() })
+    .eq('id', listingId)
+  if (error) throw new Error(`batch-quality-check: quality_checked_at update failed — ${error.message}`)
+}
+
 export const batchQualityCheck = inngest.createFunction(
   {
     id: 'batch-quality-check',
     name: 'Batch Photo Quality Check',
-    triggers: [{ event: 'listing/photos-confirmed' }],
+    triggers: [{ event: 'listing/studio-batch-ready' }],
     retries: 1,
     concurrency: { limit: 1, key: 'event.data.listingId' },
   },
   async ({ event, step }) => {
-    const { listingId } = (event as unknown as ListingPhotosConfirmedEvent).data
+    const { listingId } = (event as unknown as StudioBatchReadyEvent).data
     const supabase = getSupabaseAdmin()
 
     const { data: listingRow } = await supabase
@@ -94,7 +105,7 @@ export const batchQualityCheck = inngest.createFunction(
 
     const { data: photos } = await supabase
       .from('photos')
-      .select('id, processed_url, raw_url')
+      .select('id, processed_url, raw_url, photoroom_meta')
       .eq('listing_id', listingId)
       .eq('type', 'studio')
       .order('display_order', { ascending: true })
@@ -108,9 +119,12 @@ export const batchQualityCheck = inngest.createFunction(
       checkBatchQuality(photoUrls, apiKeys.anthropic)
     )
 
-    const failed = results.filter((r) => !r.passed)
+    const failed = results.filter((r) => !r.passed && !photos[r.index]?.photoroom_meta?.quality_overridden)
 
-    if (failed.length === 0) return { ok: true, listingId, checked: photos.length }
+    if (failed.length === 0) {
+      await markQualityChecked(supabase, listingId)
+      return { ok: true, listingId, checked: photos.length }
+    }
 
     // Mark failed photos
     await Promise.all(
@@ -136,6 +150,8 @@ export const batchQualityCheck = inngest.createFunction(
         ...blockedUpdate('photo_quality', `${failed.length} studio photo${failed.length === 1 ? '' : 's'} need${failed.length === 1 ? 's' : ''} attention — see the checklist below.`),
       })
       .eq('id', listingId)
+
+    await markQualityChecked(supabase, listingId)
 
     return { ok: false, listingId, failed: failed.map((r) => ({ index: r.index, issues: r.issues })) }
   }

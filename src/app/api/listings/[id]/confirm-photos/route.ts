@@ -42,7 +42,12 @@ export async function PATCH(
   // duplicate reassessment run that could race an in-flight one.
   if (updated && !wasAlreadyConfirmed) {
     try {
-      await inngest.send({ name: 'listing/photos-confirmed', data: { listingId: id } })
+      // One send for both: photos-confirmed drives condition reassessment, studio-batch-ready
+      // drives the photo quality check (photo-readiness.ts emits the same pair on auto-confirm).
+      await inngest.send([
+        { name: 'listing/photos-confirmed', data: { listingId: id } },
+        { name: 'listing/studio-batch-ready', data: { listingId: id, firstConfirmation: true } },
+      ])
     } catch (err) {
       // Compensate so a retry can re-attempt dispatch -- without this, a transient failure to
       // enqueue leaves the listing at photos_confirmed=true forever, and the next PATCH sees

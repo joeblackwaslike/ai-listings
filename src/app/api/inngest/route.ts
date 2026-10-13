@@ -4,6 +4,7 @@ import { intakePipeline } from '@/lib/inngest/functions/intake-pipeline'
 import { retryStep } from '@/lib/inngest/functions/retry-step'
 import { resumePipeline } from '@/lib/inngest/functions/resume-pipeline'
 import { photoQualityGate } from '@/lib/inngest/functions/photo-quality-gate'
+import { photoReadiness } from '@/lib/inngest/functions/photo-readiness'
 import { syncPlatformNotifications } from '@/lib/inngest/functions/sync-platform-notifications'
 import { syncPlatformMessages } from '@/lib/inngest/functions/sync-platform-messages'
 import { syncPlatformOrders } from '@/lib/inngest/functions/sync-platform-orders'
@@ -24,6 +25,7 @@ export const { GET, POST, PUT } = serve({
     retryStep,
     resumePipeline,
     photoQualityGate,
+    photoReadiness,
     syncPlatformNotifications,
     syncPlatformMessages,
     syncPlatformOrders,
