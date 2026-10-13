@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { canConfirmCondition } from '@/lib/publish-gate'
 import { inngest } from '@/lib/inngest/client'
 import type { ConditionValue } from '@/types/listings'
 
@@ -50,7 +51,7 @@ export async function PATCH(
   // status check here to avoid TOCTOU from double-clicks or concurrent tabs.
   const { data: existing, error: existingError } = await supabase
     .from('listings')
-    .select('condition, condition_notes, condition_confirmed')
+    .select('condition, condition_notes, condition_confirmed, photos_confirmed')
     .eq('id', id)
     .eq('user_id', user.id)
     .maybeSingle()
@@ -60,6 +61,8 @@ export async function PATCH(
     return Response.json({ error: 'Unable to load the listing. Please try again.' }, { status: 500 })
   }
   if (!existing) return Response.json({ error: 'Listing not found' }, { status: 404 })
+  const gate = canConfirmCondition(existing)
+  if (!gate.ok) return Response.json({ error: gate.reason }, { status: 409 })
 
   // Atomic gate: update only when status is currently condition_gate, then check affected rows.
   // Both reads can see condition_gate; only one update wins. The second finds no matching row

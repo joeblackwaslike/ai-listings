@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
-import type { Inclusion } from '@/types/listings'
+import { canFinalizeOrPublish } from '@/lib/publish-gate'
+import type { Inclusion, Listing, Photo } from '@/types/listings'
 
 export async function PATCH(
   _req: Request,
@@ -17,12 +18,25 @@ export async function PATCH(
 
   const { data: listing } = await supabase
     .from('listings')
-    .select('user_id, condition_confirmed, inclusions')
+    .select('user_id, status, photos_confirmed, copy_approved_at, condition_confirmed, inclusions')
     .eq('id', id)
     .single()
   if (!listing || listing.user_id !== user.id) {
     return Response.json({ error: 'Not found' }, { status: 404 })
   }
+
+  const { data: photoRows } = await supabase
+    .from('photos')
+    .select('type, photoroom_meta')
+    .eq('listing_id', id)
+  const gate = canFinalizeOrPublish(
+    { ...listing, inclusions: (listing.inclusions ?? []) as unknown as Inclusion[] } as unknown as Pick<
+      Listing,
+      'photos_confirmed' | 'condition_confirmed' | 'inclusions' | 'copy_approved_at' | 'status'
+    >,
+    (photoRows ?? []) as unknown as Pick<Photo, 'type' | 'photoroom_meta'>[]
+  )
+  if (!gate.ok) return Response.json({ error: gate.reason }, { status: 409 })
 
   // Real pricing gate (ai-listings-yva): pricing (comp premiums + authenticity premium) only
   // reflects condition + inclusions once both are confirmed -- see computeAdjustedPricing in

@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { checkTitleLengths } from '@/lib/pipeline/title-check'
-import type { Listing } from '@/types/listings'
+import { canFinalizeOrPublish } from '@/lib/publish-gate'
+import type { Inclusion, Listing, Photo } from '@/types/listings'
 
 export async function PATCH(
   req: Request,
@@ -62,13 +63,30 @@ export async function PATCH(
 
   const { data: current, error: fetchError } = await supabase
     .from('listings')
-    .select('listing_urls, status, user_id, platform_fields')
+    .select('listing_urls, status, user_id, platform_fields, photos_confirmed, copy_approved_at, condition_confirmed, inclusions')
     .eq('id', id)
     .single()
 
   if (fetchError || !current) {
     return Response.json({ error: 'Listing not found' }, { status: 404 })
   }
+
+  if (current.user_id !== user.id) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const { data: photoRows } = await supabase
+    .from('photos')
+    .select('type, photoroom_meta')
+    .eq('listing_id', id)
+  const gate = canFinalizeOrPublish(
+    { ...current, inclusions: (current.inclusions ?? []) as unknown as Inclusion[] } as unknown as Pick<
+      Listing,
+      'photos_confirmed' | 'condition_confirmed' | 'inclusions' | 'copy_approved_at' | 'status'
+    >,
+    (photoRows ?? []) as unknown as Pick<Photo, 'type' | 'photoroom_meta'>[]
+  )
+  if (!gate.ok) return Response.json({ error: gate.reason }, { status: 409 })
 
   // Title length validation — warn but do not block
   let titleWarning: { warning: string; currentLength: number; maxLength: number } | null = null
