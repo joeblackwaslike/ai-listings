@@ -80,7 +80,7 @@ Match the prototype. At the `lg` breakpoint and up, the page is a four-track gri
 
 - Collapsed by default to a 44px rail on the right with a chat icon and a vertical "Agent chat" label. Clicking the rail opens it.
 - Open: a header with a collapse button, then the existing `AgentChat` contents. A 6px divider on its left edge can be dragged to resize the chat between 320px and 55% of the window, so long agent replies don't wrap badly. Double-click resets it to 380px. Save the open/closed state and the width in `localStorage`.
-- Unread badge: while the chat is collapsed, each new assistant message raises a count shown as a small green bubble on the rail. The bubble pops and pulses briefly when the count changes. Opening the chat clears the count. A gate question (ID, gender, detail gates) counts as a new message, so a waiting question is always visible.
+- Unread badge: while the chat is collapsed, each new assistant message raises a count shown as a small green bubble on the rail. The bubble pops and pulses briefly when the count changes. Opening the chat clears the count. Track the last-seen assistant message id per listing in `localStorage`, so the count survives a reload. A gate question (ID, gender, detail gates) counts as a new message, so a waiting question is always visible.
 
 ## Status timeline
 
@@ -92,7 +92,7 @@ Order for a luxury listing (non-luxury drops Auth Plan and uses "Inclusions" for
 |---|---|---|---|
 | 1 | Product ID | Identified item from photo | `pipeline_step >= 1` |
 | 2 | Vision Analysis | Condition, brand, inclusions, shot list | `pipeline_step >= 2` |
-| 3 | Confirm ID | You confirm the identified item | the listing has left `id_gate` and the ID was confirmed |
+| 3 | Confirm ID | You confirm the identified item | the listing has left `id_gate` and the ID was confirmed. Omit this step for listings that never pass through `id_gate` (text intake). |
 | 4 | Pricing Research | Market comparables | `pipeline_step >= 3` |
 | 5 | Draft Listing | Description, tags, platform fields | `pipeline_step >= 4` |
 | 6 | Auth Plan | Authentication checklist | `pipeline_step >= 5` |
@@ -124,16 +124,17 @@ Today the intake pipeline ends by setting `status: 'condition_gate'` (`intake-pi
 - The post-photo path stays as it is: photos confirmed → reassessment → `condition_gate` → confirm → `description-rewrite` → `copy_review` → approve → `in_loop`.
 - Check that `StatusBadge`, `gate-messages.ts`, the agent system prompt and `ListingCard` don't assume a pre-photo `condition_gate`.
 - Condition can only be confirmed once studio photos are confirmed (Joe's decision). Hide the inline amber condition-approve panel (`FieldsPanel.tsx:518-545`) until `photos_confirmed` is true. Have `PATCH /condition` and `confirm-condition` reject requests while `photos_confirmed` is false. Text-intake listings and anything that has only the intake photo can't finalize until studio photos are uploaded.
+- Enforce the order on the server, not just in the UI. `PATCH /condition` (`condition/route.ts`) and `confirm-condition` reject while `photos_confirmed` is false. `/finalize` and every publish path (post-to-eBay, Poshmark, mark-published, the manual-URL fallback) reject unless `photos_confirmed` is true, `copy_approved_at` is set, no `quality_failed` photos remain, and the listing is in the expected status.
 - Add a `copy_approved_at timestamptz` column. `approve-copy` sets it, and `description-rewrite` clears it when it starts a new rewrite. Step 12 and the "Finalize" badge read this column instead of inferring approval from `in_loop` plus `condition_confirmed`.
-- One-off SQL migration for listings that haven't confirmed photos yet (`photos_confirmed = false`, status not `published`, `sold` or `archived`): set `condition_confirmed = false` and `copy_approved_at = null`, and move any in `condition_gate` or `copy_review` to `in_loop`. Their early confirmation came from the intake photo and gets redone after the photo shoot anyway. Listings with confirmed photos are left alone; backfill `copy_approved_at = updated_at` for those already past copy review.
+- One-off SQL migration for listings that haven't confirmed photos yet (`photos_confirmed = false`, status not `finalizing`, `published`, `sold` or `archived`): set `condition_confirmed = false` and `copy_approved_at = null`, and move any in `condition_gate` or `copy_review` to `in_loop`. Their early confirmation came from the intake photo and gets redone after the photo shoot anyway. Listings with confirmed photos keep their condition state. Backfill `copy_approved_at = updated_at` only where `photos_confirmed` and `condition_confirmed` are true, status is `in_loop`, `pipeline_step >= pipeline_total`, and `agent_blocked` is false. `finalizing` rows get the same backfill only if they pass the new publish gate (photos confirmed, condition confirmed, no `quality_failed` photos). Otherwise move them back to `in_loop` with `copy_approved_at` null, plus `condition_confirmed = false` when photos aren't confirmed. Every other row stays null and goes through copy review. (`in_loop` alone doesn't mean approved; text intake and pipeline recovery use it mid-processing.)
 
 ### Re-checking photos added later
 
 Today `batch-quality-check` and `condition-reassessment` fire only on `listing/photos-confirmed`, which happens once. `autoConfirmPhotosIfComplete` (`photo-quality-gate.ts:44-62`) flips `photos_confirmed` as soon as every photo uploaded *so far* is processed. With a one-file-at-a-time uploader, that can fire partway through a batch.
 
-- Auto-confirm must wait for the upload batch to finish. Debounce `studio/uploaded` per listing in Inngest (about 30s with no new uploads), then check readiness.
+- Auto-confirm must wait for the upload batch to finish. Keep per-photo processing in `photo-quality-gate` exactly as is, with no debounce, so background removal starts immediately. Move only the readiness check (`autoConfirmPhotosIfComplete`) into its own Inngest function. It's triggered by an event emitted after each photo finishes processing, debounced per listing (about 30s with no new uploads or completions).
 - Add `quality_checked_at timestamptz` to listings, set every time `batch-quality-check` completes (pass or fail). Step 10 is done when `photos_confirmed`, `quality_checked_at` is newer than the last studio upload, and no `quality_failed` photos remain.
-- Studio photos added after the first confirmation re-run `batch-quality-check`, using the same debounce, so new shots can be verified. Condition reassessment does not re-run on later uploads.
+- Split the events. Today `batch-quality-check` and `condition-reassessment` both listen to `listing/photos-confirmed`. Keep `listing/photos-confirmed` (first confirmation only) for condition reassessment. Add a debounced `listing/studio-batch-ready` event, emitted by the readiness function after every upload batch, including the first. Move `batch-quality-check` to it, so later uploads re-run quality and shot verification but not condition review.
 
 ## Status badge
 
@@ -188,7 +189,8 @@ There's no belt category today, so belts use the generic fields until one exists
 Nothing stores per-shot progress today. `PhotoShot` (`types/listings.ts:88-95`) has no status, and nothing maps photos to shots.
 
 - Add `status?: 'pending' | 'taken' | 'verified'` to `PhotoShot`, stored inside the existing `photo_plan` JSON. A missing value means `pending`.
-- Add a small route to set a shot to `taken` or `pending`. It must refuse to change a shot that is `verified`.
+- Add a small route to set a shot to `taken` or `pending`. It must refuse to change a shot that is `verified`. It uses the single-shot Postgres function described below, not a read-modify-write of the whole array.
+- Every writer of `photo_plan` must keep existing shot statuses: the inclusions route (`inclusions/route.ts:23-40`), step 5 (`step5-auth-plan.ts:121-127`), the refresh route, the new verification, and the agent's `update_listing` tool (`src/lib/agent/tools.ts:318`, `:354`), which accepts `photo_plan` as a writable field. Route all of them through one Postgres function, for example `update_photo_plan(listing_id, new_plan)`. It takes the incoming shot list, copies `status` from the stored shot with the same `shot` name, never downgrades `verified`, and writes in one statement. The manual toggle uses a sibling function that sets one shot's status atomically.
 - Extend the single vision call in `batch-quality-check.ts` so it also receives the shot list and returns, for each photo, which shot index it shows (or none). A shot becomes `verified` when a photo that passed the quality check matches it. Photos that fail don't verify anything. Never downgrade a `verified` shot.
 - Don't add a second model call for this.
 
