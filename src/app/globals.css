@@ -25,3 +25,10 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Workspace chat rail: the unread bubble remounts on each count change, replaying both. */
+@keyframes ws-bump { 0% { transform: scale(1) } 30% { transform: scale(1.45) } 60% { transform: scale(.9) } 100% { transform: scale(1) } }
+@keyframes ws-ring { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, .6) } 100% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0) } }
+.ws-unread { animation: ws-bump .6s ease-out, ws-ring 1.4s ease-out 3; }
+
+body.ws-dragging { cursor: col-resize; user-select: none; }

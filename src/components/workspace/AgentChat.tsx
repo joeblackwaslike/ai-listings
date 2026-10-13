@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { Send, Zap, Check, X, AlertCircle, ImagePlus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -11,6 +11,7 @@ import { MeasurementFields } from './MeasurementFields'
 import { formatMeasurementValue } from '@/lib/units'
 import { uploadStudioPhotos } from '@/lib/photos/upload-studio-photos'
 import type { DetailGateContext, Measurements } from '@/types/listings'
+import { AssistantMessageContext } from './WorkspaceShell'
 
 interface ChatMessage {
   id: string
@@ -38,6 +39,8 @@ interface AgentChatProps {
   readonly pendingGenderGate?: boolean
   readonly detailGateContext?: DetailGateContext
   readonly inputUnit?: 'imperial' | 'metric'
+  /** Called once per assistant message added after mount, when it is complete (not mid-stream). */
+  readonly onAssistantMessage?: (id: string) => void
 }
 
 type AgentEvent =
@@ -124,7 +127,7 @@ async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setM
   }
 }
 
-export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext, inputUnit }: AgentChatProps) {
+export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext, inputUnit, onAssistantMessage }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
@@ -145,6 +148,18 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   const isFirstRenderRef = useRef(true)
   const [pendingGender, setPendingGender] = useState<string | null>(null)
   const [showMeasurements, setShowMeasurements] = useState(false)
+  const reportFromShell = useContext(AssistantMessageContext)
+  const reportAssistantMessage = onAssistantMessage ?? reportFromShell
+  const reportedIdsRef = useRef(new Set(initialMessages.map((m) => m.id)))
+
+  useEffect(() => {
+    if (streaming || !reportAssistantMessage) return
+    for (const m of messages) {
+      if (m.role !== 'assistant' || reportedIdsRef.current.has(m.id)) continue
+      reportedIdsRef.current.add(m.id)
+      reportAssistantMessage(m.id)
+    }
+  }, [messages, streaming, reportAssistantMessage])
 
   // Skip the initial mount: a listing can load with a long id-gate/gender-gate description
   // already in `messages` (from initialMessages), and scrolling straight to the chips+input

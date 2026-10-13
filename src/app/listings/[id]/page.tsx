@@ -5,6 +5,7 @@ import { AgentChat } from '@/components/workspace/AgentChat'
 import { ArchiveButton } from '@/components/workspace/ArchiveButton'
 import { FinalizeButton } from '@/components/workspace/FinalizeButton'
 import { PhotoSection } from '@/components/workspace/PhotoSection'
+import { WorkspaceShell } from '@/components/workspace/WorkspaceShell'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
@@ -235,17 +236,32 @@ export default async function WorkspacePage({
     ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
 
+  const assistantMessageIds = history.filter((m) => m.role === 'assistant').map((m) => m.id as string)
+
   if (shouldAttemptPersistGreeting(listing, firstMessage, history)) {
     // Atomic check-and-insert (migration 0022) -- deciding "does this already match the last
     // message" here against `history` (fetched moments earlier) raced under concurrent page
     // loads and produced duplicate gate prompts (ai-listings dashboard report, 2026-08-21).
-    const { error: firstMessageError } = await supabase.rpc('insert_conversation_if_new', {
+    const { data: inserted, error: firstMessageError } = await supabase.rpc('insert_conversation_if_new', {
       p_listing_id: id,
       p_role: 'assistant',
       p_content: firstMessage,
     })
     if (firstMessageError) {
       console.error(`Failed to persist greeting for listing ${id}:`, firstMessageError.message)
+    }
+    // `history` predates this insert; count the new gate prompt as unread on this render rather
+    // than after the next poll, so a waiting question shows on the collapsed chat's badge.
+    if (inserted === true) {
+      const { data: greeting } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('listing_id', id)
+        .eq('role', 'assistant')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (greeting) assistantMessageIds.push(greeting.id as string)
     }
   }
 
@@ -267,15 +283,12 @@ export default async function WorkspacePage({
         </div>
       </header>
 
-      <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_1fr] xl:grid-cols-[3fr_2fr]">
-        <div className="overflow-y-auto border-r border-gray-800">
-          <div className="flex flex-col gap-6 p-6">
-            <PhotoSection photos={photos} listingId={id} initialSkip={listing.skip_background_removal} />
-            <FieldsPanel listing={listing} photos={photos} comps={comps} priceHistory={priceHistory} platformPriceHistory={platformPriceHistory} />
-          </div>
-        </div>
-
-        <div className="overflow-hidden">
+      <WorkspaceShell
+        listingId={id}
+        assistantMessageIds={assistantMessageIds}
+        photos={<PhotoSection photos={photos} listingId={id} initialSkip={listing.skip_background_removal} />}
+        fields={<FieldsPanel listing={listing} photos={photos} comps={comps} priceHistory={priceHistory} platformPriceHistory={platformPriceHistory} />}
+        chat={
           <AgentChat
             listingId={id}
             initialMessages={history.map((m) => ({
@@ -291,8 +304,8 @@ export default async function WorkspacePage({
             suggestions={suggestions}
             inputUnit={measurementInputUnit}
           />
-        </div>
-      </div>
+        }
+      />
     </div>
   )
 }
