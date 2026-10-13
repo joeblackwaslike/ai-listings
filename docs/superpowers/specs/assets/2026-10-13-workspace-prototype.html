@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OT-0006 workspace prototype v2</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  body { font-family: Geist, ui-sans-serif, system-ui, sans-serif; }
+  details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }
+  details[open] .chev { transform: rotate(90deg); }
+  @keyframes spin { to { transform: rotate(360deg); } } .spin { animation: spin 1s linear infinite; }
+  @keyframes bump { 0%{transform:scale(1)} 30%{transform:scale(1.45)} 60%{transform:scale(.9)} 100%{transform:scale(1)} } .bump { animation: bump .6s ease-out; }
+  @keyframes ring { 0%{box-shadow:0 0 0 0 rgba(16,185,129,.6)} 100%{box-shadow:0 0 0 10px rgba(16,185,129,0)} } .ring { animation: ring 1.4s ease-out 3; }
+  .prose-desc p { margin: .5em 0; } .prose-desc strong { color: #e5e7eb; } .prose-desc ul { list-style: disc; padding-left: 1.2em; }
+  #splitter:hover .grip, body.dragging .grip { background: #10b981; }
+  body.dragging { cursor: col-resize; user-select: none; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-100 antialiased">
+<div class="bg-indigo-950/60 border-b border-indigo-900 text-[11px] text-indigo-200 px-6 py-1.5 flex items-center gap-3 flex-wrap">
+  <span>Prototype v7 · OT-0006 real data. Try the “Add photos” tile (click to browse, multi-select) or drag image files anywhere onto the photo column. Uploads are simulated locally; nothing is sent anywhere.</span>
+</div>
+
+<div class="h-[calc(100vh-29px)] flex flex-col">
+  <header class="flex-none flex items-center gap-3 px-6 py-3 border-b border-gray-800 bg-gray-950">
+    <a class="text-xs text-gray-600">← Dashboard</a>
+    <span class="text-gray-800">/</span>
+    <span class="text-xs text-gray-400 font-mono">OT-0006</span>
+    <div class="ml-auto flex items-center gap-4">
+      <span class="text-xs text-gray-600">Archive</span>
+      <a class="text-xs text-gray-600 hover:text-gray-400">Publish →</a>
+    </div>
+  </header>
+
+  <div id="grid" class="flex-1 overflow-hidden grid" style="grid-template-columns: 600px 6px minmax(0,1fr) 44px">
+    <!-- Photos column -->
+    <div id="photoCol" class="relative overflow-y-auto p-5 space-y-3">
+      <div id="dropOverlay" class="hidden absolute inset-2 z-30 rounded-xl border-2 border-dashed border-emerald-500 bg-emerald-950/70 flex flex-col items-center justify-center text-emerald-300 pointer-events-none">
+        <span class="text-2xl">⤓</span><span class="text-sm font-medium mt-1">Drop to upload studio photos</span>
+      </div>
+      <input id="fileInput" type="file" accept="image/*" multiple class="hidden">
+      <div class="relative rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+        <img id="main" class="block w-full h-auto max-h-[65vh] object-contain mx-auto" src="">
+        <span id="badge" class="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded bg-black/70 text-gray-300 uppercase tracking-wider">intake</span>
+        <span id="count" class="absolute bottom-2 right-2 text-[10px] px-1.5 py-0.5 rounded bg-black/70 text-gray-300">1 / 22</span>
+      </div>
+      <div id="thumbs" class="grid gap-1.5" style="grid-template-columns: repeat(auto-fill, minmax(80px, 1fr))"></div>
+      <label class="flex items-center gap-2 text-[11px] text-gray-500"><span class="w-7 h-4 rounded-full bg-gray-800 relative"><span class="absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-gray-500"></span></span>Skip BG removal</label>
+      <div class="rounded-lg bg-gray-900 border border-gray-800 p-3 space-y-2">
+          <div class="flex items-baseline justify-between">
+            <span class="text-xl font-bold text-emerald-400">$3,240.00</span>
+            <span class="text-xs text-gray-500">35% confidence</span>
+          </div>
+          <div class="flex items-center gap-1.5"><span class="text-xs text-amber-400 font-medium">$3,198.13</span><span class="text-xs text-gray-500">to move · 15% off</span></div>
+          <div class="flex items-center gap-3"><button class="text-[10px] text-gray-600">Edit override</button><button class="text-[10px] text-gray-600">Clear override</button><button onclick="openComps()" class="text-xs text-gray-500 hover:text-gray-300 ml-auto">View 8 comps ›</button></div>
+        </div>
+    </div>
+
+    <!-- Draggable divider -->
+    <div id="splitter" class="relative cursor-col-resize group" title="Drag to resize · double-click to reset">
+      <div class="grip absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-gray-800 group-hover:w-0.5 transition-colors"></div>
+    </div>
+
+    <!-- Fields column -->
+    <div class="overflow-y-auto p-5 space-y-5">
+      <div class="space-y-1">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-mono text-gray-600">OT-0006</span>
+          <span id="statusBadge" class="text-[10px] px-1.5 py-0.5 rounded border"></span>
+        </div>
+        <h1 class="text-base font-semibold leading-snug text-gray-100">Chanel My Everything Small Flap White Caviar Leather Black Resin Hardware</h1>
+              </div>
+
+      <div class="grid grid-cols-[220px_minmax(0,1fr)] gap-3">
+        <section class="rounded-lg border border-gray-800 bg-gray-900/40 p-3">
+          <h3 class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Status</h3>
+          <ol id="steps"></ol>
+          <div id="live" class="mt-3 pt-2 border-t border-gray-800 text-[10px] text-gray-500 space-x-2">
+            <span>Live:</span><a class="text-purple-300 hover:underline">eBay ↗</a><a class="text-pink-300 hover:underline">Poshmark ↗</a>
+          </div>
+        </section>
+
+        <section class="rounded-lg border border-gray-800 bg-gray-900/40 flex flex-col min-h-0">
+          <div class="flex border-b border-gray-800 px-3 gap-4 flex-none">
+            <button data-tab="inc" class="tab py-2 text-[11px] font-semibold uppercase tracking-wider border-b-2 -mb-px">Inclusions <span class="ml-1 text-gray-600 normal-case font-normal">2</span></button>
+            <button data-tab="auth" class="tab py-2 text-[11px] font-semibold uppercase tracking-wider border-b-2 -mb-px">Authentication <span class="ml-1 text-gray-600 normal-case font-normal">10/10</span></button>
+            <button data-tab="photos" class="tab py-2 text-[11px] font-semibold uppercase tracking-wider border-b-2 -mb-px">Photo Shoot <span class="ml-1 text-gray-600 normal-case font-normal">15/15</span></button>
+          </div>
+          <div class="flex-1 min-h-0 overflow-y-auto p-3" style="max-height: 340px">
+            <div data-pane="inc">
+              <ul id="incList" class="space-y-1"></ul>
+              <div class="relative mt-3">
+                <input id="incInput" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="incMenu" placeholder="Add inclusion…" class="w-full bg-gray-950 border border-gray-800 rounded px-2 py-1.5 text-xs text-gray-300 placeholder-gray-600 outline-none focus:border-gray-600">
+                <ul id="incMenu" role="listbox" class="hidden absolute z-20 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded border border-gray-700 bg-gray-900 shadow-xl py-1"></ul>
+              </div>
+            </div>
+            <div data-pane="auth">
+              <div class="flex items-center gap-2 mb-2 text-[10px] text-gray-500">
+                <div class="flex-1 h-1 rounded bg-gray-800 overflow-hidden"><div class="h-full w-full bg-emerald-500"></div></div>10/10 complete
+              </div>
+              <ul id="auth" class="space-y-0.5"></ul>
+            </div>
+            <ul data-pane="photos" class="space-y-1" id="shots"></ul>
+          </div>
+        </section>
+      </div>
+
+      
+
+      <section>
+        <h3 class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Details</h3>
+        <dl class="grid grid-cols-[110px_minmax(0,1fr)] gap-x-4 gap-y-3 text-xs">
+          <dt class="text-gray-600">Category</dt><dd class="text-gray-300 capitalize">handbag</dd>
+          <dt class="text-gray-600">Condition</dt><dd class="text-gray-300">New without tags</dd>
+          <dt class="text-gray-600">Condition notes</dt><dd id="notes" class="text-gray-300 leading-relaxed"></dd>
+          <dt class="text-gray-600">Description</dt><dd><div id="desc" class="prose-desc text-gray-300 leading-relaxed"></div><p class="text-[10px] text-gray-600 mt-1">Ask the agent to rewrite if needed.</p></dd>
+          <dt class="text-gray-600">Measurements</dt>
+          <dd class="flex flex-wrap gap-x-5 gap-y-1 text-gray-300">
+            <span><span class="text-gray-600">Length</span> 9.84 in</span>
+            <span><span class="text-gray-600">Width</span> 2.76 in</span>
+            <span><span class="text-gray-600">Height</span> 6.69 in</span>
+          </dd>
+        </dl>
+      </section>
+    </div>
+
+    <div id="chatSplitter" class="relative cursor-col-resize group invisible overflow-hidden" title="Drag to resize chat · double-click to reset"><div class="grip absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-gray-800 group-hover:w-0.5 transition-colors"></div></div>
+    <div id="comps" class="hidden fixed inset-0 z-50 flex justify-end">
+      <div class="absolute inset-0 bg-black/50" onclick="closeComps()"></div>
+      <aside class="relative w-full max-w-lg h-full bg-gray-950 border-l border-gray-800 flex flex-col">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800"><span class="text-sm font-semibold">Market comparables <span class="text-gray-600 font-normal">8</span></span><button onclick="closeComps()" class="text-gray-500 hover:text-gray-200">✕</button></div>
+        <ul id="compList" class="flex-1 overflow-y-auto divide-y divide-gray-800/60"></ul>
+      </aside>
+    </div>
+    <!-- Chat: rail or panel -->
+    <div class="overflow-hidden border-l border-gray-800 bg-gray-950">
+      <button id="rail" onclick="toggleChat(true)" class="relative w-full h-full flex flex-col items-center pt-4 gap-3 text-gray-500 hover:text-emerald-400 hover:bg-gray-900/50">
+        <span id="unread" class="hidden absolute top-2 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-emerald-500 text-gray-950 text-[10px] font-bold leading-4 text-center"></span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="text-[10px] uppercase tracking-wider" style="writing-mode: vertical-rl">Agent chat</span>
+      </button>
+      <section id="chat" class="hidden relative flex-col h-full">
+        <div class="flex-none flex items-center justify-between px-4 py-2.5 border-b border-gray-800">
+          <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Agent</span>
+          <button onclick="toggleChat(false)" class="text-gray-500 hover:text-gray-200 text-sm" title="Collapse">⟩</button>
+        </div>
+        <div id="msgs" class="flex-1 overflow-y-auto p-4 space-y-3 text-xs">
+          <div class="ml-auto max-w-[80%] rounded-lg bg-emerald-900/40 text-emerald-100 px-3 py-2 w-fit">rewrite description</div>
+          <div class="max-w-[90%] rounded-lg bg-gray-900 border border-gray-800 text-gray-300 px-3 py-2 leading-relaxed">Here's the full draft — <b>nothing has been saved yet.</b> Review everything below:<hr class="my-2 border-gray-700"><p class="font-semibold text-gray-200">Canonical Description</p><p>The Chanel My Everything Small Flap Bag in white caviar leather is among the house's most coveted everyday silhouettes…</p></div>
+          <div class="ml-auto max-w-[80%] rounded-lg bg-emerald-900/40 text-emerald-100 px-3 py-2 w-fit">yes</div>
+          <div class="max-w-[90%] rounded-lg bg-gray-900 border border-gray-800 text-gray-300 px-3 py-2 leading-relaxed">Saved! Here's what was written to the listing:<ul class="list-disc pl-4 mt-1"><li><b>Canonical description</b> — updated ✅</li><li><b>eBay title:</b> <i>Chanel Small My Everything Flap Bag White Caviar Leather CC Clasp NWT</i> ✅</li></ul></div>
+        </div>
+        <div class="flex-none border-t border-gray-800 p-3"><input placeholder="Message the agent…" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs outline-none"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+const R2 = 'https://pub-040a9f571aca4111b60ab664dd468cdc.r2.dev/';
+const ID = '17779896-5678-43b5-b02e-35438cdc8724';
+const photos = [...['processed-3dde3e3c-ca22-42f3-b80b-f8785c630e8b.png','processed-a9280f7b-e559-4e16-a2e3-c3f0f31f22cd.png','processed-63c86dce-2258-4bcc-b5e1-13f8f1af6086.png','processed-4c2f28ef-2df3-4a03-9c97-3d90b5b81a53.png','processed-de3e7cac-d3fa-4f0d-a61a-3a48a5d22ef4.png','processed-1e75514b-a31c-40ec-b29f-0a8d62666280-override.png','1788091947559.jpeg','1788091948287.jpeg','processed-14628d29-8011-47e4-a2fe-8d2bc73202ae.png','1788091949083.jpeg?v=1788097812408','1788091950587.jpeg?v=1788097860705','1788091949284.jpeg?v=1788097862069','1788091943456.jpeg','processed-d6520c06-304b-4383-98a3-8d41c8ca218a.png','processed-94bb5232-bb67-4134-81ea-f3a75172a80b.png','1788091947184.jpeg','1788091946960.jpeg','processed-67c87646-af18-4c14-a4d4-4f195dbecf12.png','1788091949462.jpeg?v=1788097715793','processed-90aed771-4d48-4723-b76f-ec354292b784.png?v=1788097097994','processed-28810dfd-4d9d-4fcd-8d49-a5da1c8a1e30.png?v=1788097100638'].map(f => ['studio','studio/'+ID+'/'+f])];
+const HOVER = '<div class="absolute inset-0 flex items-end justify-end gap-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><span title="Rotate left" class="w-6 h-6 rounded bg-black/70 flex items-center justify-center text-white text-[11px]">↺</span><span title="Background removal" class="w-6 h-6 rounded bg-black/70 flex items-center justify-center text-white text-[10px]">▣</span><span title="Delete photo" class="w-6 h-6 rounded bg-black/70 flex items-center justify-center text-red-400 text-[11px]">🗑</span></div>';
+const thumbs = document.getElementById('thumbs');
+function select(i) {
+  document.getElementById('main').src = R2 + photos[i][1];
+  document.getElementById('badge').textContent = photos[i][0];
+  document.getElementById('count').textContent = (i+1) + ' / ' + photos.length;
+  [...thumbs.children].slice(0, photos.length).forEach((t, j) => { t.className = 'group relative aspect-square rounded-lg border-2 overflow-hidden bg-gray-900 ' + (j === i ? 'border-emerald-500' : 'border-transparent opacity-60 hover:opacity-100'); });
+}
+photos.forEach((p, i) => { const b = document.createElement('button'); b.innerHTML = '<img loading="lazy" class="w-full h-full object-cover" src="' + R2 + p[1] + '">' + (p[0] === 'studio' ? HOVER : ''); b.onclick = () => select(i); thumbs.appendChild(b); });
+select(0);
+
+// Divider drag: photo column width persists per browser
+const grid = document.getElementById('grid');
+let photoW = 600, chatOpen = false;
+try { photoW = +localStorage.getItem('photoW') || 600; } catch {}
+let chatW = 380; try { chatW = +localStorage.getItem('chatW') || 380; } catch {}
+function layout() { grid.style.gridTemplateColumns = photoW + 'px 6px minmax(0,1fr) ' + (chatOpen ? '6px ' + chatW + 'px' : '0px 44px'); }
+const splitter = document.getElementById('splitter');
+splitter.addEventListener('pointerdown', e => {
+  splitter.setPointerCapture(e.pointerId); document.body.classList.add('dragging');
+  const startX = e.clientX, startW = photoW;
+  const move = ev => { photoW = Math.max(320, Math.min(grid.clientWidth * 0.6, startW + ev.clientX - startX)); layout(); };
+  const up = () => { document.body.classList.remove('dragging'); splitter.removeEventListener('pointermove', move); try { localStorage.setItem('photoW', photoW); } catch {} };
+  splitter.addEventListener('pointermove', move); splitter.addEventListener('pointerup', up, { once: true });
+});
+splitter.addEventListener('dblclick', () => { photoW = 600; layout(); try { localStorage.setItem('photoW', 600); } catch {} });
+layout();
+
+function toggleChat(open) {
+  chatOpen = open; layout();
+  document.getElementById('rail').classList.toggle('hidden', open);
+  const c = document.getElementById('chat'); c.classList.toggle('hidden', !open); c.classList.toggle('flex', open); document.getElementById('chatSplitter').classList.toggle('invisible', !open);
+}
+
+// Status: one ordered list; exactly one step is active (the first not-done one)
+const STEPS = [["Product ID","Identified item from photo"],["Vision Analysis","Condition, brand, inclusions, shot list"],["Confirm ID","You confirm the identified item"],["Pricing Research","Market comparables"],["Draft Listing","Description, tags, platform fields"],["Auth Plan","Authentication checklist"],["Inclusions + Auth","Confirm box contents, run checklist"],["Photo Shoot","Take and upload the planned shots"],["Background Removal","Auto-processed after upload"],["Quality Check","Scans for blur, exposure, framing"],["Condition Review","Grade confirmed from studio photos"],["Copy Review","Approve the rewritten description"],["Finalize","Package size and weight"],["Publish","List on eBay and Poshmark"]];
+const MID_ACTIVE = 8; // "Upload Photos" in the mid-pipeline preview
+const spinner = '<svg class="spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg>';
+function renderSteps(mode) {
+  const activeIdx = mode === 'done' ? STEPS.length : MID_ACTIVE - 1;
+  document.getElementById('steps').innerHTML = STEPS.map(([label, sub], i) => {
+    const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'pending';
+    const isLast = i === STEPS.length - 1;
+    const text = isLast && mode === 'done' ? 'Published' : label;
+    const icon = state === 'done' ? '<span class="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] flex items-center justify-center">✓</span>'
+      : state === 'active' ? '<span class="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center">' + spinner + '</span>'
+      : '<span class="w-4 h-4 rounded-full flex items-center justify-center"><span class="w-3 h-3 rounded-full border border-gray-800"></span></span>';
+    const cls = { done: 'text-gray-400', active: 'text-blue-300 font-medium', pending: 'text-gray-700' }[state];
+    const line = isLast ? '' : '<span class="absolute left-[7.5px] top-[19px] h-[7px] w-px ' + (state === 'done' ? 'bg-emerald-800/40' : 'bg-gray-800') + '"></span>';
+    const subline = state === 'active' ? '<span class="block text-[10px] text-blue-400/70 leading-tight">' + sub + '</span>' : '';
+    return '<li title="' + sub + '" class="relative flex items-start gap-2 ' + (state === 'active' ? 'py-1 -mx-1 px-1 rounded bg-blue-950/30' : 'h-[24px] items-center') + '">' + line + '<span class="flex-none ' + (state === 'active' ? 'mt-px' : '') + '">' + icon + '</span><span class="text-xs ' + cls + '">' + text + subline + '</span></li>';
+  }).join('');
+  const badge = document.getElementById('statusBadge');
+  badge.textContent = mode === 'done' ? 'Published' : 'Needs you';
+  badge.className = 'text-[10px] px-1.5 py-0.5 rounded border ' + (mode === 'done' ? 'bg-emerald-950 text-emerald-400 border-emerald-900' : 'bg-amber-950/60 text-amber-300 border-amber-800');
+  document.getElementById('live').classList.toggle('hidden', mode !== 'done');
+}
+renderSteps('mid');
+
+const SHOTS = [["Angled 3/4 hero (front-left, elevated)",true,"Listing thumbnail. Diagonal view from front-left at 45°, positioned to show full front flap, diamond quilting pattern, CC turn-lock logo centered, black chain strap with white leather weaving visible. Bag positioned at slight tilt to reveal depth and structured shape. White caviar color rendered clean and true. This is the postage-stamp hero — all key elements (color, quilting, hardware, strap) readable at small size."],["Top-down full",true,"Directly overhead view of closed flap bag. Shows complete diamond quilting pattern across the entire front flap face, verifies quilting uniformity and stitch quality, displays CC turn-lock logo centered and sharp. Demonstrates overall shape and dimensions. Critical for authenticating consistent Chanel craftsmanship across the surface."],["Front flat (straight-on)",true,"Direct perpendicular view of the closed flap. Shows the CC enamel turn-lock logo square-on and centered. Quilting pattern reads as perfect diamond grid. Full front flap visible with no foreshortening. Captures the color and finish of the caviar leather cleanly. This is the standard authentication reference angle for a Chanel flap bag."],["Back flat",true,"Straight rear view of the bag body. Shows the back surface (smooth or quilted per model), back leather condition, and the point where the black chain strap attaches to the back. Reveals any creasing, marks, or color variation on the back. For white caviar, shows whether the back has aged differently from the front."],["Bottom view",true,"Bag positioned upside-down to show the base/bottom surface. Reveals stitching quality, leather finish on the base, any wear or patina in this area, and the construction details. For a small flap bag, the bottom shows craftsmanship and usage wear distinctly on light-colored caviar."],["Interior open (flap lifted)",true,"Flap opened/lifted to reveal the interior compartment. Shows the interior lining (material, color, condition), any interior pockets or slots, the layout of the interior space. Most critically, position the camera to capture the Chanel stamp/brand mark and date code on the interior back wall. Interior cleanliness and marking clarity are key authentication indicators."],["Interior brand stamp & date code (close-up)",true,"Tight close-up of the interior Chanel logo stamp and date code/serial number. Must be in sharp focus and properly lit to show every character clearly. Font quality, spacing, depth of impression, and any serial hologram or marking detail must be legible. This is critical Chanel authentication documentation — verify it reads true and the marking is crisp (no smudging, over-inking, or shallow impressions)."],["Side profile (left or right)",true,"Perpendicular side view showing the bag's profile depth and structured shape. Displays the thickness of the flap, the body depth, and the quilting pattern along the edge. Shows how the chain strap curves around the side and attaches. Reveals any side creases, dents, or wear."],["Opposite side profile",true,"Side view from the other side (opposite of shot 8). Completes the 3D rotation of the bag. Verifies symmetry, consistent quilting, and identical strap attachment and condition on both sides. Catches asymmetrical wear or damage that might be missed from one angle."],["CC turn-lock hardware close-up",true,"Tight close-up of the black enamel/resin CC logo turn-lock closure. Show the logo design, enamel finish quality, any wear or chipping on the enamel, the metal base finish, and the turn-lock mechanism. This is a primary authentication point for Chanel — the quality, alignment, and finish of the CC logo turn-lock reveals authenticity. Enamel should be glossy and even; resin should be smooth."],["Quilting pattern detail (close-up)",true,"Close-up of a representative section of the diamond quilting pattern, showing 4-6 complete diamonds. Demonstrates stitch quality, thread color (typically white or pale on Chanel caviar), stitch consistency, and diamond uniformity. Authenticity lies in perfect stitch regularity and aligned diamond shapes. Reveals any loose threads, puckering, or inconsistent stitching."],["Chain and strap detail",true,"Close-up of the black interlocking chain strap with white caviar leather woven through. Show the quality of the metal chain links (no pitting or discoloration), the integrity of the leather weaving (no fraying, proper tension), and how the leather and chain integrate. Chanel chains have a specific link design; verify the pattern and finish. Show a section of both the chain and the leather component."],["Condition/wear documentation (if present)",false,"If the white caviar leather shows any creases, scuffs, marks, color variation, or patina: document each distinct area with a close-up shot. White caviar shows every touch; condition transparency builds trust. Capture in clear light without glare to show the actual surface. One shot per damage area. Omit if the bag is in pristine condition."],["Chanel Authenticity card",false,"Photo of included Chanel Authenticity card."],["Dust bag/cover",false,"Photo of included Dust bag/cover."]];
+document.getElementById('shots').innerHTML = SHOTS.map(([s, req, desc], i) => {
+  const hero = i === 0;
+  const tag = hero ? '<span class="ml-1 text-[10px] text-amber-500 font-semibold">HERO</span>' : req ? '<span class="ml-1 text-[10px] text-orange-500">required</span>' : '<span class="ml-1 text-[10px] text-gray-600">optional</span>';
+  return '<li class="flex items-start gap-2 py-1"><span class="mt-0.5 flex-none text-[10px] font-mono w-4 text-right ' + (hero ? 'text-amber-400 font-bold' : 'text-gray-600') + '">' + (i+1) + '</span><span class="mt-0.5 flex-none w-3.5 h-3.5 rounded bg-emerald-900/60 text-emerald-400 text-[9px] flex items-center justify-center">✓</span><div class="min-w-0"><span class="text-xs ' + (hero ? 'text-amber-300 font-medium' : 'text-gray-300') + '">' + s + '</span>' + tag + '<p class="text-[10px] text-gray-600 leading-snug">' + desc + '</p></div></li>';
+}).join('');
+const unused_shots = [['Angled 3/4 hero (front-left, elevated)',1],['Top-down full',1],['Front flat (straight-on)',1],['Back flat',1],['Bottom view',1],['Interior open (flap lifted)',1],['Interior brand stamp & date code (close-up)',1],['Side profile (left or right)',1],['Opposite side profile',1],['CC turn-lock hardware close-up',1],['Quilting pattern detail (close-up)',1],['Chain and strap detail',1],['Condition/wear documentation (if present)',0],['Chanel Authenticity card',0],['Dust bag/cover',0]];
+void unused_shots.map(([s, req], i) => '<li class="flex items-center gap-2 h-6"><span class="flex-none text-[10px] font-mono w-4 text-right ' + (i === 0 ? 'text-amber-400 font-bold' : 'text-gray-600') + '">' + (i+1) + '</span><span class="flex-none w-3.5 h-3.5 rounded bg-emerald-900/60 text-emerald-400 text-[9px] flex items-center justify-center">✓</span><span class="text-xs truncate ' + (i === 0 ? 'text-amber-300 font-medium' : 'text-gray-300') + '">' + s + '</span>' + (i === 0 ? '<span class="ml-auto text-[10px] text-amber-500 font-semibold">HERO</span>' : req ? '' : '<span class="ml-auto text-[10px] text-gray-600">optional</span>') + '</li>').join('');
+
+const auth = [['Auth Card Serial Number','Confirm the serial number is 12–14 digits and matches the hologram sticker inside the bag.'],['Hologram Sticker Placement','Flat, firmly adhered, rainbow sheen when tilted. Counterfeits often look raised or cloudy.'],['CC Logo & Turn-Lock Alignment','Interlocking C\'s precisely symmetrical; enamel smooth, chip-free, uniformly black.'],['Diamond Quilting Consistency','Stitching lines straight, evenly spaced, consistent depth panel to panel.'],['Hardware & Black-Tone Metal Stamping','CHANEL engraving on chain hardware; solid, weighty, even black finish.'],['Chain Strap Construction','Leather threads cleanly through each link; CHANEL stamping at attachment points.'],['Caviar Leather Texture Verification','Pebbled, firm, uniform grain; check for yellowing on white.'],['Interior Lining & Brand Stamp','CHANEL stamp clean, evenly pressed, all caps.'],['Stitching Consistency','Uniform tension and stitch count per inch throughout.'],['Condition Documentation (Very Good)','Photograph any signs of wear to support the condition rating.']];
+const AUTH = [["Auth Card Serial Number","Locate the Chanel authenticity card and confirm the serial number is 12–14 digits. Cross-reference the number with a Chanel year/series lookup chart to verify it aligns with the production era of the Trendy CC Flap Bag (Small). The serial number on the card must exactly match the hologram sticker inside the bag."],["Hologram Sticker Placement","Find the hologram sticker affixed to the interior lining (typically sewn into a small interior pocket or adhered near the spine). It should be flat, firmly adhered, and display a rainbow-iridescent sheen when tilted under light. The serial number on the sticker must match the auth card exactly. Counterfeit stickers often appear raised, cloudy, or show mismatched numbers."],["CC Logo & Turn-Lock Alignment","Inspect the black resin/enamel CC turn-lock closure closely. The interlocking C's must be precisely symmetrical — the left C opens to the right, the right C opens to the left, meeting cleanly at the top and bottom with no gap or overlap. The enamel surface should be smooth, chip-free, and uniformly black with crisp edges. Misaligned or lopsided C's are a primary counterfeit indicator."],["Diamond Quilting Consistency","Examine the classic diamond quilting pattern across all exterior panels. Stitching lines should be straight, evenly spaced, and consistent in depth from panel to panel. On an authentic white caviar bag, the quilts should be plump and uniform with no puckering, irregular diamond sizes, or misaligned rows. Pay special attention to the edges, corners, and areas near the closure where quilting alignment is most difficult to replicate."],["Hardware & Black-Tone Metal Stamping","Inspect the black-tone metal chain hardware for 'CHANEL' engraving or stamping on visible link components. Hardware should feel solid and weighty, not hollow or lightweight. The black finish should be deep and consistent with no flaking, peeling, or uneven coating. Check the chain links for smooth, uniform construction — authentic Chanel chains are cast metal, not stamped sheet metal."],["Chain Strap Construction","Examine the black interlocking chain strap with white caviar leather woven through. The leather threading should pass cleanly and evenly through each chain link with no gaps, fraying, or uneven width. The leather strip should be the same white caviar calfskin as the bag body. Verify the chain strap hardware at the attachment points (D-rings or end caps) bears 'CHANEL' stamping and is securely fastened."],["Caviar Leather Texture Verification","Assess the white grained calfskin (caviar leather) texture across the bag body. Authentic Chanel caviar leather has a distinctive pebbled, slightly bumpy surface that is firm and scratch-resistant to the touch. The texture should be uniform and consistent — not too fine (which may indicate lambskin) and not too coarse or plastic-feeling (which may indicate synthetic material). Given the white colorway, also check for any uneven dye distribution or yellowing."],["Interior Lining & Brand Stamp","Open the bag and inspect the interior lining for quality, color consistency, and 'CHANEL' brand stamp. The stamp should be clean, evenly pressed, and properly capitalized ('CHANEL' in all caps, not script). Verify the lining stitching around the interior pockets is even and secure. Check the interior zip pocket pull tab and any metal interior hardware for matching black-tone finish and quality."],["Stitching Consistency","Inspect stitching along all exterior quilted seams, the bag's edges (piping), the strap leather threading, and all interior seams. Authentic Chanel stitching is precise, uniform in tension, and consistent in stitch count per inch throughout the entire bag. Thread color should match the bag — typically white or off-white on this white bag. Look for any skipped stitches, loose threads, or uneven tension, which are red flags."],["Condition Documentation (Very Good)","Thoroughly document the current condition to support the 'very good' rating. Photograph any signs of honest use such as minor corner wear, light scuffs on the chain strap leather, or micro-scratches on the hardware. White caviar leather should be assessed for any staining, yellowing at the piping, or ghosting. The CC turn-lock enamel should be intact with no chips. Clear condition photos protect both buyer and seller and validate the listed condition grade."]];
+document.getElementById('auth').innerHTML = AUTH.map(([s, g]) => '<li class="flex items-start gap-2 py-1"><span class="mt-0.5 flex-none w-3.5 h-3.5 rounded-full bg-emerald-900/60 text-emerald-400 text-[9px] flex items-center justify-center">✓</span><div class="min-w-0"><span class="text-xs text-gray-300">' + s + '</span><p class="text-[10px] text-gray-600 leading-snug">' + g + '</p></div></li>').join('');
+const unused_auth = auth.map(([s, g]) => '<details class="rounded hover:bg-gray-900/60"><summary class="flex items-center gap-2 h-6 px-1 cursor-pointer"><span class="flex-none w-3.5 h-3.5 rounded-full bg-emerald-900/60 text-emerald-400 text-[9px] flex items-center justify-center">✓</span><span class="text-xs text-gray-300 truncate">' + s + '</span><span class="chev ml-auto text-gray-600 text-[10px] transition-transform">›</span></summary><p class="text-[10px] text-gray-500 leading-snug pl-6 pr-2 pb-2">' + g + '</p></details>').join('');
+
+const tabs = [...document.querySelectorAll('.tab')];
+function showTab(name) {
+  tabs.forEach(t => { const on = t.dataset.tab === name; t.classList.toggle('border-emerald-500', on); t.classList.toggle('text-emerald-400', on); t.classList.toggle('border-transparent', !on); t.classList.toggle('text-gray-500', !on); });
+  document.querySelectorAll('[data-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== name));
+}
+tabs.forEach(t => t.onclick = () => showTab(t.dataset.tab));
+showTab('inc');
+
+document.getElementById('notes').textContent = "Presents in pristine, unworn condition throughout. The white caviar leather exterior is immaculate across all panels — no scuffs, discoloration, staining, or surface marks of any kind, impressive given the light colorway. Diamond quilting stitching is crisp and tight front, back, sides, and base. The black resin CC turn-lock clasp on the front flap is clean and scratch-free. The black resin chain links and woven white caviar leather strap show no darkening or handling wear on the leather segments. Original tissue stuffing remains inside the bag, consistent with a never-carried piece. Interior black fabric lining is clean. The \"CHANEL Made in Italy\" interior patch is intact and legible. Included: Chanel authenticity card (No. 10218184) and Chanel dust bag. The interior hardware still has the original plastic on it. The interior zipper pull also has the original blue plastic on it.";
+document.getElementById('desc').innerHTML = marked.parse("The Chanel My Everything Small Flap Bag in white caviar leather is among the house's most coveted everyday silhouettes — a structured, diamond-quilted flap anchored by the iconic CC turn-lock clasp and finished with a dual-carry chain-and-leather strap. This particular example is a genuine never-carried piece in white caviar, a light colorway that rarely surfaces in unworn condition and commands immediate attention from serious collectors.\n\n**Condition**\n\nNew without tags. The white caviar leather exterior is immaculate across all panels — no scuffs, discoloration, staining, or surface marks of any kind, impressive given the light colorway. Diamond quilting stitching is crisp and tight on the front, back, sides, and base. The black resin CC turn-lock clasp on the front flap is clean and scratch-free. The black resin chain links and woven white caviar leather strap show no darkening or handling wear on the leather segments. Interior black fabric lining is clean; the \"CHANEL Made in Italy\" patch is intact and legible. Original tissue stuffing remains inside the bag, and the original protective plastic is still in place on the interior hardware, and the original blue plastic on the zipper pull — all consistent with a piece that has never been carried.\n\nMeasurements: 9.84\" W × 6.69\" H × 2.76\" D (250 mm × 170 mm × 70 mm). Includes Chanel authenticity card (No. 10218184) and Chanel dust bag.");
+
+const incs = [
+  { item: 'Dust bag/cover', source: 'manual', confirmed: true },
+  { item: 'Chanel Authenticity card', source: 'manual', confirmed: true },
+  { item: 'Original box', source: 'detected', confirmed: false, docSource: 'original', demo: true },
+  { item: 'Shop bag', source: 'detected', confirmed: true, demo: true },
+];
+const COMMON = ['Authenticity card','Brand tag','Dust bag/cover','Extra shoelaces','Instruction booklet','Original box','Receipt','Reseller tag/UPC','Shop bag','Warranty/registration card'];
+const HANDBAG = ['Original box','Dust bag/cover','Authenticity card','Receipt','Shop bag','Brand tag','Reseller tag/UPC'];
+const norm = s => s.toLowerCase().replace(/^chanel |^original /, '');
+const has = name => incs.some(i => norm(i.item) === norm(name) || norm(i.item).includes(norm(name)));
+const demoTag = '<span class="ml-1 text-[9px] uppercase tracking-wider text-indigo-400/70">demo</span>';
+function addInc(name) { name = name.trim(); if (!name || has(name)) return; incs.push({ item: name, source: "manual", confirmed: true }); renderIncs(); }
+
+let unread = 0;
+function setUnread(n) {
+  unread = n; const b = document.getElementById('unread');
+  b.textContent = n; b.classList.toggle('hidden', n === 0 || chatOpen);
+  b.classList.remove('bump', 'ring'); void b.offsetWidth; if (n > 0) b.classList.add('bump', 'ring');
+}
+const origToggle = toggleChat;
+toggleChat = open => { origToggle(open); if (open) setUnread(0); };
+setTimeout(() => {
+  const m = document.createElement('div');
+  m.className = 'max-w-[90%] rounded-lg bg-gray-900 border border-gray-800 text-gray-300 px-3 py-2 leading-relaxed';
+  m.textContent = '(Simulated) 21 studio photos processed. Ready for you to confirm them.';
+  document.getElementById('msgs').appendChild(m);
+  if (!chatOpen) setUnread(unread + 1);
+}, 5000);
+
+const COMPS = [["ebay_active", "Chanel Quilted My Everything Small Flap White Caviar Bag", 577499, "Pre-owned - Good", null, 10], ["therealreal_active", "Chanel Small My Everything Flap Bag", 342125, "Not specified", null, 6], ["therealreal_active", "Chanel Small My Everything Flap Bag", 242500, "Not specified", null, 6], ["therealreal_active", "Chanel Small My Everything Flap Bag", 344000, "Not specified", null, 6], ["therealreal_active", "Chanel Small My Everything Flap Bag", 374500, "Not specified", null, 6], ["therealreal_active", "Chanel Small My Everything Flap Bag", 378000, "Not specified", null, 6], ["google_active", "Chanel Small Quilted Caviar My Everything Flap", 510000, "Not specified", null, 6], ["manual_active", "Chanel My Everything Flap Bag, Quilted Caviar Small (Rebag via eBay) -- visible wear: creasing, discoloration, scuffs, hardware scratches", 312480, "Pre-owned, visible wear", null, null]];
+const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2 });
+document.getElementById('compList').innerHTML = COMPS.map(([src, title, cents, cond, sold, rel]) => '<li class="px-4 py-3 space-y-1"><div class="flex justify-between gap-3"><span class="text-xs text-gray-300 leading-snug">' + title + '</span><span class="text-sm font-semibold text-gray-100 flex-none">' + money(cents) + '</span></div><div class="flex gap-2 text-[10px] text-gray-500"><span class="uppercase tracking-wider">' + src.replace('_', ' ') + '</span><span>' + cond + '</span>' + (sold ? '<span>' + sold + '</span>' : '') + (rel != null ? '<span class="ml-auto">relevance ' + rel + '</span>' : '') + '</div></li>').join('');
+function openComps() { document.getElementById('comps').classList.remove('hidden'); }
+function closeComps() { document.getElementById('comps').classList.add('hidden'); }
+
+// Chat divider drag: wider chat for long agent replies
+const cs = document.getElementById('chatSplitter');
+cs.addEventListener('pointerdown', e => {
+  cs.setPointerCapture(e.pointerId); document.body.classList.add('dragging');
+  const startX = e.clientX, startW = chatW;
+  const move = ev => { chatW = Math.max(320, Math.min(grid.clientWidth * 0.55, startW - (ev.clientX - startX))); layout(); };
+  const up = () => { document.body.classList.remove('dragging'); cs.removeEventListener('pointermove', move); try { localStorage.setItem('chatW', chatW); } catch {} };
+  cs.addEventListener('pointermove', move); cs.addEventListener('pointerup', up, { once: true });
+});
+cs.addEventListener('dblclick', () => { chatW = 380; layout(); try { localStorage.setItem('chatW', 380); } catch {} });
+
+// Inclusions combobox: focus shows common picks, typing filters, arrows + Enter select
+function renderIncs() {
+  document.getElementById('incList').innerHTML = incs.map((it, i) => {
+    const suffix = it.docSource === 'original' ? '— original (brand-issued)' : it.source === 'manual' ? '— added by you' : '— detected in photo';
+    if (it.source === 'detected' && !it.confirmed) {
+      return '<li class="flex items-center gap-2 px-2 py-1.5 rounded bg-amber-950/40 border-l-2 border-amber-600"><span class="text-xs flex-1 min-w-0 truncate text-amber-300">' + it.item + ' <span class="text-amber-600/70">' + suffix + '</span>' + (it.demo ? demoTag : '') + '</span><button onclick="incs[' + i + '].confirmed=true;renderIncs()" title="Confirm" class="text-emerald-500 hover:text-emerald-400 text-xs">✓</button><button onclick="incs.splice(' + i + ',1);renderIncs()" title="Remove" class="text-gray-600 hover:text-red-400 text-xs">✕</button></li>';
+    }
+    const manual = it.source === 'manual';
+    return '<li class="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-900/60"><span class="text-xs ' + (manual ? 'text-blue-400' : 'text-emerald-500') + '">✓</span><span class="text-xs flex-1 min-w-0 truncate text-gray-300">' + it.item + ' <span class="' + (manual ? 'text-blue-500/70' : 'text-gray-600') + '">' + suffix + '</span>' + (it.demo ? demoTag : '') + '</span><button onclick="incs.splice(' + i + ',1);renderIncs()" title="Remove" class="opacity-0 group-hover:opacity-100 text-gray-700 hover:text-red-400 text-xs">✕</button></li>';
+  }).join('');
+  document.querySelector('[data-tab=inc] span').textContent = incs.length;
+}
+const incIn = document.getElementById('incInput'), menu = document.getElementById('incMenu');
+let opts = [], hi = -1;
+function openMenu() {
+  const q = incIn.value.trim().toLowerCase();
+  const pool = q ? COMMON : HANDBAG;
+  opts = pool.filter(s => !has(s) && s.toLowerCase().includes(q)).slice(0, q ? 8 : 4);
+  if (q && !opts.some(o => o.toLowerCase() === q)) opts.push({ custom: incIn.value.trim() });
+  hi = opts.length ? 0 : -1;
+  drawMenu();
+}
+function drawMenu() {
+  menu.classList.toggle('hidden', opts.length === 0);
+  incIn.setAttribute('aria-expanded', opts.length > 0);
+  const q = incIn.value.trim();
+  menu.innerHTML = (q ? '' : '<li class="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-gray-600">Common for handbags</li>') + opts.map((o, i) => {
+    const label = o.custom ? 'Add “' + o.custom + '”' : o.replace(new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'i'), q ? '<b class="text-gray-100">$1</b>' : '$1');
+    return '<li role="option" aria-selected="' + (i === hi) + '" data-i="' + i + '" class="px-2 py-1.5 text-xs cursor-pointer ' + (i === hi ? 'bg-gray-800 text-gray-100' : 'text-gray-400') + (o.custom ? ' italic' : '') + '">' + label + '</li>';
+  }).join('');
+}
+function pick(i) { const o = opts[i]; if (!o) return; addInc(o.custom || o); incIn.value = ''; openMenu(); }
+incIn.addEventListener('focus', openMenu);
+incIn.addEventListener('input', openMenu);
+incIn.addEventListener('blur', () => setTimeout(() => { menu.classList.add('hidden'); incIn.setAttribute('aria-expanded', false); }, 120));
+incIn.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); hi = (hi + 1) % opts.length; drawMenu(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); hi = (hi - 1 + opts.length) % opts.length; drawMenu(); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (hi >= 0) pick(hi); else if (incIn.value.trim()) { addInc(incIn.value); incIn.value = ''; openMenu(); } }
+  else if (e.key === 'Escape') { menu.classList.add('hidden'); }
+});
+menu.addEventListener('mousedown', e => { const li = e.target.closest('[data-i]'); if (li) { e.preventDefault(); pick(+li.dataset.i); } });
+renderIncs();
+
+// Photo shoot: empty -> you checked (blue, toggleable) -> verified by quality check (green, locked)
+const shotState = SHOTS.map((_, i) => i < 6 ? 'verified' : i < 9 ? 'checked' : 'empty');
+function renderShots() {
+  document.getElementById('shots').innerHTML = SHOTS.map(([s, req, desc], i) => {
+    const hero = i === 0, st = shotState[i];
+    const tag = hero ? '<span class="ml-1 text-[10px] text-amber-500 font-semibold">HERO</span>' : req ? '<span class="ml-1 text-[10px] text-orange-500">required</span>' : '<span class="ml-1 text-[10px] text-gray-600">optional</span>';
+    const box = st === 'verified'
+      ? '<span title="Verified by photo quality check" class="mt-0.5 flex-none w-3.5 h-3.5 rounded bg-emerald-600 text-gray-950 text-[9px] font-bold flex items-center justify-center cursor-default">✓</span>'
+      : st === 'checked'
+      ? '<button onclick="toggleShot(' + i + ')" title="You marked this shot taken — click to undo" class="mt-0.5 flex-none w-3.5 h-3.5 rounded bg-blue-500 text-gray-950 text-[9px] font-bold flex items-center justify-center">✓</button>'
+      : '<button onclick="toggleShot(' + i + ')" title="Mark shot taken" class="mt-0.5 flex-none w-3.5 h-3.5 rounded border border-gray-600 hover:border-blue-400"></button>';
+    const verifiedNote = st === 'verified' ? '<span class="ml-1 text-[10px] text-emerald-600">verified</span>' : '';
+    return '<li class="flex items-start gap-2 py-1"><span class="mt-0.5 flex-none text-[10px] font-mono w-4 text-right ' + (hero ? 'text-amber-400 font-bold' : 'text-gray-600') + '">' + (i+1) + '</span>' + box + '<div class="min-w-0"><span class="text-xs ' + (st === 'verified' ? 'text-gray-500' : hero ? 'text-amber-300 font-medium' : 'text-gray-300') + '">' + s + '</span>' + tag + verifiedNote + '<p class="text-[10px] text-gray-600 leading-snug">' + desc + '</p></div></li>';
+  }).join('');
+  const done = shotState.filter(s => s !== 'empty').length;
+  document.querySelector('[data-tab=photos] span').textContent = done + '/' + SHOTS.length;
+}
+function toggleShot(i) { if (shotState[i] === 'verified') return; shotState[i] = shotState[i] === 'checked' ? 'empty' : 'checked'; renderShots(); }
+renderShots();
+
+const fileInput = document.getElementById('fileInput');
+const addTile = document.createElement('button');
+addTile.type = 'button';
+addTile.title = 'Add photos — click to browse or drop files here';
+addTile.className = 'aspect-square rounded-lg border-2 border-dashed border-gray-700 hover:border-emerald-500 hover:text-emerald-400 text-gray-500 flex flex-col items-center justify-center gap-0.5 transition-colors';
+addTile.innerHTML = '<span class="text-xl leading-none">+</span><span class="text-[10px] leading-tight">Add photos</span>';
+addTile.onclick = () => fileInput.click();
+thumbs.appendChild(addTile);
+
+function uploadFiles(files) {
+  [...files].filter(f => f.type.startsWith('image/')).forEach(f => {
+    const tile = document.createElement('div');
+    tile.className = 'relative aspect-square rounded-lg border-2 border-transparent overflow-hidden bg-gray-900';
+    tile.innerHTML = '<img class="w-full h-full object-cover opacity-50" src="' + URL.createObjectURL(f) + '"><div class="absolute inset-0 flex items-center justify-center"><svg class="spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg></div><span class="absolute bottom-1 left-1 right-1 text-[9px] text-gray-300 truncate">' + f.name + '</span>';
+    thumbs.insertBefore(tile, addTile);
+    setTimeout(() => { tile.querySelector('img').classList.remove('opacity-50'); tile.querySelector('div').remove(); tile.querySelector('span').remove(); }, 1200 + Math.random() * 1500);
+  });
+}
+fileInput.onchange = () => { uploadFiles(fileInput.files); fileInput.value = ''; };
+
+const photoCol = document.getElementById('photoCol'), overlay = document.getElementById('dropOverlay');
+let dragDepth = 0;
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+photoCol.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; overlay.classList.remove('hidden'); });
+photoCol.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+photoCol.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; overlay.classList.add('hidden'); } });
+photoCol.addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; overlay.classList.add('hidden'); uploadFiles(e.dataTransfer.files); });
+</script>
+</body>
+</html>
