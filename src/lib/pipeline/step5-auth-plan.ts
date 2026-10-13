@@ -1,8 +1,8 @@
 import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
-import { pushPipelineStep } from './supabase-push'
+import { getSupabaseAdmin, pushPipelineStep } from './supabase-push'
 import { reconcilePhotoPlan } from './reconcile-photo-plan'
 import type { VisionAnalysis } from './step2-vision-analysis'
-import type { AuthStep } from '@/types/listings'
+import type { AuthStep, PhotoShot } from '@/types/listings'
 import type { ApiKeys } from '@/lib/user-api-keys'
 
 interface AuthPlanOutput {
@@ -113,16 +113,28 @@ Use the generate_auth_plan tool.`
 
   // step2's photo_plan and this step's auth_plan come from two separate LLM calls with no
   // cross-reference -- reconcile here so every auth item that needs a photo is guaranteed a
-  // matching studio shot, instead of leaving that coverage coincidental. step2.photoPlan is
-  // safe to use directly: nothing else writes photo_plan between step2 and step5 within a
-  // single intake-pipeline run (see intake-pipeline.ts).
-  const reconciledPhotoPlan = reconcilePhotoPlan(authPlan, step2.photoPlan)
+  // matching studio shot, instead of leaving that coverage coincidental. Reconciles against
+  // the stored plan, not step2.photoPlan: retry-step and resume-pipeline pass an empty
+  // photoPlan, and inclusion edits at the ID gate add shots after step2.
+  const supabase = getSupabaseAdmin()
+  const { data: stored, error: readErr } = await supabase
+    .from('listings')
+    .select('photo_plan')
+    .eq('id', listingId)
+    .single()
+  if (readErr) throw new Error(`step5: photo_plan read failed — ${readErr.message}`)
+  const reconciledPhotoPlan = reconcilePhotoPlan(authPlan, (stored.photo_plan as PhotoShot[] | null) ?? [])
+
+  const { error: planErr } = await supabase.rpc('update_photo_plan', {
+    p_listing_id: listingId,
+    p_plan: reconciledPhotoPlan,
+  })
+  if (planErr) throw new Error(`step5: update_photo_plan failed — ${planErr.message}`)
 
   await pushPipelineStep(listingId, {
     // pushPipelineStep floors pipeline_step atomically via a Postgres GREATEST() (migration
     // 0025) -- see the comment there for why this can't be a read-then-write-max here.
     pipeline_step: 5,
     auth_plan: authPlan,
-    photo_plan: reconciledPhotoPlan,
   })
 }

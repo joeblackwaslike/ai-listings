@@ -151,7 +151,6 @@ For notable_features, the FIRST entry MUST be "Model: <model name>" — use the 
     condition_notes: output.condition_notes,
     is_luxury: isLuxury,
     inclusions: [],
-    photo_plan: [],
     intake_meta: {
       textAnalysis: output,
       source: 'text',

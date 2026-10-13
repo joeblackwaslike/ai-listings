@@ -21,25 +21,31 @@ export async function PATCH(
   const supabase = getSupabaseAdmin()
 
   // Fetch current photo_plan so we can reconcile inclusion shots into it
-  const { data: listing } = await supabase
+  const { data: listing, error: fetchErr } = await supabase
     .from('listings')
     .select('photo_plan')
     .eq('id', id)
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
-  const currentPlan: PhotoShot[] = listing?.photo_plan ?? []
+  if (fetchErr) return Response.json({ error: fetchErr.message }, { status: 500 })
+  if (!listing) return Response.json({ error: 'Listing not found' }, { status: 404 })
+
+  const currentPlan: PhotoShot[] = listing.photo_plan ?? []
   const { plan: reconciledPlan, changed } = reconcileInclusionsPlan(body.inclusions, currentPlan)
-
-  const update: Record<string, unknown> = { inclusions: body.inclusions }
-  if (changed) update.photo_plan = reconciledPlan
 
   const { error } = await supabase
     .from('listings')
-    .update(update)
+    .update({ inclusions: body.inclusions })
     .eq('id', id)
     .eq('user_id', user.id)
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  if (changed) {
+    const { error: planErr } = await supabase.rpc('update_photo_plan', { p_listing_id: id, p_plan: reconciledPlan })
+    if (planErr) return Response.json({ error: planErr.message }, { status: 500 })
+  }
+
   return Response.json({ ok: true, photoPlanUpdated: changed })
 }

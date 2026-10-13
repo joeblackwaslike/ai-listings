@@ -351,12 +351,20 @@ async function updateListing(
     finalUpdates = { ...updates, platform_fields: merged }
   }
 
-  const { error } = await supabase
-    .from('listings')
-    .update(finalUpdates)
-    .eq('id', listingId)
+  const { photo_plan: photoPlan, ...columnUpdates } = finalUpdates
 
-  if (error) return { ok: false, reason: `DB update failed: ${error.message}` }
+  if (Object.keys(columnUpdates).length > 0) {
+    const { error } = await supabase
+      .from('listings')
+      .update(columnUpdates)
+      .eq('id', listingId)
+    if (error) return { ok: false, reason: `DB update failed: ${error.message}` }
+  }
+
+  if (photoPlan) {
+    const { error } = await supabase.rpc('update_photo_plan', { p_listing_id: listingId, p_plan: photoPlan })
+    if (error) return { ok: false, reason: `Photo plan update failed: ${error.message}` }
+  }
 
   return { ok: true, updated: Object.keys(updates) }
 }

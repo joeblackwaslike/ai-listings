@@ -6,19 +6,35 @@ import { blockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { toPublicUrl } from '@/lib/pipeline/to-public-url'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import type { ClaudeImageInput } from '@/lib/claude'
+import { shotsToVerify } from '@/lib/pipeline/shot-verification'
+import type { PhotoShot } from '@/types/listings'
 
 interface PhotoResult {
   index: number
   passed: boolean
   issues: string[]
   verdict: string
+  shot_index: number | null
 }
 
 interface BatchQualityOutput {
   results: PhotoResult[]
 }
 
-async function checkBatchQuality(photoUrls: string[], apiKey: string | undefined): Promise<BatchQualityOutput> {
+function shotListPrompt(plan: PhotoShot[]): string {
+  if (plan.length === 0) return 'There is no shot list for this listing, so set shot_index to null for every photo.'
+  const lines = plan.map((s, i) => `${i}. ${s.shot} — ${s.description}`)
+  return `Shot list (0-based index. name — description):
+${lines.join('\n')}
+
+For each photo, also set shot_index to the index of the shot it shows, or null if it matches none.`
+}
+
+async function checkBatchQuality(
+  photoUrls: string[],
+  plan: PhotoShot[],
+  apiKey: string | undefined
+): Promise<BatchQualityOutput> {
   const images: ClaudeImageInput[] = await Promise.all(
     photoUrls.map(async (url) => ({ url: await toPublicUrl(url) }))
   )
@@ -26,7 +42,7 @@ async function checkBatchQuality(photoUrls: string[], apiKey: string | undefined
   try {
     return await runStructured<BatchQualityOutput>({
       model: 'claude-sonnet-4-6',
-      maxTokens: 1024,
+      maxTokens: 2048,
       images,
       apiKey,
       toolName: 'batch_quality_check',
@@ -43,7 +59,9 @@ Important: hands or fingers in the frame are acceptable and should never be flag
 
 A photo passes if it is sharp, properly exposed, the main item is well-framed, and there is only one main item.
 
-Return one result per photo using its 0-based index.`,
+Return one result per photo using its 0-based index.
+
+${shotListPrompt(plan)}`,
       jsonSchema: {
         type: 'object' as const,
         properties: {
@@ -56,8 +74,12 @@ Return one result per photo using its 0-based index.`,
                 passed: { type: 'boolean', description: 'True if photo is suitable for listing' },
                 issues: { type: 'array', items: { type: 'string' }, description: 'Specific quality issues found' },
                 verdict: { type: 'string', description: 'One-sentence summary' },
+                shot_index: {
+                  type: ['number', 'null'],
+                  description: '0-based index into the shot list of the shot this photo shows, or null if none',
+                },
               },
-              required: ['index', 'passed', 'issues', 'verdict'],
+              required: ['index', 'passed', 'issues', 'verdict', 'shot_index'],
             },
           },
         },
@@ -84,6 +106,23 @@ async function markQualityChecked(
   if (error) throw new Error(`batch-quality-check: quality_checked_at update failed — ${error.message}`)
 }
 
+async function verifyShots(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  listingId: string,
+  shots: string[]
+): Promise<void> {
+  for (const shot of shots) {
+    const { error } = await supabase.rpc('set_photo_shot_status', {
+      p_listing_id: listingId,
+      p_shot: shot,
+      p_status: 'verified',
+    })
+    if (error && !/^shot not found/.test(error.message)) {
+      throw new Error(`batch-quality-check: verifying shot "${shot}" failed — ${error.message}`)
+    }
+  }
+}
+
 export const batchQualityCheck = inngest.createFunction(
   {
     id: 'batch-quality-check',
@@ -98,7 +137,7 @@ export const batchQualityCheck = inngest.createFunction(
 
     const { data: listingRow } = await supabase
       .from('listings')
-      .select('user_id')
+      .select('user_id, photo_plan')
       .eq('id', listingId)
       .single()
 
@@ -120,11 +159,22 @@ export const batchQualityCheck = inngest.createFunction(
     const photoUrls = photos.map((p) => ((p.processed_url ?? p.raw_url) as string))
     const apiKeys = await getUserApiKeys(listingRow.user_id)
 
+    const plan = await step.run('capture-shot-list', () => (listingRow.photo_plan as PhotoShot[] | null) ?? [])
+
     const { results } = await step.run('check-quality-batch', () =>
-      checkBatchQuality(photoUrls, apiKeys.anthropic)
+      checkBatchQuality(photoUrls, plan, apiKeys.anthropic)
     )
 
     const failed = results.filter((r) => !r.passed && !photos[r.index]?.photoroom_meta?.quality_overridden)
+    const failedIndexes = new Set(failed.map((r) => r.index))
+
+    await step.run('verify-shots', () =>
+      verifyShots(
+        supabase,
+        listingId,
+        shotsToVerify(plan, results.map((r) => ({ passed: !failedIndexes.has(r.index), shot_index: r.shot_index })))
+      )
+    )
 
     if (failed.length === 0) {
       await markQualityChecked(supabase, listingId, checkedAt)
