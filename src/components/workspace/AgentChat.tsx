@@ -9,6 +9,7 @@ import { SuggestedReplies } from './SuggestedReplies'
 import type { Suggestion } from './SuggestedReplies'
 import { MeasurementFields } from './MeasurementFields'
 import { formatMeasurementValue } from '@/lib/units'
+import { uploadStudioPhotos } from '@/lib/photos/upload-studio-photos'
 import type { DetailGateContext, Measurements } from '@/types/listings'
 
 interface ChatMessage {
@@ -186,27 +187,8 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     setPendingGender(null)
   }
 
-  async function uploadImages(files: File[]): Promise<string[]> {
-    const urls: string[] = []
-    for (let index = 0; index < files.length; index++) {
-      const file = files[index]
-      const form = new FormData()
-      form.append('photo', file)
-      form.append('listingId', listingId)
-      form.append('displayOrder', String(index))
-      const res = await fetch('/api/studio-upload', { method: 'POST', body: form })
-      if (!res.ok) {
-        let msg = `Upload failed (${res.status})`
-        try {
-          const body = await res.json() as { error?: string }
-          if (body.error) msg = body.error
-        } catch { /* non-JSON body (e.g. HTML redirect) — use status message */ }
-        throw new Error(msg)
-      }
-      const data = await res.json() as { photoUrl: string }
-      urls.push(data.photoUrl)
-    }
-    return urls
+  function uploadImages(files: File[]): Promise<string[]> {
+    return uploadStudioPhotos(listingId, files, 0)
   }
 
   async function doSend(text: string, imagesToUpload: File[]) {
