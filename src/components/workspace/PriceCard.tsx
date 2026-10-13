@@ -163,23 +163,26 @@ export function PriceCard({ listing, comps, priceHistory, platformPriceHistory }
         </div>
       )}
 
-      <EvidenceDrawer
-        open={evidenceOpen}
-        onClose={() => setEvidenceOpen(false)}
-        listingId={listing.id}
-        comps={currentComps}
-        suggestedPriceCents={resolvedPriceCents}
-        confidenceScore={listing.confidence_score}
-        priceToMoveCents={showPriceToMove ? pricing.priceToMoveCents : null}
-        priceToMoveDiscountPct={listing.price_to_move_discount_pct}
-        retailPriceCents={listing.retail_price_cents}
-        retailPriceSource={listing.retail_price_source}
-        retailPriceUrl={listing.retail_price_url}
-        retailPromoNote={listing.retail_promo_note}
-        pricingMethodology={listing.pricing_methodology}
-        priceHistory={priceHistory}
-        platformPriceHistory={platformPriceHistory}
-      />
+      {/* PhotoSection ignores file drags over the drawer, so a drop there doesn't upload. */}
+      <div data-no-photo-drop className="contents">
+        <EvidenceDrawer
+          open={evidenceOpen}
+          onClose={() => setEvidenceOpen(false)}
+          listingId={listing.id}
+          comps={currentComps}
+          suggestedPriceCents={resolvedPriceCents}
+          confidenceScore={listing.confidence_score}
+          priceToMoveCents={showPriceToMove ? pricing.priceToMoveCents : null}
+          priceToMoveDiscountPct={listing.price_to_move_discount_pct}
+          retailPriceCents={listing.retail_price_cents}
+          retailPriceSource={listing.retail_price_source}
+          retailPriceUrl={listing.retail_price_url}
+          retailPromoNote={listing.retail_promo_note}
+          pricingMethodology={listing.pricing_methodology}
+          priceHistory={priceHistory}
+          platformPriceHistory={platformPriceHistory}
+        />
+      </div>
     </>
   )
 }

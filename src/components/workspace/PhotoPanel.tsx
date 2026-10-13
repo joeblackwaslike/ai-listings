@@ -16,10 +16,9 @@ import {
   SortableContext,
   rectSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { sameIds, splitPhotos } from '@/lib/photos/photo-column'
+import { applyIdOrder, reorderUpdates, splitPhotos } from '@/lib/photos/photo-column'
 import type { Photo } from '@/types/listings'
 
 export interface PendingUpload {
@@ -88,7 +87,7 @@ function SortableThumbnail({
           isSelected ? 'border-emerald-500' : 'border-transparent opacity-60 hover:opacity-80'
         }`}
       >
-        <Image src={url} alt="" fill sizes="160px" className="object-cover" />
+        <Image src={url} alt="" fill sizes="160px" draggable={false} className="object-cover" />
       </button>
       {isStudio && (
         <div className="absolute inset-0 rounded-lg flex items-end justify-end gap-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
@@ -140,7 +139,7 @@ export function PhotoPanel({ photos, pendingUploads, onAddPhotos }: PhotoPanelPr
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [urlOverrides, setUrlOverrides] = useState<Record<string, PhotoUrls>>({})
-  const [orderedPhotos, setOrderedPhotos] = useState<Photo[] | null>(null)
+  const [orderedIds, setOrderedIds] = useState<string[] | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -149,7 +148,7 @@ export function PhotoPanel({ photos, pendingUploads, onAddPhotos }: PhotoPanelPr
   const { displayPhotos: basePhotos, isIntakeFallback, showWideDropZone } = splitPhotos(photos)
   // Local order from a drag wins until the server's photo set changes (upload or delete);
   // otherwise new uploads would never appear after a reorder.
-  const displayPhotos = orderedPhotos && sameIds(orderedPhotos, basePhotos) ? orderedPhotos : basePhotos
+  const displayPhotos = applyIdOrder(basePhotos, orderedIds)
 
   const selectedPhoto = (selectedId ? displayPhotos.find((p) => p.id === selectedId) : undefined) ?? displayPhotos[0]
   const selectedIndex = selectedPhoto ? displayPhotos.indexOf(selectedPhoto) : -1
@@ -182,45 +181,33 @@ export function PhotoPanel({ photos, pendingUploads, onAddPhotos }: PhotoPanelPr
     try {
       await fetch(`/api/photos/${photoId}`, { method: 'DELETE' })
       setSelectedId(null)
-      setOrderedPhotos(null)
+      setOrderedIds(null)
       router.refresh()
     } finally {
       setBusy((prev) => ({ ...prev, [photoId]: false }))
     }
   }, [router])
 
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
-    if (!over || active.id === over.id) return
+    if (!over) return
+    const updates = reorderUpdates(displayPhotos.map((p) => p.id), String(active.id), String(over.id))
+    if (!updates) return
+    setOrderedIds(updates.map((u) => u.id))
 
-    setOrderedPhotos((prev) => {
-      const current = prev && sameIds(prev, basePhotos) ? prev : basePhotos
-      const oldIndex = current.findIndex((p) => p.id === active.id)
-      const newIndex = current.findIndex((p) => p.id === over.id)
-      const reordered = arrayMove(current, oldIndex, newIndex).map((p, i) => ({
-        ...p,
-        display_order: i * 1000,
-      }))
-
-      // Persist async — fire and forget; revert to server state on error
-      const updates = reordered.map(({ id, display_order }) => ({ id: id as string, display_order }))
-      fetch('/api/photos/reorder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updates }),
-      }).then((res) => {
-        if (!res.ok) {
-          setOrderedPhotos(null)
-          router.refresh()
-        }
-      }).catch(() => {
-        setOrderedPhotos(null)
-        router.refresh()
-      })
-
-      return reordered
-    })
-  }, [basePhotos, router])
+    // Persist async — fire and forget; revert to server state on error
+    const revert = () => {
+      setOrderedIds(null)
+      router.refresh()
+    }
+    fetch('/api/photos/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates }),
+    }).then((res) => {
+      if (!res.ok) revert()
+    }).catch(revert)
+  }, [displayPhotos, router])
 
   return (
     <div className="space-y-3">
@@ -230,6 +217,7 @@ export function PhotoPanel({ photos, pendingUploads, onAddPhotos }: PhotoPanelPr
             <Image
               src={mainUrl as string}
               alt="Listing photo"
+              draggable={false}
               width={0}
               height={0}
               sizes="(min-width: 1024px) 60vw, 100vw"

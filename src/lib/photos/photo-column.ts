@@ -49,3 +49,40 @@ export function sameIds(a: readonly { id: string }[], b: readonly { id: string }
   const ids = new Set(a.map((p) => p.id))
   return a.length === b.length && b.every((p) => ids.has(p.id))
 }
+
+/**
+ * New display_order for every grid photo after dragging `activeId` onto `overId`, respaced
+ * densely (0..n-1) so a later upload numbered from not-yet-refreshed props still sorts last.
+ * Null when the move is a no-op or either id is unknown.
+ */
+export function reorderUpdates(
+  ids: readonly string[],
+  activeId: string,
+  overId: string,
+): { id: string; display_order: number }[] | null {
+  const from = ids.indexOf(activeId)
+  const to = ids.indexOf(overId)
+  if (from < 0 || to < 0 || from === to) return null
+  const order = ids.filter((id) => id !== activeId)
+  order.splice(to, 0, activeId)
+  return order.map((id, display_order) => ({ id, display_order }))
+}
+
+/**
+ * The current photo objects in a locally dragged id order, so server updates (a new
+ * processed_url after background removal) still show. Server order wins once the set changes.
+ */
+export function applyIdOrder<P extends { id: string }>(photos: readonly P[], ids: readonly string[] | null): readonly P[] {
+  if (!ids || !sameIds(photos, ids.map((id) => ({ id })))) return photos
+  const byId = new Map(photos.map((p) => [p.id, p]))
+  return ids.map((id) => byId.get(id) as P)
+}
+
+/**
+ * Start order for an upload batch. `reserved` is the first order not yet claimed by an
+ * in-flight batch, so a second drop before the refresh lands doesn't reuse the same orders.
+ */
+export function reserveStartOrder(propsNext: number, reserved: number, count: number): { start: number; reserved: number } {
+  const start = Math.max(propsNext, reserved)
+  return { start, reserved: start + count }
+}
