@@ -85,6 +85,8 @@ export interface AuthStep {
   photo_required: boolean;
 }
 
+export type PhotoShotStatus = 'pending' | 'taken' | 'verified';
+
 export interface PhotoShot {
   shot: string;
   description: string;
@@ -92,6 +94,7 @@ export interface PhotoShot {
   photo_type: PhotoType;
   order?: number;         // 1-indexed shoot sequence; shot 1 is the thumbnail/hero
   inclusion_ref?: string; // inclusion item name this shot backs, for reconcile targeting
+  status?: PhotoShotStatus; // missing means pending
 }
 
 // Always inches -- no unit suffix needed on the individual fields since, unlike jewelry's
@@ -227,6 +230,8 @@ export interface DetailGateContext {
   defaultMeasurementValues?: Partial<Record<string, string | number>>;
 }
 
+export type AgentBlockedKind = 'photo_quality' | 'intake_failed' | 'rewrite_failed';
+
 export interface Listing {
   id: string;
   sku: string | null;
@@ -273,6 +278,9 @@ export interface Listing {
 
   agent_blocked: boolean;
   agent_blocked_reason: string | null;
+  agent_blocked_kind: AgentBlockedKind | null;
+  copy_approved_at: string | null;
+  quality_checked_at: string | null;
 
   auto_discount_enabled: boolean | null;
   auto_discount_pct: number | null;
