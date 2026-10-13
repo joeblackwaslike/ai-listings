@@ -2,6 +2,12 @@
 -- Not applied automatically. Apply with a single transaction so a failure leaves nothing half-done:
 --   psql -1 -v ON_ERROR_STOP=1 -f 0042_workspace_redesign.sql
 -- Dry-run with 0042_workspace_redesign.check.sql inside BEGIN ... ROLLBACK.
+--
+-- Deploy order (the app code depends on this migration):
+--   1. Apply this file first: psql -1 -v ON_ERROR_STOP=1 -f 0042_workspace_redesign.sql
+--   2. Deploy the app.
+--   3. Re-sync the Inngest app so photo-readiness is registered and batch-quality-check's
+--      trigger moves to listing/studio-batch-ready.
 
 -- The updated_at trigger bumps every row these UPDATEs touch, so copy_approved_at is
 -- backfilled from the snapshot's original updated_at, never from listings.updated_at.
@@ -31,11 +37,15 @@ SET agent_blocked_kind = CASE
 END
 WHERE l.agent_blocked AND l.agent_blocked_kind IS NULL;
 
--- 2. Rows whose condition/copy confirmation came from the intake photo only.
+-- 2. Rows whose condition/copy confirmation came from the intake photo only. A failed rewrite
+--    no longer applies once the row leaves condition_gate/copy_review, so its block goes too.
 UPDATE listings
 SET condition_confirmed = false,
     copy_approved_at = NULL,
-    status = CASE WHEN status IN ('condition_gate', 'copy_review') THEN 'in_loop' ELSE status END
+    status = CASE WHEN status IN ('condition_gate', 'copy_review') THEN 'in_loop' ELSE status END,
+    agent_blocked = CASE WHEN agent_blocked_kind = 'rewrite_failed' THEN false ELSE agent_blocked END,
+    agent_blocked_reason = CASE WHEN agent_blocked_kind = 'rewrite_failed' THEN NULL ELSE agent_blocked_reason END,
+    agent_blocked_kind = CASE WHEN agent_blocked_kind = 'rewrite_failed' THEN NULL ELSE agent_blocked_kind END
 WHERE NOT photos_confirmed
   AND status NOT IN ('finalizing', 'published', 'sold', 'archived');
 
@@ -48,7 +58,8 @@ WHERE b.id = l.id
   AND l.photos_confirmed
   AND l.condition_confirmed
   AND l.pipeline_step >= l.pipeline_total
-  AND NOT l.agent_blocked;
+  AND NOT l.agent_blocked
+  AND l.copy_approved_at IS NULL;
 
 -- 4. finalizing rows must pass the new publish gate or go back to in_loop.
 WITH gate AS (
@@ -74,6 +85,28 @@ SET copy_approved_at = CASE WHEN g.passes THEN b.updated_at ELSE NULL END,
 FROM gate g
 JOIN listings_backup_0042 b ON b.id = g.id
 WHERE l.id = g.id;
+
+-- 5. Finished rows left in in_loop with confirmed photos and unapproved copy (blocked rows
+--    step 3 skipped, finalizing rows step 4 demoted) have no other way into copy review:
+--    only condition_gate leads there, so send them back through condition review.
+UPDATE listings
+SET status = 'condition_gate',
+    condition_confirmed = false
+WHERE status = 'in_loop'
+  AND photos_confirmed
+  AND copy_approved_at IS NULL
+  AND pipeline_step >= pipeline_total;
+
+-- 6. Quality Check is done for confirmed photos that have no outstanding quality failure.
+UPDATE listings l
+SET quality_checked_at = now()
+WHERE l.photos_confirmed
+  AND l.quality_checked_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM photos p
+    WHERE p.listing_id = l.id AND p.type = 'studio'
+      AND p.photoroom_meta->>'quality_failed' = 'true'
+  );
 
 -- Only set_photo_shot_status may produce 'verified'. Incoming statuses are honored only for
 -- shots with no stored counterpart, and only as 'pending'/'taken'.
