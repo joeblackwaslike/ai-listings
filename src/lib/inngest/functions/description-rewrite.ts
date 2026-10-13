@@ -59,6 +59,7 @@ export const descriptionRewrite = inngest.createFunction(
         .from('listings')
         .update({ copy_approved_at: null })
         .eq('id', listingId)
+        .neq('status', 'archived')
       if (error) {
         throw new Error(`description-rewrite: failed to clear copy_approved_at for listing ${listingId} -- ${error.message}`)
       }
