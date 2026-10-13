@@ -40,3 +40,18 @@ export function formatMeasurementValue(field: MeasurementField, value: unknown):
   if (field.useChips || !isPhysicalLengthField(field.key)) return String(value)
   return formatDualMeasurement(Number(value))
 }
+
+const DIMENSION_INITIALS: Record<string, string> = { Length: 'L', Width: 'W', Height: 'H' }
+
+/**
+ * Compact "L × W × H" line (e.g. `9.84" L × 2.76" W × 6.69" H`) from whichever fields are
+ * labeled Length, Width, or Height, in the order given; null when none have values.
+ */
+export function formatDimensions(m: Record<string, unknown>, fields: MeasurementField[]): string | null {
+  const parts = fields.flatMap((f) => {
+    const initial = DIMENSION_INITIALS[f.label]
+    const value = m[f.key]
+    return initial && typeof value === 'number' && Number.isFinite(value) ? [`${value}" ${initial}`] : []
+  })
+  return parts.length ? parts.join(' × ') : null
+}

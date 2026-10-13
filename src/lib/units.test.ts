@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mmToInches, inchesToMm, formatDualMeasurement, formatMeasurementValue, isPhysicalLengthField } from './units'
+import { mmToInches, inchesToMm, formatDualMeasurement, formatMeasurementValue, isPhysicalLengthField, formatDimensions } from './units'
 import type { MeasurementField } from '@/types/listings'
+import { getMeasurementFields } from './utils'
 
 test('mmToInches converts millimeters to inches rounded to 2 decimals', () => {
   assert.equal(mmToInches(813), 32.01)
@@ -95,4 +96,27 @@ test('isPhysicalLengthField excludes the four jewelry mm fields (natively mm, no
 
 test('isPhysicalLengthField excludes any _mm-suffixed key by naming convention, not just known keys', () => {
   assert.equal(isPhysicalLengthField('some_future_jewelry_id_mm'), false)
+})
+
+test('formatDimensions renders generic fields as L x W x H in field order', () => {
+  const fields = getMeasurementFields('handbag', null, [])
+  assert.equal(formatDimensions({ width: 9.84, height: 6.69, depth: 2.76 }, fields), '9.84" L × 2.76" W × 6.69" H')
+})
+
+test('formatDimensions only includes fields that have values, and returns null when none do', () => {
+  const fields = getMeasurementFields('handbag', null, [])
+  assert.equal(formatDimensions({ width: 9.84, height: 6.69 }, fields), '9.84" L × 6.69" H')
+  assert.equal(formatDimensions({}, fields), null)
+})
+
+test('formatDimensions uses only Length/Width/Height fields for sneakers, skipping size fields', () => {
+  const fields = getMeasurementFields('sneakers', null, [])
+  assert.equal(
+    formatDimensions({ shoe_size_raw: '9', us_size: 9, item_length_in: 11, item_width_in: 4, item_height_in: 5 }, fields),
+    '11" L × 4" W × 5" H'
+  )
+})
+
+test('formatDimensions ignores non-dimension fields (clothing)', () => {
+  assert.equal(formatDimensions({ waist: 32, inseam: 30 }, getMeasurementFields('clothing', 'jeans', [])), null)
 })

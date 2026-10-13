@@ -26,14 +26,14 @@ test('getMeasurementFields: jewelry necklace asks for chain length', () => {
   assert.deepEqual(fields.map((f) => f.key), ['necklace_chain_length_in'])
 })
 
-test('getMeasurementFields: jewelry sub-types without dedicated fields fall back to generic W/H/D', () => {
+test('getMeasurementFields: jewelry sub-types without dedicated fields fall back to generic L/W/H', () => {
   const fields = getMeasurementFields('jewelry', 'earrings', [])
-  assert.deepEqual(fields.map((f) => f.key), ['width', 'height', 'depth'])
+  assert.deepEqual(fields.map((f) => f.key), ['width', 'depth', 'height'])
 })
 
-test('getMeasurementFields: jewelry with no detected sub-type falls back to generic W/H/D', () => {
+test('getMeasurementFields: jewelry with no detected sub-type falls back to generic L/W/H', () => {
   const fields = getMeasurementFields('jewelry', null, [])
-  assert.deepEqual(fields.map((f) => f.key), ['width', 'height', 'depth'])
+  assert.deepEqual(fields.map((f) => f.key), ['width', 'depth', 'height'])
 })
 
 test('getMeasurementFields: existing clothing behavior is unchanged (regression check)', () => {
@@ -62,8 +62,10 @@ test('getMeasurementFields: sneaker item-dimension hints say explicitly this is 
   }
 })
 
-test('getMeasurementFields: generic W/H/D fallback hints disambiguate which physical dimension is which', () => {
+test('getMeasurementFields: generic L/W/H fallback hints disambiguate which physical dimension is which', () => {
   const fields = getMeasurementFields('handbag', null, [])
+  assert.deepEqual(fields.map((f) => f.key), ['width', 'depth', 'height'])
+  assert.deepEqual(fields.map((f) => f.label), ['Length', 'Width', 'Height'])
   const width = fields.find((f) => f.key === 'width')
   const height = fields.find((f) => f.key === 'height')
   const depth = fields.find((f) => f.key === 'depth')
