@@ -41,15 +41,20 @@ export function formatMeasurementValue(field: MeasurementField, value: unknown):
   return formatDualMeasurement(Number(value))
 }
 
-const DIMENSION_INITIALS: Record<string, string> = { Length: 'L', Width: 'W', Height: 'H' }
+// Only these stored keys are box dimensions. Matching by label would also catch clothing's
+// `length` (collar-to-hem), which must keep its own labeled dual-unit rendering.
+const DIMENSION_INITIALS: Record<string, string> = {
+  width: 'L', depth: 'W', height: 'H',
+  item_length_in: 'L', item_width_in: 'W', item_height_in: 'H',
+}
 
 /**
- * Compact "L × W × H" line (e.g. `9.84" L × 2.76" W × 6.69" H`) from whichever fields are
- * labeled Length, Width, or Height, in the order given; null when none have values.
+ * Compact "L × W × H" line (e.g. `9.84" L × 2.76" W × 6.69" H`) from whichever fields have
+ * a box-dimension key (width/depth/height or item_length/width/height_in), in the order given; null when none have values.
  */
 export function formatDimensions(m: Record<string, unknown>, fields: MeasurementField[]): string | null {
   const parts = fields.flatMap((f) => {
-    const initial = DIMENSION_INITIALS[f.label]
+    const initial = DIMENSION_INITIALS[f.key]
     const value = m[f.key]
     return initial && typeof value === 'number' && Number.isFinite(value) ? [`${value}" ${initial}`] : []
   })
@@ -65,7 +70,7 @@ export function formatMeasurementsSummary(m: Record<string, unknown>, fields: Me
   const populated = fields.filter((f) => m[f.key] !== undefined && m[f.key] !== null && m[f.key] !== '')
   const dims = formatDimensions(m, populated)
   const others = populated
-    .filter((f) => !(f.label in DIMENSION_INITIALS))
+    .filter((f) => !(f.key in DIMENSION_INITIALS))
     .map((f) => `${f.label}: ${formatMeasurementValue(f, m[f.key])}`)
   const parts = dims ? [dims, ...others] : others
   return parts.length ? parts.join(', ') : null

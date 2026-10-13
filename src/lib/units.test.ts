@@ -137,3 +137,12 @@ test('formatMeasurementsSummary generic handbag is just the dimensions string', 
   const fields = getMeasurementFields('handbag', null, [])
   assert.equal(formatMeasurementsSummary({ width: 8, depth: 2, height: 5 }, fields), '8" L × 2" W × 5" H')
 })
+
+test('clothing length (key "length") is not a box dimension: summary keeps the labeled dual-unit value', () => {
+  for (const [sub, key] of [['shirt', 'length'], ['dress', 'length'], ['tshirt', 'length']] as const) {
+    const fields = getMeasurementFields('clothing', sub, [])
+    assert.ok(fields.some((f) => f.key === key), sub)
+    assert.equal(formatDimensions({ length: 28 }, fields), null, sub)
+    assert.equal(formatMeasurementsSummary({ length: 28 }, fields), 'Length: 28 in (711 mm)', sub)
+  }
+})
