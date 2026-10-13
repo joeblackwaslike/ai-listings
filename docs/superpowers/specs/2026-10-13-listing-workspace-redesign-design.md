@@ -142,13 +142,30 @@ Today `batch-quality-check` and `condition-reassessment` fire only on `listing/p
 | Color | Labels |
 |---|---|
 | Gray | Processing, Archived |
-| Amber | Every "waiting on you" state: Confirm ID (`id_gate`), Needs details (gender/measurements gate), Needs you (agent blocked, including photo quality issues), Needs photos (pipeline done, no studio photos yet), Check condition, Review copy, Finalize (copy approved, not yet finalized) |
+| Amber | Every "waiting on you" state, each naming the task (see the next table) |
 | Blue | Ready to publish (`finalizing`) |
 | Emerald | Published to some platforms (for example "Published 1/2") |
 | Purple | Published to all platforms |
 | Dark green | Sold |
 
-"All platforms" means every platform on the publish page (`PlatformTabs`: eBay and Poshmark today), worked out from `listing_urls`. The amber labels stay specific so the dashboard says what's needed. All of them share the one amber style so they stand out together. `id_gate` currently shows a gray "Processing" badge; that changes to amber.
+Amber labels, one per task:
+
+| Situation | Label |
+|---|---|
+| `id_gate` | Confirm ID |
+| `gender_gate`, gender not yet chosen | Pick gender |
+| `gender_gate`, gender chosen (or not needed), measurements pending | Add measurements |
+| `agent_blocked_kind = 'photo_quality'` (from `batch-quality-check.ts`) | Retake photos |
+| `agent_blocked_kind = 'intake_failed'` (from `intake-pipeline.ts:58`, `text-intake-pipeline.ts:207`) | Intake failed |
+| `agent_blocked_kind = 'rewrite_failed'` (from `description-rewrite.ts:36`) | Rewrite failed |
+| pipeline done, no studio photos yet | Needs photos |
+| `condition_gate` | Check condition |
+| `copy_review` | Review copy |
+| `copy_approved_at` set, status `in_loop` | Finalize |
+
+Add an `agent_blocked_kind text` column (null when not blocked) and set it at each of the four places that set `agent_blocked: true` today. Clear it wherever `agent_blocked` is cleared. Backfill existing blocked rows from context: flagged photos mean `photo_quality`; `condition_gate` or `copy_review` means `rewrite_failed`; anything else means `intake_failed`. The badge reads the column; it never parses `agent_blocked_reason`.
+
+"All platforms" means every platform on the publish page (`PlatformTabs`: eBay and Poshmark today), worked out from `listing_urls`. All amber labels share the one amber style so they stand out together. `id_gate` currently shows a gray "Processing" badge; that changes to amber.
 
 ## Publish page
 
@@ -157,13 +174,14 @@ Today `batch-quality-check` and `condition-reassessment` fire only on `listing/p
 
 ## Measurements
 
-Keep using `getMeasurementFields` (`src/lib/utils.ts`) and `formatMeasurementValue` (`src/lib/units.ts`); only the presentation changes. Show the category's populated fields in one row under the Measurements label, in the order length, width, height:
+Everything with physical dimensions uses length × width × height, in that order: input prompts, the details list, generated descriptions and platform fields. Clothing and ring/bangle/necklace measurements aren't box dimensions and keep their own fields.
 
-- Handbags and other generic categories store `width`, `height` and `depth`. Display width as Length, depth as Width, and height as Height (L × W × H, the shipping-box convention).
-- Sneakers show their size fields (`shoe_size_system`, `shoe_size_raw`, `us_size`) followed by `item_length_in`, `item_width_in` and `item_height_in`.
-- Clothing keeps its own subfields (waist, inseam, chest and so on).
+- Generic dimension fields (`genericDimensionFields`, `src/lib/utils.ts:35-39`) cover handbag, small_leather_goods, electronics, keyboards, collectibles, watches, other, and jewelry without dedicated fields. The stored keys stay `width`, `height` and `depth`, so there's no data migration. Change only the labels, hints and order: `width` becomes Length ("side to side at the widest point"), `depth` becomes Width ("front to back"), `height` stays Height ("base to top"), listed in that order. This also changes the measurement-gate inputs, which read the same field list.
+- Sneakers already store `item_length_in`, `item_width_in` and `item_height_in`. Show the size fields (`shoe_size_system`, `shoe_size_raw`, `us_size`) first, then L × W × H.
+- Grep for every other place that labels these values and switch it to L × W × H. That includes the draft-listing/description prompts (descriptions currently say `9.84" W × 6.69" H × 2.76" D`), platform item specifics, and the shipping-box estimate in `measurements.estimated_shipping_box`.
+- In the details list, measurements show under one Measurements label, with the populated subfields on one line, using `formatMeasurementValue` (`src/lib/units.ts`).
 
-There is no belt category today. Belts use the generic fields until one exists.
+There's no belt category today, so belts use the generic fields until one exists.
 
 ## Per-shot photo status (backend)
 
@@ -190,9 +208,8 @@ Nothing stores per-shot progress today. `PhotoShot` (`types/listings.ts:88-95`) 
 
 ## Calls made without Joe's explicit sign-off
 
-- Amber badge labels stay specific (Confirm ID, Needs details, Needs you, Needs photos, Check condition, Review copy, Finalize) instead of all reading "Needs you". All of them use the same amber style.
+- The exact wording of each amber label (Pick gender, Add measurements, Retake photos, Intake failed, Rewrite failed, Needs photos, Finalize).
 - "Needs photos" and "Finalize" are new amber badges for the two `in_loop` waiting states. Today both show a green "Ready".
-- Handbag W/H/D are displayed as L × W × H by relabeling width as Length and depth as Width.
 - "All platforms" for the purple badge means eBay and Poshmark, the platforms on the publish page.
 - Later studio uploads re-run the quality check and shot verification, but not condition review.
 - In-progress listings without confirmed photos lose their intake-photo condition confirmation in the migration.
