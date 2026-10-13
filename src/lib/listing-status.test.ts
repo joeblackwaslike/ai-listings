@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getStatusBadge, PUBLISH_PLATFORMS, BADGE_TONE_CLASSES, type BadgeListing } from './listing-status'
+import { getStatusBadge, getBadgeContext, PUBLISH_PLATFORMS, BADGE_TONE_CLASSES, type BadgeListing } from './listing-status'
 
 const base: BadgeListing = {
   status: 'in_loop',
@@ -26,18 +26,22 @@ test('gender_gate asks for gender, then measurements', () => {
     { label: 'Add measurements', tone: 'amber' },
   )
 })
-test('blocked kinds map to Retake photos and win over status', () => {
-  for (const kind of ['photo_quality', 'intake_failed', 'rewrite_failed'] as const) {
-    assert.deepEqual(badge({ agent_blocked: true, agent_blocked_kind: kind, status: 'finalizing' }), {
-      label: 'Retake photos',
-      tone: 'amber',
-    })
+test('blocked kinds map to their own labels and win over status', () => {
+  const rows = [
+    ['photo_quality', 'Retake photos'],
+    ['intake_failed', 'Intake failed'],
+    ['rewrite_failed', 'Rewrite failed'],
+  ] as const
+  for (const [kind, label] of rows) {
+    assert.deepEqual(badge({ agent_blocked: true, agent_blocked_kind: kind, status: 'finalizing' }), { label, tone: 'amber' })
   }
+  assert.deepEqual(badge({ agent_blocked: true }), { label: 'Needs you', tone: 'amber' })
 })
 test('in_loop states', () => {
   assert.deepEqual(badge({ pipeline_step: 2 }), { label: 'Processing', tone: 'gray' })
   assert.deepEqual(badge({}, { hasStudioPhotos: false }), { label: 'Needs photos', tone: 'amber' })
   assert.deepEqual(badge({ copy_approved_at: '2026-10-13T00:00:00Z' }), { label: 'Finalize', tone: 'amber' })
+  assert.deepEqual(badge({}), { label: 'Processing', tone: 'gray' })
 })
 test('finalizing, published, sold, archived', () => {
   assert.deepEqual(badge({ status: 'finalizing' }), { label: 'Ready to publish', tone: 'blue' })
@@ -49,4 +53,12 @@ test('finalizing, published, sold, archived', () => {
 })
 test('amber tone class', () => {
   assert.equal(BADGE_TONE_CLASSES.amber, 'bg-amber-900/60 text-amber-300')
+})
+test('getBadgeContext normalizes category case', () => {
+  const c = getBadgeContext({ category: 'Clothing', sub_type: null, intake_meta: null }, true)
+  assert.equal(c.needsGender, true)
+  assert.deepEqual(
+    getBadgeContext({ category: 'CLOTHING', sub_type: 'shirt', intake_meta: null }, true).needsMeasurements,
+    getBadgeContext({ category: 'clothing', sub_type: 'shirt', intake_meta: null }, true).needsMeasurements,
+  )
 })

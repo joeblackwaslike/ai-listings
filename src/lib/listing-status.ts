@@ -1,4 +1,4 @@
-import type { Listing } from '@/types/listings'
+import type { AgentBlockedKind, Listing } from '@/types/listings'
 import { getMeasurementFields, detectClothingSubType } from '@/lib/utils'
 import { detectJewelrySubType } from '@/lib/jewelry-detection'
 import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
@@ -36,13 +36,19 @@ export const BADGE_TONE_CLASSES: Record<BadgeTone, string> = {
   green: 'bg-green-900/60 text-green-300',
 }
 
+const BLOCKED_LABELS: Record<AgentBlockedKind, string> = {
+  photo_quality: 'Retake photos',
+  intake_failed: 'Intake failed',
+  rewrite_failed: 'Rewrite failed',
+}
+
 const GENDER_CATEGORIES = new Set(['watches', 'clothing', 'sneakers'])
 
 export function getBadgeContext(
   listing: BadgeContextInput,
   hasStudioPhotos: boolean,
 ): BadgeContext {
-  const category = listing.category ?? ''
+  const category = (listing.category ?? '').toLowerCase()
   const features = notableFeaturesOf(listing.intake_meta)
   const subType =
     listing.sub_type ??
@@ -51,7 +57,7 @@ export function getBadgeContext(
       : null)
   return {
     hasStudioPhotos,
-    needsGender: GENDER_CATEGORIES.has(category.toLowerCase()),
+    needsGender: GENDER_CATEGORIES.has(category),
     needsMeasurements: getMeasurementFields(category, subType, features).length > 0,
   }
 }
@@ -61,9 +67,8 @@ export function getStatusBadge(
   ctx: BadgeContext,
 ): { label: string; tone: BadgeTone } {
   if (listing.agent_blocked) {
-    return listing.agent_blocked_kind
-      ? { label: 'Retake photos', tone: 'amber' }
-      : { label: 'Needs you', tone: 'amber' }
+    const label = listing.agent_blocked_kind ? BLOCKED_LABELS[listing.agent_blocked_kind] : 'Needs you'
+    return { label, tone: 'amber' }
   }
   switch (listing.status) {
     case 'intake':
@@ -82,7 +87,7 @@ export function getStatusBadge(
       if (listing.pipeline_step < listing.pipeline_total) return { label: 'Processing', tone: 'gray' }
       if (!ctx.hasStudioPhotos) return { label: 'Needs photos', tone: 'amber' }
       if (listing.copy_approved_at) return { label: 'Finalize', tone: 'amber' }
-      return { label: 'Ready', tone: 'emerald' }
+      return { label: 'Processing', tone: 'gray' }
     case 'finalizing':
       return { label: 'Ready to publish', tone: 'blue' }
     case 'published': {
