@@ -15,7 +15,7 @@ export default async function DashboardPage({
 
   let query = supabase
     .from('listings')
-    .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, final_price_cents, sold_price_cents, sold_at, agent_blocked, agent_blocked_reason, pipeline_step, pipeline_total, skip_background_removal')
+    .select('id, sku, status, title, brand, category, condition, condition_notes, intake_meta, suggested_price_cents, final_price_cents, sold_price_cents, sold_at, agent_blocked, agent_blocked_reason, agent_blocked_kind, copy_approved_at, listing_urls, gender, sub_type, pipeline_step, pipeline_total, skip_background_removal')
     .neq('status', 'archived')
   if (!showSold) {
     query = query.neq('status', 'sold')
@@ -36,7 +36,9 @@ export default async function DashboardPage({
     : { data: [] }
 
   const coverByListing = new Map<string, { raw_url: string; processed_url: string | null }>()
+  const studioListingIds = new Set<string>()
   for (const p of photos ?? []) {
+    if (p.type === 'studio') studioListingIds.add(p.listing_id as string)
     const existing = coverByListing.get(p.listing_id as string)
     if (!existing || (p.processed_url && !existing.processed_url)) {
       coverByListing.set(p.listing_id as string, {
@@ -50,6 +52,7 @@ export default async function DashboardPage({
     ...l,
     agent_blocked: (l.agent_blocked as boolean) ?? false,
     coverPhoto: coverByListing.get(l.id) ?? undefined,
+    hasStudioPhotos: studioListingIds.has(l.id),
   }))
 
   return (
