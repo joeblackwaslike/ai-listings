@@ -1,19 +1,22 @@
 -- Workspace redesign: copy approval, quality-check timestamp, blocked kind, per-shot photo status.
--- Not applied automatically. Dry-run with 0042_workspace_redesign.check.sql inside BEGIN ... ROLLBACK.
+-- Not applied automatically. Apply with a single transaction so a failure leaves nothing half-done:
+--   psql -1 -v ON_ERROR_STOP=1 -f 0042_workspace_redesign.sql
+-- Dry-run with 0042_workspace_redesign.check.sql inside BEGIN ... ROLLBACK.
 
-CREATE TABLE listings_backup_0042 AS
-  SELECT id, status, condition_confirmed, agent_blocked FROM listings;
+-- The updated_at trigger bumps every row these UPDATEs touch, so copy_approved_at is
+-- backfilled from the snapshot's original updated_at, never from listings.updated_at.
+CREATE TABLE IF NOT EXISTS listings_backup_0042 AS
+  SELECT id, status, condition_confirmed, agent_blocked, updated_at, photo_plan FROM listings;
+ALTER TABLE listings_backup_0042 ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE listings
-  ADD COLUMN copy_approved_at timestamptz,
-  ADD COLUMN quality_checked_at timestamptz,
-  ADD COLUMN agent_blocked_kind text
-    CONSTRAINT listings_agent_blocked_kind_check
-    CHECK (agent_blocked_kind IN ('photo_quality', 'intake_failed', 'rewrite_failed'));
+  ADD COLUMN IF NOT EXISTS copy_approved_at timestamptz,
+  ADD COLUMN IF NOT EXISTS quality_checked_at timestamptz,
+  ADD COLUMN IF NOT EXISTS agent_blocked_kind text;
 
--- The updated_at trigger would bump every touched row and corrupt the
--- copy_approved_at = updated_at backfill, so pause it for the data fixes.
-ALTER TABLE listings DISABLE TRIGGER listings_updated_at;
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_agent_blocked_kind_check;
+ALTER TABLE listings ADD CONSTRAINT listings_agent_blocked_kind_check
+  CHECK (agent_blocked_kind IN ('photo_quality', 'intake_failed', 'rewrite_failed'));
 
 -- 1. agent_blocked_kind from context, before any status moves below.
 UPDATE listings l
@@ -26,7 +29,7 @@ SET agent_blocked_kind = CASE
   WHEN l.status IN ('condition_gate', 'copy_review') THEN 'rewrite_failed'
   ELSE 'intake_failed'
 END
-WHERE l.agent_blocked;
+WHERE l.agent_blocked AND l.agent_blocked_kind IS NULL;
 
 -- 2. Rows whose condition/copy confirmation came from the intake photo only.
 UPDATE listings
@@ -37,13 +40,15 @@ WHERE NOT photos_confirmed
   AND status NOT IN ('finalizing', 'published', 'sold', 'archived');
 
 -- 3. Conservative copy_approved_at for settled in_loop rows.
-UPDATE listings
-SET copy_approved_at = updated_at
-WHERE status = 'in_loop'
-  AND photos_confirmed
-  AND condition_confirmed
-  AND pipeline_step >= pipeline_total
-  AND NOT agent_blocked;
+UPDATE listings l
+SET copy_approved_at = b.updated_at
+FROM listings_backup_0042 b
+WHERE b.id = l.id
+  AND l.status = 'in_loop'
+  AND l.photos_confirmed
+  AND l.condition_confirmed
+  AND l.pipeline_step >= l.pipeline_total
+  AND NOT l.agent_blocked;
 
 -- 4. finalizing rows must pass the new publish gate or go back to in_loop.
 WITH gate AS (
@@ -63,48 +68,67 @@ WITH gate AS (
   WHERE l.status = 'finalizing'
 )
 UPDATE listings l
-SET copy_approved_at = CASE WHEN g.passes THEN l.updated_at ELSE NULL END,
+SET copy_approved_at = CASE WHEN g.passes THEN b.updated_at ELSE NULL END,
     status = CASE WHEN g.passes THEN l.status ELSE 'in_loop' END,
     condition_confirmed = CASE WHEN NOT g.passes AND NOT l.photos_confirmed THEN false ELSE l.condition_confirmed END
 FROM gate g
+JOIN listings_backup_0042 b ON b.id = g.id
 WHERE l.id = g.id;
 
-ALTER TABLE listings ENABLE TRIGGER listings_updated_at;
-
+-- Only set_photo_shot_status may produce 'verified'. Incoming statuses are honored only for
+-- shots with no stored counterpart, and only as 'pending'/'taken'.
 CREATE OR REPLACE FUNCTION update_photo_plan(p_listing_id uuid, p_plan jsonb)
 RETURNS jsonb
-LANGUAGE sql
+LANGUAGE plpgsql
+SET search_path = public
 AS $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  IF p_plan IS NULL OR jsonb_typeof(p_plan) <> 'array' THEN
+    RAISE EXCEPTION 'photo plan must be a JSON array';
+  END IF;
+
   UPDATE listings l
   SET photo_plan = coalesce((
     SELECT jsonb_agg(
       CASE
-        WHEN e.shot->>'status' = 'verified' THEN e.shot
-        WHEN old.shot ? 'status' THEN e.shot || jsonb_build_object('status', old.shot->>'status')
-        ELSE e.shot
+        WHEN old.shot IS NOT NULL THEN
+          (e.shot - 'status') || CASE WHEN old.shot ? 'status'
+            THEN jsonb_build_object('status', old.shot->>'status') ELSE '{}'::jsonb END
+        WHEN e.shot->>'status' IN ('pending', 'taken') THEN e.shot
+        ELSE e.shot - 'status'
       END
-      ORDER BY e.ord
-    )
+      ORDER BY e.ord)
     FROM jsonb_array_elements(p_plan) WITH ORDINALITY AS e(shot, ord)
     LEFT JOIN LATERAL (
-      SELECT s AS shot FROM jsonb_array_elements(l.photo_plan) s
-      WHERE s->>'shot' = e.shot->>'shot'
+      SELECT s.x AS shot FROM jsonb_array_elements(l.photo_plan) WITH ORDINALITY AS s(x, o)
+      WHERE s.x->>'shot' = e.shot->>'shot'
+      ORDER BY s.o
       LIMIT 1
     ) old ON true
   ), '[]'::jsonb)
   WHERE l.id = p_listing_id
-  RETURNING l.photo_plan;
+  RETURNING l.photo_plan INTO v_result;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'listing not found: %', p_listing_id;
+  END IF;
+  RETURN v_result;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION set_photo_shot_status(p_listing_id uuid, p_shot text, p_status text)
 RETURNS jsonb
 LANGUAGE plpgsql
+SET search_path = public
 AS $$
 DECLARE
   v_plan jsonb;
   v_stored text;
+  v_ord bigint;
 BEGIN
-  IF p_status NOT IN ('pending', 'taken', 'verified') THEN
+  IF p_status IS NULL OR p_status NOT IN ('pending', 'taken', 'verified') THEN
     RAISE EXCEPTION 'invalid photo shot status: %', p_status;
   END IF;
 
@@ -113,8 +137,11 @@ BEGIN
     RAISE EXCEPTION 'listing not found: %', p_listing_id;
   END IF;
 
-  SELECT s->>'status' INTO v_stored
-  FROM jsonb_array_elements(v_plan) s WHERE s->>'shot' = p_shot LIMIT 1;
+  SELECT s.x->>'status', s.o INTO v_stored, v_ord
+  FROM jsonb_array_elements(v_plan) WITH ORDINALITY AS s(x, o)
+  WHERE s.x->>'shot' = p_shot
+  ORDER BY s.o
+  LIMIT 1;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'shot not found: %', p_shot;
   END IF;
@@ -125,11 +152,9 @@ BEGIN
   UPDATE listings
   SET photo_plan = (
     SELECT jsonb_agg(
-      CASE WHEN s.shot->>'shot' = p_shot
-        THEN s.shot || jsonb_build_object('status', p_status)
-        ELSE s.shot END
-      ORDER BY s.ord)
-    FROM jsonb_array_elements(v_plan) WITH ORDINALITY AS s(shot, ord)
+      CASE WHEN s.o = v_ord THEN s.x || jsonb_build_object('status', p_status) ELSE s.x END
+      ORDER BY s.o)
+    FROM jsonb_array_elements(v_plan) WITH ORDINALITY AS s(x, o)
   )
   WHERE id = p_listing_id
   RETURNING photo_plan INTO v_plan;
@@ -137,3 +162,8 @@ BEGIN
   RETURN v_plan;
 END;
 $$;
+
+REVOKE EXECUTE ON FUNCTION update_photo_plan(uuid, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION update_photo_plan(uuid, jsonb) TO service_role;
+REVOKE EXECUTE ON FUNCTION set_photo_shot_status(uuid, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION set_photo_shot_status(uuid, text, text) TO service_role;
