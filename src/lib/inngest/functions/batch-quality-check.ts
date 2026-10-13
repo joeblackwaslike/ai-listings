@@ -74,11 +74,12 @@ Return one result per photo using its 0-based index.`,
 
 async function markQualityChecked(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  listingId: string
+  listingId: string,
+  checkedAt: string
 ): Promise<void> {
   const { error } = await supabase
     .from('listings')
-    .update({ quality_checked_at: new Date().toISOString() })
+    .update({ quality_checked_at: checkedAt })
     .eq('id', listingId)
   if (error) throw new Error(`batch-quality-check: quality_checked_at update failed — ${error.message}`)
 }
@@ -103,6 +104,10 @@ export const batchQualityCheck = inngest.createFunction(
 
     if (!listingRow) return { ok: false, listingId, reason: 'listing not found' }
 
+    // Memoized so replays keep the time from before the first photo query: a photo uploaded
+    // while the check runs is newer than the stamp and keeps step 10 open.
+    const checkedAt = await step.run('capture-check-start', () => new Date().toISOString())
+
     const { data: photos } = await supabase
       .from('photos')
       .select('id, processed_url, raw_url, photoroom_meta')
@@ -122,7 +127,7 @@ export const batchQualityCheck = inngest.createFunction(
     const failed = results.filter((r) => !r.passed && !photos[r.index]?.photoroom_meta?.quality_overridden)
 
     if (failed.length === 0) {
-      await markQualityChecked(supabase, listingId)
+      await markQualityChecked(supabase, listingId, checkedAt)
       return { ok: true, listingId, checked: photos.length }
     }
 
@@ -151,7 +156,7 @@ export const batchQualityCheck = inngest.createFunction(
       })
       .eq('id', listingId)
 
-    await markQualityChecked(supabase, listingId)
+    await markQualityChecked(supabase, listingId, checkedAt)
 
     return { ok: false, listingId, failed: failed.map((r) => ({ index: r.index, issues: r.issues })) }
   }

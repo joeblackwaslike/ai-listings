@@ -81,8 +81,8 @@ export interface StudioPhotoProcessedEvent {
   }
 }
 
-// Fired once an upload batch has settled with every studio photo processed (by
-// photo-readiness.ts, and by confirm-photos/route.ts on a manual confirmation).
+// Fired by photo-readiness.ts (its only producer) once an upload batch has settled with
+// every studio photo processed.
 // Triggers batch-quality-check.ts on every batch, not just the first.
 export interface StudioBatchReadyEvent {
   name: 'listing/studio-batch-ready'
