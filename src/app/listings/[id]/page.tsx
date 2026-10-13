@@ -280,7 +280,7 @@ export default async function WorkspacePage({
           {listing.status === 'in_loop' && <FinalizeButton listingId={id} />}
           <ArchiveButton listingId={id} />
           <a href={`/listings/${id}/publish`} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
-            Export →
+            Publish →
           </a>
         </div>
       </header>
