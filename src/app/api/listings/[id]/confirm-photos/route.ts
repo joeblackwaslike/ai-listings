@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { inngest } from '@/lib/inngest/client'
+import { pipelineSettled } from '@/lib/pipeline/pipeline-end'
 
 export async function PATCH(
   _req: Request,
@@ -14,41 +15,52 @@ export async function PATCH(
 
   const supabase = getSupabaseAdmin()
 
-  const { data: existing } = await supabase
+  const { data: existing, error: loadError } = await supabase
     .from('listings')
-    .select('photos_confirmed, condition_confirmed')
+    .select('photos_confirmed, condition_confirmed, status, pipeline_step, pipeline_total')
     .eq('id', id)
     .eq('user_id', user.id)
     .maybeSingle()
+  if (loadError) return Response.json({ error: loadError.message }, { status: 500 })
+  if (!existing) return Response.json({ error: 'Not found' }, { status: 404 })
+  // A stale "Confirm photos" click on an already-confirmed listing must not reset a condition
+  // the seller has since confirmed.
+  if (existing.photos_confirmed) return Response.json({ ok: true })
+  if (!pipelineSettled(existing)) {
+    return Response.json({ error: 'The listing is still processing. Confirm photos once it finishes.' }, { status: 409 })
+  }
 
-  const wasAlreadyConfirmed = existing?.photos_confirmed === true
-  const priorConditionConfirmed = existing?.condition_confirmed ?? true
+  const priorConditionConfirmed = existing.condition_confirmed ?? true
 
   const { data: updated, error } = await supabase
     .from('listings')
     .update({ photos_confirmed: true, condition_confirmed: false })
     .eq('id', id)
     .eq('user_id', user.id)
+    .eq('photos_confirmed', false)
     .select('id')
     .maybeSingle()
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  // Only fire the downstream event once we've confirmed the update actually matched a row
+  // Only fire the downstream events once we've confirmed the update actually matched a row
   // this caller owns -- condition-reassessment.ts trusts listingId completely once it
   // receives this event (same class of gap PR #35 fixed for confirm-id/confirm-gender) --
-  // AND only on a genuine false->true transition, so a retry/double-click that finds
-  // photos_confirmed already true doesn't re-trigger an expensive Claude call or create a
-  // duplicate reassessment run that could race an in-flight one.
-  if (updated && !wasAlreadyConfirmed) {
+  // AND only on a genuine false->true transition (the photos_confirmed filter above), so a
+  // retry/double-click doesn't re-trigger an expensive Claude call or create a duplicate
+  // reassessment run that could race an in-flight one.
+  if (updated) {
     try {
-      // Condition reassessment only. The quality check comes from the photo-readiness run
-      // already pending in its debounce window, which emits listing/studio-batch-ready.
-      await inngest.send({ name: 'listing/photos-confirmed', data: { listingId: id } })
+      // photos-confirmed drives condition reassessment. studio-photo-processed lets the debounced
+      // photo-readiness run (the single source of listing/studio-batch-ready) start the quality check.
+      await inngest.send([
+        { name: 'listing/photos-confirmed', data: { listingId: id } },
+        { name: 'listing/studio-photo-processed', data: { listingId: id } },
+      ])
     } catch (err) {
       // Compensate so a retry can re-attempt dispatch -- without this, a transient failure to
-      // enqueue leaves the listing at photos_confirmed=true forever, and the next PATCH sees
-      // wasAlreadyConfirmed=true and never re-fires the event, permanently stranding condition
+      // enqueue leaves the listing at photos_confirmed=true forever, and the next PATCH finds
+      // photos_confirmed already true and never re-fires the event, permanently stranding condition
       // re-assessment (and the Finalize gate that depends on it) with no recovery path.
       // Revert BOTH fields this same request set, not just photos_confirmed -- otherwise a
       // failed dispatch leaves condition_confirmed stuck at a stale false even though no

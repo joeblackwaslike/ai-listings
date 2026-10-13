@@ -106,6 +106,10 @@ export const retryStep = inngest.createFunction(
       .from('listings')
       .update(unblockedUpdate())
       .eq('id', listingId)
+      .eq('agent_blocked_kind', 'intake_failed')
+
+    // If this retry finished the pipeline, studio photos held back by photo-readiness can go now.
+    await step.sendEvent('recheck-photo-readiness', { name: 'listing/studio-photo-processed', data: { listingId } })
 
     return { ok: true, listingId, retriedStep: stepNum }
   }

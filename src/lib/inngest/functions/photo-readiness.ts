@@ -1,6 +1,7 @@
 import { inngest } from '../client'
 import type { StudioPhotoProcessedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { pipelineSettled } from '@/lib/pipeline/pipeline-end'
 import type { Listing, Photo } from '@/types/listings'
 
 export interface ReadinessDecision {
@@ -9,14 +10,16 @@ export interface ReadinessDecision {
 }
 
 /**
- * Decides what a settled upload batch means for a listing: nothing while any studio photo
- * is still processing, otherwise a batch-ready signal, plus a first-time photo confirmation
- * if the listing hasn't been confirmed yet.
+ * Decides what a settled upload batch means for a listing: nothing while the pipeline is still
+ * running or any studio photo is still processing, otherwise a batch-ready signal, plus a
+ * first-time photo confirmation if the listing hasn't been confirmed yet. The pipeline's end
+ * re-emits listing/studio-photo-processed, so photos uploaded early are picked up then.
  */
 export function decideReadiness(
-  listing: Pick<Listing, 'photos_confirmed'>,
+  listing: Pick<Listing, 'photos_confirmed' | 'status' | 'pipeline_step' | 'pipeline_total'>,
   photos: Pick<Photo, 'type' | 'processed_url'>[]
 ): ReadinessDecision {
+  if (!pipelineSettled(listing)) return { confirmNow: false, batchReady: false }
   const studio = photos.filter((p) => p.type === 'studio')
   const allProcessed = studio.length > 0 && studio.every((p) => p.processed_url !== null)
   if (!allProcessed) return { confirmNow: false, batchReady: false }
@@ -52,7 +55,7 @@ export const photoReadiness = inngest.createFunction(
 
     const decision = await step.run('decide-readiness', async () => {
       const [{ data: listing, error: listingError }, { data: photos, error: photosError }] = await Promise.all([
-        supabase.from('listings').select('photos_confirmed').eq('id', listingId).maybeSingle(),
+        supabase.from('listings').select('photos_confirmed, status, pipeline_step, pipeline_total').eq('id', listingId).maybeSingle(),
         supabase.from('photos').select('type, processed_url').eq('listing_id', listingId).eq('type', 'studio'),
       ])
       if (listingError || photosError) {

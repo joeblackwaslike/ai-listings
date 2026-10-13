@@ -4,8 +4,8 @@ import { runStep3PricingResearch } from '@/lib/pipeline/step3-pricing-research'
 import { runStep4aDraftListing } from '@/lib/pipeline/step4a-draft-listing'
 import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
-import { getSupabaseAdmin, pushPipelineStep } from '@/lib/pipeline/supabase-push'
-import { pipelineEndUpdate } from '@/lib/pipeline/pipeline-end'
+import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { finishPipeline } from '@/lib/pipeline/pipeline-end'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
 
@@ -125,7 +125,9 @@ export const resumePipeline = inngest.createFunction(
       )
     }
 
-    await pushPipelineStep(listingId, pipelineEndUpdate(isLuxury ? 5 : 4))
+    await step.run('finish-pipeline', () => finishPipeline(getSupabaseAdmin(), listingId, isLuxury ? 5 : 4))
+    // Studio photos uploaded while the pipeline ran were held back by photo-readiness; re-run it now.
+    await step.sendEvent('recheck-photo-readiness', { name: 'listing/studio-photo-processed', data: { listingId } })
 
     return { ok: true, listingId, status: 'in_loop' }
   }
