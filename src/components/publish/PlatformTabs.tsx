@@ -115,7 +115,11 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform, listing_url: url }),
       })
-      const data = await res.json() as { ok?: boolean; listing_urls?: Record<string, string> }
+      const data = await res.json() as { ok?: boolean; listing_urls?: Record<string, string>; error?: string }
+      if (!res.ok) {
+        toast.error(data.error ?? 'Failed to save listing URL')
+        return
+      }
       if (data.ok && data.listing_urls) {
         setSavedUrls({ ebay: data.listing_urls.ebay, poshmark: data.listing_urls.poshmark })
         setUrlInputs((prev) => ({ ...prev, [platform]: '' }))
@@ -133,7 +137,11 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mark_published: true }),
       })
-      const data = await res.json() as { ok?: boolean; status?: string }
+      const data = await res.json() as { ok?: boolean; status?: string; error?: string }
+      if (!res.ok) {
+        toast.error(data.error ?? 'Failed to mark listing as published')
+        return
+      }
       if (data.ok && data.status) {
         setListingStatus(data.status as ListingStatus)
       }

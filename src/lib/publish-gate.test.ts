@@ -49,3 +49,12 @@ test('publish gate passes when everything is satisfied', () => {
     assert.deepEqual(canFinalizeOrPublish({ ...ok, status }, [studio]), { ok: true })
   }
 })
+
+test('already-shipped listings skip photo, copy and quality checks', () => {
+  const bad = { type: 'studio', photoroom_meta: { quality_failed: true } } as unknown as typeof studio
+  for (const status of ['published', 'sold'] as const) {
+    const legacy = { ...ok, status, photos_confirmed: false, copy_approved_at: null }
+    assert.deepEqual(canFinalizeOrPublish(legacy, [bad]), { ok: true })
+    assert.equal(canFinalizeOrPublish({ ...legacy, condition_confirmed: false }, []).ok, false)
+  }
+})

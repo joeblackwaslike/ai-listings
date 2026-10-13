@@ -1,8 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
-import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
 import { canFinalizeOrPublish } from '@/lib/publish-gate'
-import type { Inclusion, Listing, Photo } from '@/types/listings'
+import type { Inclusion, Photo } from '@/types/listings'
 
 export async function PATCH(
   _req: Request,
@@ -25,30 +24,16 @@ export async function PATCH(
     return Response.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const { data: photoRows } = await supabase
+  const { data: photoRows, error: photosError } = await supabase
     .from('photos')
     .select('type, photoroom_meta')
     .eq('listing_id', id)
+  if (photosError) return Response.json({ error: photosError.message }, { status: 500 })
   const gate = canFinalizeOrPublish(
-    { ...listing, inclusions: (listing.inclusions ?? []) as unknown as Inclusion[] } as unknown as Pick<
-      Listing,
-      'photos_confirmed' | 'condition_confirmed' | 'inclusions' | 'copy_approved_at' | 'status'
-    >,
-    (photoRows ?? []) as unknown as Pick<Photo, 'type' | 'photoroom_meta'>[]
+    { ...listing, inclusions: (listing.inclusions ?? []) as unknown as Inclusion[] },
+    (photoRows ?? []) as Pick<Photo, 'type' | 'photoroom_meta'>[]
   )
   if (!gate.ok) return Response.json({ error: gate.reason }, { status: 409 })
-
-  // Real pricing gate (ai-listings-yva): pricing (comp premiums + authenticity premium) only
-  // reflects condition + inclusions once both are confirmed -- see computeAdjustedPricing in
-  // pricing-adjust.ts. Finalizing before either is confirmed would lock in a price that hasn't
-  // accounted for them.
-  const inclusions = (listing.inclusions ?? []) as unknown as Inclusion[]
-  if (!isPricingGateUnlocked({ condition_confirmed: listing.condition_confirmed, inclusions })) {
-    return Response.json(
-      { error: 'Confirm condition and all inclusions before finalizing.' },
-      { status: 400 }
-    )
-  }
 
   // Only a listing actively in the loop can be finalized -- this no-ops (still 200) if it's
   // already finalizing/published/archived, matching this codebase's other status-setting

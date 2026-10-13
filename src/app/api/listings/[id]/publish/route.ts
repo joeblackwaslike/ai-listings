@@ -75,16 +75,14 @@ export async function PATCH(
     return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { data: photoRows } = await supabase
+  const { data: photoRows, error: photosError } = await supabase
     .from('photos')
     .select('type, photoroom_meta')
     .eq('listing_id', id)
+  if (photosError) return Response.json({ error: photosError.message }, { status: 500 })
   const gate = canFinalizeOrPublish(
-    { ...current, inclusions: (current.inclusions ?? []) as unknown as Inclusion[] } as unknown as Pick<
-      Listing,
-      'photos_confirmed' | 'condition_confirmed' | 'inclusions' | 'copy_approved_at' | 'status'
-    >,
-    (photoRows ?? []) as unknown as Pick<Photo, 'type' | 'photoroom_meta'>[]
+    { ...current, inclusions: (current.inclusions ?? []) as unknown as Inclusion[] },
+    (photoRows ?? []) as Pick<Photo, 'type' | 'photoroom_meta'>[]
   )
   if (!gate.ok) return Response.json({ error: gate.reason }, { status: 409 })
 
