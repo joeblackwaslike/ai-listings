@@ -1,16 +1,18 @@
 'use client'
 
 import { createContext, useCallback, useEffect, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
 import { ChevronRight, MessageSquare } from 'lucide-react'
-import { STORAGE_KEYS, clampWidth, countUnread, lastSeenKey, readStoredNumber } from '@/lib/workspace-layout'
+import { STORAGE_KEYS, clampWidth, countUnread, lastSeenKey, latestTimestamp, readStoredNumber } from '@/lib/workspace-layout'
 
 const PHOTO_DEFAULT = 600
 const PHOTO_MIN = 320
 const PHOTO_MAX_FRACTION = 0.6
+const FIELDS_MIN = 320
 const CHAT_DEFAULT = 380
 const CHAT_MIN = 320
 const CHAT_MAX_FRACTION = 0.55
+const KEY_STEP = 10
 
 /**
  * Lets the chat slot report assistant messages it adds client-side (a finished stream, a canned
@@ -20,8 +22,8 @@ export const AssistantMessageContext = createContext<((id: string) => void) | un
 
 interface WorkspaceShellProps {
   readonly listingId: string
-  /** Persisted assistant message ids, oldest first. Refreshed by the page's polling. */
-  readonly assistantMessageIds: string[]
+  /** `created_at` of each persisted assistant message, oldest first. Refreshed by polling. */
+  readonly assistantMessageTimes: string[]
   readonly photos: ReactNode
   readonly fields: ReactNode
   readonly chat: ReactNode
@@ -35,9 +37,13 @@ function readStoredString(key: string): string | null {
   try { return localStorage.getItem(key) } catch { return null }
 }
 
-function Divider({ label, onDragStart, onDrag, onReset, className = '' }: Readonly<{
+function Divider({ label, value, min, max, onDragStart, onDrag, onReset, className = '' }: Readonly<{
   label: string
+  value: number
+  min: number
+  max: number
   onDragStart: () => void
+  /** `dx` is the divider's movement in px from where the drag started. */
   onDrag: (dx: number, commit: boolean) => void
   onReset: () => void
   className?: string
@@ -45,31 +51,45 @@ function Divider({ label, onDragStart, onDrag, onReset, className = '' }: Readon
   function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     const el = e.currentTarget
     const startX = e.clientX
+    let dx = 0
     el.setPointerCapture(e.pointerId)
     onDragStart()
     document.body.classList.add('ws-dragging')
-    const move = (ev: PointerEvent) => onDrag(ev.clientX - startX, false)
-    const up = (ev: PointerEvent) => {
+    const listeners = new AbortController()
+    const end = () => {
+      listeners.abort()
       document.body.classList.remove('ws-dragging')
-      el.removeEventListener('pointermove', move)
-      onDrag(ev.clientX - startX, true)
+      onDrag(dx, true)
     }
-    el.addEventListener('pointermove', move)
-    el.addEventListener('pointerup', up, { once: true })
-    el.addEventListener('pointercancel', up, { once: true })
+    el.addEventListener('pointermove', (ev: PointerEvent) => { dx = ev.clientX - startX; onDrag(dx, false) }, { signal: listeners.signal })
+    el.addEventListener('pointerup', end, { signal: listeners.signal })
+    el.addEventListener('pointercancel', end, { signal: listeners.signal })
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const step = { ArrowLeft: -KEY_STEP, ArrowRight: KEY_STEP }[e.key]
+    if (step === undefined) return
+    e.preventDefault()
+    onDragStart()
+    onDrag(step, true)
   }
 
   return (
     <div
       role="separator"
+      tabIndex={0}
       aria-orientation="vertical"
       aria-label={label}
+      aria-valuenow={clampWidth(value, min, 1, Math.max(min, max))}
+      aria-valuemin={min}
+      aria-valuemax={Math.max(min, max)}
       title="Drag to resize · double-click to reset"
       onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
       onDoubleClick={onReset}
-      className={`relative hidden lg:block cursor-col-resize group touch-none ${className}`}
+      className={`relative hidden lg:block cursor-col-resize group touch-none outline-none ${className}`}
     >
-      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-gray-800 transition-colors group-hover:w-0.5 group-hover:bg-emerald-500" />
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-gray-800 transition-colors group-hover:w-0.5 group-hover:bg-emerald-500 group-focus-visible:w-0.5 group-focus-visible:bg-emerald-500" />
     </div>
   )
 }
@@ -78,13 +98,14 @@ function Divider({ label, onDragStart, onDrag, onReset, className = '' }: Readon
  * Detail-page layout: photo column, divider, fields column and a collapsible chat. At `lg` and
  * up the columns resize by drag; below it they stack with the chat always shown underneath.
  */
-export function WorkspaceShell({ listingId, assistantMessageIds, photos, fields, chat }: WorkspaceShellProps) {
+export function WorkspaceShell({ listingId, assistantMessageTimes, photos, fields, chat }: WorkspaceShellProps) {
   const gridRef = useRef<HTMLDivElement>(null)
   const [photoW, setPhotoW] = useState(PHOTO_DEFAULT)
   const [chatW, setChatW] = useState(CHAT_DEFAULT)
   const [chatOpen, setChatOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [lastSeen, setLastSeen] = useState<string | null>(null)
+  const [containerW, setContainerW] = useState(0)
+  const [lastSeenAt, setLastSeenAt] = useState<string | null>(null)
   const [localUnread, setLocalUnread] = useState<string[]>([])
   const dragStart = useRef(0)
 
@@ -94,14 +115,26 @@ export function WorkspaceShell({ listingId, assistantMessageIds, photos, fields,
     setPhotoW(clampWidth(readStoredNumber(STORAGE_KEYS.photoW, PHOTO_DEFAULT), PHOTO_MIN, PHOTO_MAX_FRACTION, total))
     setChatW(clampWidth(readStoredNumber(STORAGE_KEYS.chatW, CHAT_DEFAULT), CHAT_MIN, CHAT_MAX_FRACTION, total))
     setChatOpen(readStoredString(STORAGE_KEYS.chatOpen) === '1')
-    setLastSeen(readStoredString(lastSeenKey(listingId)))
+    setLastSeenAt(readStoredString(lastSeenKey(listingId)))
     setLoaded(true)
   }, [listingId])
 
-  const newestId = assistantMessageIds.at(-1) ?? null
   useEffect(() => {
-    if (loaded && chatOpen && newestId != null) store(lastSeenKey(listingId), newestId)
-  }, [loaded, chatOpen, newestId, listingId])
+    const grid = gridRef.current
+    if (!grid) return
+    const observer = new ResizeObserver(() => setContainerW(grid.clientWidth))
+    observer.observe(grid)
+    return () => observer.disconnect()
+  }, [])
+
+  const newestAt = assistantMessageTimes.at(-1) ?? null
+
+  // The client clock can trail the DB's; never mark "seen" earlier than the newest row shown.
+  const seenNow = useCallback(() => latestTimestamp(new Date().toISOString(), newestAt), [newestAt])
+
+  useEffect(() => {
+    if (loaded && chatOpen) store(lastSeenKey(listingId), seenNow())
+  }, [loaded, chatOpen, seenNow, listingId])
 
   const reportAssistantMessage = useCallback((id: string) => {
     setLocalUnread((prev) => (prev.includes(id) ? prev : [...prev, id]))
@@ -110,12 +143,14 @@ export function WorkspaceShell({ listingId, assistantMessageIds, photos, fields,
   // A streamed reply is counted locally first, then again as a persisted row once polling picks
   // it up; taking the max keeps that one message from counting twice.
   const unread = loaded && !chatOpen
-    ? Math.max(countUnread(assistantMessageIds, lastSeen), localUnread.length)
+    ? Math.max(countUnread(assistantMessageTimes, lastSeenAt), localUnread.length)
     : 0
 
   function toggleChat(open: boolean) {
-    // Either way the chat's messages count as seen: opening shows them, closing ends a view.
-    if (newestId != null) setLastSeen(newestId)
+    // Either way everything so far counts as seen: opening shows it, collapsing ends a view.
+    const at = seenNow()
+    setLastSeenAt(at)
+    store(lastSeenKey(listingId), at)
     setLocalUnread([])
     setChatOpen(open)
     store(STORAGE_KEYS.chatOpen, open ? '1' : '0')
@@ -137,7 +172,10 @@ export function WorkspaceShell({ listingId, assistantMessageIds, photos, fields,
     if (commit) store(STORAGE_KEYS.chatW, String(w))
   }
 
-  const columns = `${photoW}px 6px minmax(0,1fr) ${chatOpen ? `6px ${chatW}px` : '0px 44px'}`
+  // minmax floors keep all three columns on screen when the stored widths add up past the window;
+  // the photo and chat tracks give up space before the fields track drops below its floor.
+  const photoTrack = `minmax(${PHOTO_MIN}px,${photoW}px) 6px minmax(${FIELDS_MIN}px,1fr)`
+  const columns = chatOpen ? `${photoTrack} 6px minmax(${CHAT_MIN}px,${chatW}px)` : `${photoTrack} 0px 44px`
 
   return (
     <div
@@ -149,6 +187,9 @@ export function WorkspaceShell({ listingId, assistantMessageIds, photos, fields,
 
       <Divider
         label="Resize photo column"
+        value={photoW}
+        min={PHOTO_MIN}
+        max={Math.round(containerW * PHOTO_MAX_FRACTION)}
         onDragStart={() => { dragStart.current = photoW }}
         onDrag={dragPhoto}
         onReset={() => { setPhotoW(PHOTO_DEFAULT); store(STORAGE_KEYS.photoW, String(PHOTO_DEFAULT)) }}
@@ -158,6 +199,9 @@ export function WorkspaceShell({ listingId, assistantMessageIds, photos, fields,
 
       <Divider
         label="Resize chat"
+        value={chatW}
+        min={CHAT_MIN}
+        max={Math.round(containerW * CHAT_MAX_FRACTION)}
         className={chatOpen ? '' : 'invisible overflow-hidden'}
         onDragStart={() => { dragStart.current = chatW }}
         onDrag={dragChat}

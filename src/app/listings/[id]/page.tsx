@@ -199,7 +199,7 @@ export default async function WorkspacePage({
       .from('conversations')
       .select('id, role, content, created_at')
       .eq('listing_id', id)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(100),
     supabase
       .from('listing_price_events')
@@ -226,7 +226,8 @@ export default async function WorkspacePage({
   const listing = listingResult.data as unknown as Listing
   const photos = (photosResult.data ?? []) as unknown as Photo[]
   const comps = (compsResult.data ?? []) as unknown as PricingComp[]
-  const history = historyResult.data ?? []
+  // Newest 100, put back in chronological order, so a long conversation still shows its latest turns.
+  const history = (historyResult.data ?? []).reverse()
   const priceHistory = (priceHistoryResult.data ?? []) as unknown as ListingPriceEvent[]
   const platformPriceHistory = (platformPriceHistoryResult.data ?? []) as unknown as PlatformPriceEvent[]
 
@@ -235,8 +236,6 @@ export default async function WorkspacePage({
   const { firstMessage, suggestions, detailGateContext } = !hasHistory || listing.status === 'id_gate' || listing.status === 'gender_gate' || listing.status === 'condition_gate' || listing.agent_blocked
     ? buildWorkspaceContext(listing, photos, hasHistory, history)
     : { firstMessage: null, suggestions: null, detailGateContext: undefined }
-
-  const assistantMessageIds = history.filter((m) => m.role === 'assistant').map((m) => m.id as string)
 
   if (shouldAttemptPersistGreeting(listing, firstMessage, history)) {
     // Atomic check-and-insert (migration 0022) -- deciding "does this already match the last
@@ -250,20 +249,22 @@ export default async function WorkspacePage({
     if (firstMessageError) {
       console.error(`Failed to persist greeting for listing ${id}:`, firstMessageError.message)
     }
-    // `history` predates this insert; count the new gate prompt as unread on this render rather
-    // than after the next poll, so a waiting question shows on the collapsed chat's badge.
+    // `history` predates this insert; add the new gate prompt to it so the chat shows it and the
+    // collapsed chat's badge counts it on this render rather than after the next poll.
     if (inserted === true) {
       const { data: greeting } = await supabase
         .from('conversations')
-        .select('id')
+        .select('id, role, content, created_at')
         .eq('listing_id', id)
         .eq('role', 'assistant')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
-      if (greeting) assistantMessageIds.push(greeting.id as string)
+      if (greeting) history.push(greeting)
     }
   }
+
+  const assistantMessageTimes = history.filter((m) => m.role === 'assistant').map((m) => m.created_at as string)
 
   return (
     <div className="h-screen flex flex-col">
@@ -285,7 +286,7 @@ export default async function WorkspacePage({
 
       <WorkspaceShell
         listingId={id}
-        assistantMessageIds={assistantMessageIds}
+        assistantMessageTimes={assistantMessageTimes}
         photos={<PhotoSection photos={photos} listingId={id} initialSkip={listing.skip_background_removal} />}
         fields={<FieldsPanel listing={listing} photos={photos} comps={comps} priceHistory={priceHistory} platformPriceHistory={platformPriceHistory} />}
         chat={

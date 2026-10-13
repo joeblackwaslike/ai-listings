@@ -148,6 +148,26 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   const isFirstRenderRef = useRef(true)
   const [pendingGender, setPendingGender] = useState<string | null>(null)
   const [showMeasurements, setShowMeasurements] = useState(false)
+  const [shownFirstMessage, setShownFirstMessage] = useState(firstMessage)
+
+  // A gate prompt that arrives by polling after mount (initialMessages is only read once) is
+  // appended so it shows, with its suggestion chips. Matching on content is safe because
+  // insert_conversation_if_new dedups on content. With no messages yet, the firstMessage
+  // bubble below already shows it.
+  if (firstMessage !== shownFirstMessage) {
+    setShownFirstMessage(firstMessage)
+    if (firstMessage && messages.length > 0 && !messages.some((m) => m.content === firstMessage)) {
+      setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: firstMessage }])
+      setSuggestionsDismissed(false)
+    }
+  }
+
+  // A new gate prompt means a new pending gate; an earlier answer must not block answering it.
+  useEffect(() => {
+    idGateResolvedRef.current = false
+    genderGateResolvedRef.current = false
+  }, [firstMessage])
+
   const reportFromShell = useContext(AssistantMessageContext)
   const reportAssistantMessage = onAssistantMessage ?? reportFromShell
   const reportedIdsRef = useRef(new Set(initialMessages.map((m) => m.id)))

@@ -16,13 +16,9 @@ export function clampWidth(px: number, min: number, maxFraction: number, total: 
 }
 
 /** Read a number from storage, returning `fallback` on a missing, non-numeric or throwing read. */
-export function readStoredNumber(
-  key: string,
-  fallback: number,
-  storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage,
-): number {
+export function readStoredNumber(key: string, fallback: number, storage?: Pick<Storage, 'getItem'>): number {
   try {
-    const raw = storage?.getItem(key)
+    const raw = (storage ?? globalThis.localStorage)?.getItem(key)
     if (raw == null || raw.trim() === '') return fallback
     const value = Number(raw)
     return Number.isFinite(value) ? value : fallback
@@ -31,8 +27,14 @@ export function readStoredNumber(
   }
 }
 
-/** Messages after `lastSeenId`; a null or unknown `lastSeenId` counts every message. */
-export function countUnread(messageIds: string[], lastSeenId: string | null): number {
-  const seenAt = lastSeenId == null ? -1 : messageIds.lastIndexOf(lastSeenId)
-  return messageIds.length - seenAt - 1
+/** Messages created after `lastSeenAt`; a null or unparsable `lastSeenAt` counts every message. */
+export function countUnread(createdAts: string[], lastSeenAt: string | null): number {
+  const seen = lastSeenAt == null ? Number.NaN : Date.parse(lastSeenAt)
+  if (Number.isNaN(seen)) return createdAts.length
+  return createdAts.filter((at) => Date.parse(at) > seen).length
+}
+
+/** The later of two timestamps, compared as instants; a null `b` returns `a`. */
+export function latestTimestamp(a: string, b: string | null): string {
+  return b != null && Date.parse(b) > Date.parse(a) ? b : a
 }
