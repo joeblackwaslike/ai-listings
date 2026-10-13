@@ -1,6 +1,7 @@
 import { inngest } from '../client'
 import type { StudioUploadedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { unblockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { removeBackground } from '@/lib/pipeline/remove-background'
 import { processRawPhoto } from '@/lib/pipeline/process-raw-photo'
 import { categorySkipsBackgroundRemoval } from '@/lib/pipeline/step4b-photoroom'
@@ -35,7 +36,7 @@ async function reconcileQualityEscalation(
   if (!error && count === 0) {
     await supabase
       .from('listings')
-      .update({ agent_blocked: false, agent_blocked_reason: null })
+      .update(unblockedUpdate())
       .eq('id', listingId)
   }
 }

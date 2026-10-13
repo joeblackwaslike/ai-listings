@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { unblockedUpdate } from '@/lib/pipeline/pipeline-end'
 
 export async function PATCH(
   _req: Request,
@@ -25,7 +26,7 @@ export async function PATCH(
   // CAS: only advance if still in copy_review
   const { data: updated, error } = await supabase
     .from('listings')
-    .update({ status: 'in_loop', agent_blocked: false })
+    .update({ status: 'in_loop', copy_approved_at: new Date().toISOString(), ...unblockedUpdate() })
     .eq('id', id)
     .eq('status', 'copy_review')
     .select('id')

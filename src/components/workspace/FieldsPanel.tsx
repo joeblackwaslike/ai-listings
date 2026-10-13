@@ -519,7 +519,7 @@ export function FieldsPanel({ listing, photos, comps, priceHistory, platformPric
           ? <ConditionReviewPanel listing={listing} />
           : listing.status === 'copy_review'
           ? <CopyReviewPanel listing={listing} />
-          : listing.condition && !conditionConfirmed && (
+          : photosConfirmed && listing.condition && !conditionConfirmed && (
             <section>
               <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
                 Condition

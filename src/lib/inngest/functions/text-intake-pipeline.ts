@@ -5,6 +5,7 @@ import { runStep3PricingResearch } from '@/lib/pipeline/step3-pricing-research'
 import { runStep4aDraftListing } from '@/lib/pipeline/step4a-draft-listing'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
 import { getSupabaseAdmin, pushPipelineStep } from '@/lib/pipeline/supabase-push'
+import { pipelineEndUpdate, blockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import { detectClothingSubType } from '@/lib/utils'
 import { detectJewelrySubType } from '@/lib/jewelry-detection'
@@ -204,8 +205,7 @@ export const textIntakePipeline = inngest.createFunction(
         .from('listings')
         .update({
           status: 'in_loop',
-          agent_blocked: true,
-          agent_blocked_reason: userMessage,
+          ...blockedUpdate('intake_failed', userMessage),
         })
         .eq('id', listingId)
         .neq('status', 'archived')
@@ -325,14 +325,8 @@ export const textIntakePipeline = inngest.createFunction(
       )
     }
 
-    await pushPipelineStep(listingId, {
-      status: 'condition_gate',
-      condition_confirmed: false,
-      pipeline_total: 4,
-      agent_blocked: false,
-      agent_blocked_reason: null,
-    })
+    await pushPipelineStep(listingId, pipelineEndUpdate(4))
 
-    return { ok: true, listingId, status: 'condition_gate' }
+    return { ok: true, listingId, status: 'in_loop' }
   }
 )

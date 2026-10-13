@@ -2,6 +2,7 @@ import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { inngest } from '../client'
 import type { ListingPhotosConfirmedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { blockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { toPublicUrl } from '@/lib/pipeline/to-public-url'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import type { ClaudeImageInput } from '@/lib/claude'
@@ -132,8 +133,7 @@ export const batchQualityCheck = inngest.createFunction(
     await supabase
       .from('listings')
       .update({
-        agent_blocked: true,
-        agent_blocked_reason: `${failed.length} studio photo${failed.length === 1 ? '' : 's'} need${failed.length === 1 ? 's' : ''} attention — see the checklist below.`,
+        ...blockedUpdate('photo_quality', `${failed.length} studio photo${failed.length === 1 ? '' : 's'} need${failed.length === 1 ? 's' : ''} attention — see the checklist below.`),
       })
       .eq('id', listingId)
 

@@ -2,6 +2,7 @@ import { inngest } from '../client'
 import type { ListingConditionConfirmedEvent, ListingRewriteRequestedEvent } from '../client'
 import { loadApiKeys, runRewriteListing } from '@/lib/pipeline/rewrite-listing'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { blockedUpdate, unblockedUpdate } from '@/lib/pipeline/pipeline-end'
 
 type TriggerEvent = ListingConditionConfirmedEvent | ListingRewriteRequestedEvent
 
@@ -33,10 +34,9 @@ export const descriptionRewrite = inngest.createFunction(
       const { data: updated, error: revertError } = await supabase
         .from('listings')
         .update({
-          agent_blocked: true,
-          agent_blocked_reason: revertStatus === 'copy_review'
+          ...blockedUpdate('rewrite_failed', revertStatus === 'copy_review'
             ? 'Copy rewrite failed after all retries — try submitting another rewrite.'
-            : 'Copy rewrite failed after all retries — try re-confirming condition.',
+            : 'Copy rewrite failed after all retries — try re-confirming condition.'),
           status: revertStatus,
           ...extraUpdate,
         })
@@ -54,6 +54,16 @@ export const descriptionRewrite = inngest.createFunction(
   async ({ event, step }) => {
     const { listingId, extraNotes } = (event as unknown as TriggerEvent).data
 
+    await step.run('clear-copy-approval', async () => {
+      const { error } = await getSupabaseAdmin()
+        .from('listings')
+        .update({ copy_approved_at: null })
+        .eq('id', listingId)
+      if (error) {
+        throw new Error(`description-rewrite: failed to clear copy_approved_at for listing ${listingId} -- ${error.message}`)
+      }
+    })
+
     await step.run('rewrite-listing', async () => {
       const apiKeys = await loadApiKeys(listingId)
       return runRewriteListing(listingId, apiKeys, extraNotes ?? '')
@@ -66,7 +76,7 @@ export const descriptionRewrite = inngest.createFunction(
       const supabase = getSupabaseAdmin()
       const { data: updated, error } = await supabase
         .from('listings')
-        .update({ status: 'copy_review', agent_blocked: false })
+        .update({ status: 'copy_review', ...unblockedUpdate() })
         .eq('id', listingId)
         .in('status', ['condition_gate', 'copy_review'])
         .select('id')
