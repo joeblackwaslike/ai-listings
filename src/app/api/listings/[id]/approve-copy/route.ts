@@ -26,7 +26,7 @@ export async function PATCH(
   // CAS: only advance if still in copy_review
   const { data: updated, error } = await supabase
     .from('listings')
-    .update({ status: 'in_loop', copy_approved_at: new Date().toISOString(), ...unblockedUpdate() })
+    .update({ status: 'in_loop', copy_approved_at: new Date().toISOString() })
     .eq('id', id)
     .eq('status', 'copy_review')
     .select('id')
@@ -39,6 +39,14 @@ export async function PATCH(
   if (!updated) {
     return Response.json({ error: 'Listing is no longer in copy review' }, { status: 409 })
   }
+
+  // Approving copy resolves a failed rewrite, not a photo_quality block that still needs the seller.
+  const { error: unblockError } = await supabase
+    .from('listings')
+    .update(unblockedUpdate())
+    .eq('id', id)
+    .eq('agent_blocked_kind', 'rewrite_failed')
+  if (unblockError) console.error(`approve-copy: failed to clear rewrite_failed block for listing ${id}:`, unblockError)
 
   return Response.json({ ok: true })
 }

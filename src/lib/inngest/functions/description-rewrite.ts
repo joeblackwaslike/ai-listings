@@ -72,14 +72,15 @@ export const descriptionRewrite = inngest.createFunction(
 
     // Advance to copy_review (not in_loop) so the human can review before publishing.
     // CAS guard allows both entry-point statuses: condition_gate (first rewrite) and
-    // copy_review (subsequent rewrites from the copy review panel).
+    // copy_review (subsequent rewrites from the copy review panel), plus in_loop: copy approved
+    // while this rewrite ran approved the old text, so the new text goes back for review.
     await step.run('transition-to-copy-review', async () => {
       const supabase = getSupabaseAdmin()
       const { data: updated, error } = await supabase
         .from('listings')
-        .update({ status: 'copy_review', ...unblockedUpdate() })
+        .update({ status: 'copy_review', copy_approved_at: null })
         .eq('id', listingId)
-        .in('status', ['condition_gate', 'copy_review'])
+        .in('status', ['condition_gate', 'copy_review', 'in_loop'])
         .select('id')
         .maybeSingle()
       if (error) {
@@ -87,6 +88,16 @@ export const descriptionRewrite = inngest.createFunction(
       }
       if (!updated) {
         console.warn(`description-rewrite: zero rows updated advancing ${listingId} to copy_review — listing may be archived or concurrently transitioned`)
+        return
+      }
+      // Clear only this function's own failure; a photo_quality block still needs the seller.
+      const { error: unblockError } = await supabase
+        .from('listings')
+        .update(unblockedUpdate())
+        .eq('id', listingId)
+        .eq('agent_blocked_kind', 'rewrite_failed')
+      if (unblockError) {
+        throw new Error(`description-rewrite: failed to clear rewrite_failed block for listing ${listingId} -- ${unblockError.message}`)
       }
     })
 

@@ -95,6 +95,7 @@ export async function PATCH(
       .from('listings')
       .update(unblockedUpdate())
       .eq('id', photoRow.listing_id)
+      .eq('agent_blocked_kind', 'photo_quality')
     if (unblockError) {
       // The underlying quality-failed state is already resolved (count === 0), but the write
       // to actually clear agent_blocked failed -- the listing stays visibly blocked with no

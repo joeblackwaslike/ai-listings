@@ -38,6 +38,7 @@ async function reconcileQualityEscalation(
       .from('listings')
       .update(unblockedUpdate())
       .eq('id', listingId)
+      .eq('agent_blocked_kind', 'photo_quality')
   }
 }
 
