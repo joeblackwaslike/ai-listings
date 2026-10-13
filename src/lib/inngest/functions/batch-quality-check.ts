@@ -6,7 +6,7 @@ import { blockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { toPublicUrl } from '@/lib/pipeline/to-public-url'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import type { ClaudeImageInput } from '@/lib/claude'
-import { shotsToVerify } from '@/lib/pipeline/shot-verification'
+import { shotsToVerify, photoResultsInRange } from '@/lib/pipeline/shot-verification'
 import type { PhotoShot } from '@/types/listings'
 
 interface PhotoResult {
@@ -161,52 +161,56 @@ export const batchQualityCheck = inngest.createFunction(
 
     const plan = await step.run('capture-shot-list', () => (listingRow.photo_plan as PhotoShot[] | null) ?? [])
 
-    const { results } = await step.run('check-quality-batch', () =>
+    const { results: rawResults } = await step.run('check-quality-batch', () =>
       checkBatchQuality(photoUrls, plan, apiKeys.anthropic)
     )
+    const results = photoResultsInRange(rawResults, photos.length)
 
-    const failed = results.filter((r) => !r.passed && !photos[r.index]?.photoroom_meta?.quality_overridden)
+    const failed = results.filter((r) => !r.passed && !photos[r.index].photoroom_meta?.quality_overridden)
     const failedIndexes = new Set(failed.map((r) => r.index))
 
-    await step.run('verify-shots', () =>
-      verifyShots(
-        supabase,
-        listingId,
-        shotsToVerify(plan, results.map((r) => ({ passed: !failedIndexes.has(r.index), shot_index: r.shot_index })))
-      )
-    )
+    await step.run('record-quality-results', async () => {
+      if (failed.length > 0) {
+        await Promise.all(
+          failed.map((r) =>
+            supabase
+              .from('photos')
+              .update({
+                photoroom_meta: {
+                  quality_failed: true,
+                  quality_issues: r.issues,
+                  quality_verdict: r.verdict,
+                },
+              })
+              .eq('id', photos[r.index].id)
+          )
+        )
 
-    if (failed.length === 0) {
-      await markQualityChecked(supabase, listingId, checkedAt)
-      return { ok: true, listingId, checked: photos.length }
-    }
-
-    // Mark failed photos
-    await Promise.all(
-      failed.map((r) => {
-        const photo = photos[r.index]
-        if (!photo) return Promise.resolve()
-        return supabase
-          .from('photos')
+        await supabase
+          .from('listings')
           .update({
-            photoroom_meta: {
-              quality_failed: true,
-              quality_issues: r.issues,
-              quality_verdict: r.verdict,
-            },
+            ...blockedUpdate('photo_quality', `${failed.length} studio photo${failed.length === 1 ? '' : 's'} need${failed.length === 1 ? 's' : ''} attention — see the checklist below.`),
           })
-          .eq('id', photo.id)
-      })
-    )
+          .eq('id', listingId)
+      }
 
-    await supabase
-      .from('listings')
-      .update({
-        ...blockedUpdate('photo_quality', `${failed.length} studio photo${failed.length === 1 ? '' : 's'} need${failed.length === 1 ? 's' : ''} attention — see the checklist below.`),
-      })
-      .eq('id', listingId)
+      await markQualityChecked(supabase, listingId, checkedAt)
+    })
 
-    await markQualityChecked(supabase, listingId, checkedAt)
+    // Last, and never fatal: a shot-status RPC failure must not undo the quality verdict above.
+    await step.run('verify-shots', async () => {
+      try {
+        await verifyShots(
+          supabase,
+          listingId,
+          shotsToVerify(plan, results.map((r) => ({ passed: !failedIndexes.has(r.index), shot_index: r.shot_index })))
+        )
+      } catch (err) {
+        console.error(`[batch-quality-check] shot verification failed for listing ${listingId} (continuing):`, err)
+      }
+    })
+
+    if (failed.length === 0) return { ok: true, listingId, checked: photos.length }
 
     return { ok: false, listingId, failed: failed.map((r) => ({ index: r.index, issues: r.issues })) }
   }

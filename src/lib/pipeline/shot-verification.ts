@@ -19,3 +19,8 @@ export function shotsToVerify(
       .map((s) => s.shot)
   )]
 }
+
+/** Quality-check results that point at a real photo; the model can return any index. */
+export function photoResultsInRange<T extends { index: number }>(results: T[], photoCount: number): T[] {
+  return results.filter((r) => Number.isInteger(r.index) && r.index >= 0 && r.index < photoCount)
+}

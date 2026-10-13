@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { shotsToVerify } from './shot-verification'
+import { shotsToVerify, photoResultsInRange } from './shot-verification'
 import type { PhotoShot } from '@/types/listings'
 
 function shot(name: string, overrides: Partial<PhotoShot> = {}): PhotoShot {
@@ -59,4 +59,10 @@ test('two plan entries sharing a name yield that name once', () => {
     { passed: true, shot_index: 1 },
   ])
   assert.deepEqual(names, ['Detail'])
+})
+
+test('photoResultsInRange drops results whose photo index is outside the photo list', () => {
+  const results = [-1, 0, 1, 2, 1.5, Number.NaN].map((index) => ({ index, passed: true }))
+  assert.deepEqual(photoResultsInRange(results, 2).map((r) => r.index), [0, 1])
+  assert.deepEqual(photoResultsInRange(results, 0), [])
 })
