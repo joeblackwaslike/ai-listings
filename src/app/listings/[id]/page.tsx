@@ -5,6 +5,7 @@ import { AgentChat } from '@/components/workspace/AgentChat'
 import { ArchiveButton } from '@/components/workspace/ArchiveButton'
 import { FinalizeButton } from '@/components/workspace/FinalizeButton'
 import { PhotoSection } from '@/components/workspace/PhotoSection'
+import { PriceCard } from '@/components/workspace/PriceCard'
 import { WorkspaceShell } from '@/components/workspace/WorkspaceShell'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
@@ -217,7 +218,7 @@ export default async function WorkspacePage({
     notFound()
   }
   if (compsResult.error) {
-    // A failed comps fetch must not silently degrade to "no comps" -- FieldsPanel's price
+    // A failed comps fetch must not silently degrade to "no comps" -- PriceCard's price
     // display is comp-dependent (premiums, gate-aware pricing), so an empty comp set here would
     // show a different, unpremiumed price than a later publish could actually resolve.
     throw new Error(`workspace page: pricing_comps fetch failed — ${compsResult.error.message}`)
@@ -287,8 +288,12 @@ export default async function WorkspacePage({
       <WorkspaceShell
         listingId={id}
         assistantMessageTimes={assistantMessageTimes}
-        photos={<PhotoSection photos={photos} listingId={id} initialSkip={listing.skip_background_removal} />}
-        fields={<FieldsPanel listing={listing} photos={photos} comps={comps} priceHistory={priceHistory} platformPriceHistory={platformPriceHistory} />}
+        photos={
+          <PhotoSection photos={photos} listingId={id} initialSkip={listing.skip_background_removal}>
+            <PriceCard listing={listing} comps={comps} priceHistory={priceHistory} platformPriceHistory={platformPriceHistory} />
+          </PhotoSection>
+        }
+        fields={<FieldsPanel listing={listing} photos={photos} />}
         chat={
           <AgentChat
             listingId={id}
