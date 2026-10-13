@@ -43,3 +43,17 @@ export function inclusionOptions(
   const exact = presentSet.has(q) || ALL_KNOWN_ITEMS.some((item) => norm(item) === q)
   return exact ? matches : [...matches, { value: query.trim(), custom: true }]
 }
+
+/** Typed text highlights the first option, as before; an empty field highlights nothing. */
+export function defaultHighlight(query: string): number {
+  return query.trim() ? 0 : -1
+}
+
+/**
+ * What Enter adds: the highlighted option while the list is open, otherwise the typed text, so
+ * a bare Enter on an empty field never adds an unchosen suggestion.
+ */
+export function enterValue(options: InclusionOption[], highlight: number, expanded: boolean, query: string): string | null {
+  const highlighted = expanded && highlight >= 0 ? options[highlight] : undefined
+  return highlighted?.value ?? (query.trim() || null)
+}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useId, useMemo, useState } from 'react'
-import { inclusionOptions } from '@/lib/inclusion-options'
+import { inclusionOptions, defaultHighlight, enterValue } from '@/lib/inclusion-options'
 import type { Listing } from '@/types/listings'
 
 interface InclusionComboboxProps {
@@ -28,25 +28,23 @@ export function InclusionCombobox({ present, category, subType, onAdd }: Readonl
   const listboxId = useId()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const [highlight, setHighlight] = useState(0)
+  const [highlight, setHighlight] = useState(-1)
   const options = useMemo(
     () => inclusionOptions(query, present, category, subType),
     [query, present, category, subType]
   )
   const expanded = open && options.length > 0
   const trimmed = query.trim()
-  const active = Math.min(highlight, options.length - 1)
+  const active = highlight < 0 ? -1 : Math.min(highlight, options.length - 1)
 
   useEffect(() => {
-    if (expanded) document.getElementById(`${listboxId}-${active}`)?.scrollIntoView({ block: 'nearest' })
+    if (expanded && active >= 0) document.getElementById(`${listboxId}-${active}`)?.scrollIntoView({ block: 'nearest' })
   }, [expanded, active, listboxId])
 
-  function pick(index: number) {
-    const option = options[index]
-    if (!option) return
-    onAdd(option.value)
+  function add(value: string) {
+    onAdd(value)
     setQuery('')
-    setHighlight(0)
+    setHighlight(-1)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -54,11 +52,16 @@ export function InclusionCombobox({ present, category, subType, onAdd }: Readonl
       e.preventDefault()
       if (!open) { setOpen(true); return }
       if (options.length === 0) return
+      if (active < 0) {
+        setHighlight(e.key === 'ArrowDown' ? 0 : options.length - 1)
+        return
+      }
       const step = e.key === 'ArrowDown' ? 1 : -1
       setHighlight((active + step + options.length) % options.length)
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      if (expanded) pick(active)
+      const value = enterValue(options, active, expanded, query)
+      if (value) add(value)
     } else if (e.key === 'Escape') {
       setOpen(false)
     }
@@ -71,11 +74,11 @@ export function InclusionCombobox({ present, category, subType, onAdd }: Readonl
         aria-expanded={expanded}
         aria-controls={listboxId}
         aria-autocomplete="list"
-        aria-activedescendant={expanded ? `${listboxId}-${active}` : undefined}
+        aria-activedescendant={expanded && active >= 0 ? `${listboxId}-${active}` : undefined}
         aria-label="Add inclusion"
         autoComplete="off"
         value={query}
-        onChange={(e) => { setQuery(e.target.value); setHighlight(0); setOpen(true) }}
+        onChange={(e) => { setQuery(e.target.value); setHighlight(defaultHighlight(e.target.value)); setOpen(true) }}
         onFocus={() => setOpen(true)}
         onClick={() => setOpen(true)}
         onBlur={() => setOpen(false)}
@@ -101,7 +104,7 @@ export function InclusionCombobox({ present, category, subType, onAdd }: Readonl
             id={`${listboxId}-${i}`}
             role="option"
             aria-selected={i === active}
-            onMouseDown={(e) => { e.preventDefault(); pick(i) }}
+            onMouseDown={(e) => { e.preventDefault(); add(option.value) }}
             onMouseEnter={() => setHighlight(i)}
             className={`px-2 py-1.5 text-xs cursor-pointer ${i === active ? 'bg-gray-800 text-gray-100' : 'text-gray-400'} ${option.custom ? 'italic' : ''}`}
           >

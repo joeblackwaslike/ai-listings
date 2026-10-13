@@ -1,16 +1,16 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Check } from 'lucide-react'
 import { PipelineTimeline } from './PipelineTimeline'
 import { ListingTabs } from './ListingTabs'
-import { DetailsList, CONDITION_LABELS } from './DetailsList'
+import { DetailsList } from './DetailsList'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { FinalizingChecklist } from '@/components/workspace/FinalizingChecklist'
 import { ConditionReviewPanel } from '@/components/workspace/ConditionReviewPanel'
 import { CopyReviewPanel } from '@/components/workspace/CopyReviewPanel'
+import { pipelineSettled } from '@/lib/pipeline/pipeline-end'
 import type { Listing, Photo } from '@/types/listings'
 
 interface FieldsPanelProps {
@@ -63,18 +63,22 @@ function QaChecklistRow({ photo, onRetake, onUseAsIs }: Readonly<QaChecklistRowP
 
 export function FieldsPanel({ listing, photos }: Readonly<FieldsPanelProps>) {
   const router = useRouter()
-  const [conditionConfirmed, setConditionConfirmed] = useState(listing.condition_confirmed)
-  const [photosConfirmed, setPhotosConfirmed] = useState(listing.photos_confirmed)
+  // Derived, not copied into state: AutoRefresh re-renders with a new `listing` prop, and a stale
+  // copy kept showing "Confirm photos" (whose click used to reset a confirmed condition).
+  const [confirmedLocally, setConfirmedLocally] = useState(false)
+  const photosConfirmed = listing.photos_confirmed || confirmedLocally
   const [confirmingPhotos, setConfirmingPhotos] = useState(false)
   const retakeTargetPhotoId = useRef<string | null>(null)
   const retakeFileInputRef = useRef<HTMLInputElement>(null)
-  const savingConditionRef = useRef(false)
 
   async function confirmPhotos() {
     setConfirmingPhotos(true)
-    await fetch(`/api/listings/${listing.id}/confirm-photos`, { method: 'PATCH' })
-    setPhotosConfirmed(true)
-    setConfirmingPhotos(false)
+    try {
+      const res = await fetch(`/api/listings/${listing.id}/confirm-photos`, { method: 'PATCH' })
+      if (res.ok) setConfirmedLocally(true)
+    } finally {
+      setConfirmingPhotos(false)
+    }
   }
 
   function startRetake(photoId: string) {
@@ -107,13 +111,6 @@ export function FieldsPanel({ listing, photos }: Readonly<FieldsPanelProps>) {
     await fetch(`/api/photos/${photoId}/quality-override`, { method: 'PATCH' })
     router.refresh()
   }
-
-  // AutoRefresh polls via router.refresh(), which re-renders with a new `listing` prop but does
-  // not re-run useState's initializer; guarded so a refresh mid-approval doesn't clobber it.
-  useEffect(() => {
-    if (savingConditionRef.current) return
-    setConditionConfirmed(listing.condition_confirmed)
-  }, [listing.condition_confirmed])
 
   // Auto-discount per-listing override state
   const [adOverride, setAdOverride] = useState(
@@ -150,22 +147,6 @@ export function FieldsPanel({ listing, photos }: Readonly<FieldsPanelProps>) {
     }
   }
 
-  async function approveCondition() {
-    savingConditionRef.current = true
-    try {
-      // Without the refresh, a successful approval leaves PriceCard's price premium-free/
-      // provisional until the next 30s poll, even though the finalize route already considers
-      // the gate unlocked server-side.
-      const res = await fetch(`/api/listings/${listing.id}/condition`, { method: 'PATCH' })
-      if (res.ok) {
-        setConditionConfirmed(true)
-        router.refresh()
-      }
-    } finally {
-      savingConditionRef.current = false
-    }
-  }
-
   const studioPhotos = photos.filter((p) => p.type === 'studio')
 
   return (
@@ -175,7 +156,9 @@ export function FieldsPanel({ listing, photos }: Readonly<FieldsPanelProps>) {
           const flaggedPhotos = photos.filter(
             (p) => p.type === 'studio' && (p.photoroom_meta as { quality_failed?: boolean } | null)?.quality_failed
           )
-          if (listing.agent_blocked && flaggedPhotos.length > 0) {
+          // Flagged photos block publishing whatever the block fields say, so their Retake /
+          // Use-as-is actions must stay reachable even if another path cleared agent_blocked.
+          if (flaggedPhotos.length > 0) {
             return (
               <div className="rounded-lg border border-orange-800/50 bg-orange-950/30 px-3 py-2.5 space-y-3">
                 <p className="text-xs font-medium text-orange-400">
@@ -225,7 +208,7 @@ export function FieldsPanel({ listing, photos }: Readonly<FieldsPanelProps>) {
           </div>
         </div>
 
-        {!photosConfirmed && studioPhotos.length > 0 && studioPhotos.every((p) => p.processed_url !== null) && (
+        {!photosConfirmed && pipelineSettled(listing) && studioPhotos.length > 0 && studioPhotos.every((p) => p.processed_url !== null) && (
           <section>
             <div className="flex items-center justify-between">
               <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
@@ -242,36 +225,13 @@ export function FieldsPanel({ listing, photos }: Readonly<FieldsPanelProps>) {
           </section>
         )}
 
-        {listing.status === 'condition_gate'
-          ? <ConditionReviewPanel listing={listing} />
-          : listing.status === 'copy_review'
-          ? <CopyReviewPanel listing={listing} />
-          : photosConfirmed && listing.condition && !conditionConfirmed && (
-            <section>
-              <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Condition
-              </h3>
-              <div className="flex items-start gap-2 px-2 py-2 rounded bg-amber-950/40 border-l-2 border-amber-600">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-amber-300 font-medium">
-                    {CONDITION_LABELS[listing.condition] ?? listing.condition}
-                    <span className="text-amber-600/70 font-normal"> — recalculated from studio photos</span>
-                  </p>
-                  {listing.condition_notes && (
-                    <p className="text-[10px] text-amber-600/80 mt-0.5 leading-snug">{listing.condition_notes}</p>
-                  )}
-                </div>
-                <div className="flex-none flex gap-1.5 pt-0.5">
-                  <button onClick={() => void approveCondition()} className="text-emerald-500 hover:text-emerald-400" title="Approve">
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </section>
-          )
-        }
+        {/* Condition is confirmed only in condition_gate, through confirm-condition, which starts
+            the rewrite that leads to copy review. A separate inline approve elsewhere left listings
+            in in_loop with condition confirmed and no path to copy approval. */}
+        {listing.status === 'condition_gate' && <ConditionReviewPanel listing={listing} />}
+        {listing.status === 'copy_review' && <CopyReviewPanel listing={listing} />}
 
-        <DetailsList listing={listing} conditionConfirmed={conditionConfirmed} />
+        <DetailsList listing={listing} conditionConfirmed={listing.condition_confirmed} />
 
         {listing.status === 'finalizing' && <FinalizingChecklist listing={listing} />}
 

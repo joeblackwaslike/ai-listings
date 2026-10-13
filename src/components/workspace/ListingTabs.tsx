@@ -35,6 +35,7 @@ export function ListingTabs({ listing, photosConfirmed }: Readonly<ListingTabsPr
   const [refreshingPlan, setRefreshingPlan] = useState(false)
   const savingInclusionsRef = useRef(false)
   const pendingShotSaves = useRef(0)
+  const pendingAuthSaves = useRef(0)
 
   // AutoRefresh polls via router.refresh(), which re-renders with a new `listing` prop but does
   // not re-run useState's initializer -- without this, inclusions detected asynchronously from
@@ -50,6 +51,12 @@ export function ListingTabs({ listing, photosConfirmed }: Readonly<ListingTabsPr
     if (pendingShotSaves.current > 0) return
     setShots(listing.photo_plan ?? [])
   }, [listing.photo_plan])
+
+  // And for the auth plan, which the pipeline can generate after the page loaded.
+  useEffect(() => {
+    if (pendingAuthSaves.current > 0) return
+    setAuthSteps(listing.auth_plan ?? [])
+  }, [listing.auth_plan])
 
   const showAuth = listing.is_luxury && authSteps.length > 0
   const tab: TabKey = selected === 'authentication' && !showAuth ? 'inclusions' : selected
@@ -83,13 +90,18 @@ export function ListingTabs({ listing, photosConfirmed }: Readonly<ListingTabsPr
   }
 
   async function saveAuthPlan(updated: AuthStep[]) {
+    pendingAuthSaves.current += 1
     setSavingAuth(true)
-    await fetch(`/api/listings/${listing.id}/auth-plan`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auth_plan: updated }),
-    })
-    setSavingAuth(false)
+    try {
+      await fetch(`/api/listings/${listing.id}/auth-plan`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auth_plan: updated }),
+      })
+    } finally {
+      pendingAuthSaves.current -= 1
+      setSavingAuth(false)
+    }
   }
 
   function toggleStep(i: number) {

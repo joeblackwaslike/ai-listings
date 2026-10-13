@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { inclusionOptions } from './inclusion-options'
+import { inclusionOptions, defaultHighlight, enterValue } from './inclusion-options'
 
 test('empty query lists at most 4 category picks, minus present items', () => {
   const opts = inclusionOptions('', ['Dust bag/cover'], 'handbag', null)
@@ -35,4 +35,27 @@ test('present matching is case-insensitive', () => {
 test('whitespace-only query behaves like an empty query', () => {
   const opts = inclusionOptions('   ', [], 'other', null)
   assert.ok(opts.length <= 4 && !opts.some((o) => o.custom))
+})
+
+const opts = [{ value: 'Box' }, { value: 'Dust bag' }]
+
+test('no option is highlighted until the user types or arrows down', () => {
+  assert.equal(defaultHighlight(''), -1)
+  assert.equal(defaultHighlight('   '), -1)
+  assert.equal(defaultHighlight('du'), 0)
+})
+
+test('bare Enter with nothing typed and nothing highlighted adds nothing', () => {
+  assert.equal(enterValue(opts, -1, true, ''), null)
+  assert.equal(enterValue(opts, -1, false, '  '), null)
+})
+
+test('Enter adds the highlighted option while the list is open', () => {
+  assert.equal(enterValue(opts, 1, true, ''), 'Dust bag')
+  assert.equal(enterValue(opts, 0, true, 'du'), 'Box')
+})
+
+test('Enter adds the typed text when nothing is highlighted or the list was closed', () => {
+  assert.equal(enterValue(opts, -1, true, ' Strap '), 'Strap')
+  assert.equal(enterValue(opts, 0, false, 'Strap'), 'Strap')
 })
