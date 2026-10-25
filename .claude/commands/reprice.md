@@ -29,17 +29,24 @@ Batch size: ~1-4 items at a time. Present the batch list before starting researc
 
 **b. Audit the EXISTING comps before adding new research.** Pull every comp already on the listing and check each title against the item's own stated color/colorway/pattern/size/model — not just brand+category. This is not optional and not a one-time thing done for the first item in a batch — do it for every single item, every batch. A pipeline comp match on brand+category alone can produce comp sets that are entirely the wrong variant (this has happened with an entire 27-comp set being for a completely different colorway). Delete confirmed wrong-variant/wrong-color/wrong-size comps. If that leaves zero valid comps, say so plainly — don't leave a price looking better-supported than it is.
 
-**c. Go deep by default — every item, not just the first one.** Multi-platform: eBay-scoped search AND other resale platforms (Poshmark, Fashionphile, TheRealReal, or a category-appropriate alternative — e.g. Reverb for dj equipment). Try a direct WebFetch on a specific listing for a hard price where feasible. **For any URL that blocks direct WebFetch (eBay, Reddit, etc.):** route through Browserless (`$BROWSERLESS_URL` and `$BROWSERLESS_TOKEN` are in `~/creds.zsh`):
+**c. Go deep by default — every item, not just the first one.** Multi-platform: eBay-scoped search AND other resale platforms (Poshmark, Fashionphile, TheRealReal, or a category-appropriate alternative — e.g. Reverb for dj equipment). Try a direct WebFetch on a specific listing for a hard price where feasible. **For any URL that blocks direct WebFetch (eBay, Reddit, etc.):** route through the stealth-browser gateway (`$STEALTH_BROWSER_URL` and `$STEALTH_BROWSER_TOKEN` are in `~/creds.zsh`):
 
 ```bash
-curl -sS -X POST "$BROWSERLESS_URL/content" \
-  -H "Authorization: Bearer $BROWSERLESS_TOKEN" \
+curl -sSi -X POST "$STEALTH_BROWSER_URL/content" \
+  -H "Authorization: Bearer $STEALTH_BROWSER_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"url":"<target-url>","waitForTimeout":3000}' | head -c 200000
 ```
 
-Works for: eBay item pages, eBay sold search (`?LH_Sold=1&LH_Complete=1`). Pipe through
-`head -c 200000` — raw eBay HTML is 1–2MB and will blow the session context if dumped whole.
+Works for: eBay item pages, eBay sold search (`?LH_Sold=1&LH_Complete=1`), Terapeak
+(`ebay.com/sh/research?...&tabName=SOLD`), Reddit threads. eBay URLs use the logged-in scraping
+account automatically. Pipe through `head -c 200000` — raw eBay HTML is 1–2MB and will blow the
+session context if dumped whole. Every eBay request goes out from the home IP, so fetch only what
+the item needs. `-i` prints the HTTP status line first, so `head` can't cut it off. A 401 with
+a plain-text body means the bearer token is missing or wrong: check that `$STEALTH_BROWSER_TOKEN`
+is set and matches the gateway's token. A 401 with a `{"session_expired":true,...}` body means
+the eBay session expired: ask Joe to run `pnpm signin ebay` in the stealth-browser repo. On 423 eBay blocked the profile and it is paused
+for 30 minutes, so don't retry. On 429, back off and retry later.
 
 Fashionphile pages fetch fine via direct WebFetch but often hide price behind a JS
 placeholder on sold-out listings — one attempt is still worth it, just don't chase it if

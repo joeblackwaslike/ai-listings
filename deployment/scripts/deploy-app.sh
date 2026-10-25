@@ -15,7 +15,8 @@
 #   CLAUDE_CODE_OAUTH_TOKEN (Claude Max/Pro subscription token from `claude setup-token` —
 #     when set, src/lib/claude/backend.ts switches pipeline LLM calls to the Agent SDK
 #     instead of ANTHROPIC_API_KEY; unset falls back to the existing api-key path unchanged)
-#   BROWSERLESS_TOKEN (shared token for calling the Browserless fetch service;
+#   STEALTH_BROWSER_TOKEN (bearer token for the stealth-browser gateway, the
+#     stealth-browser-secrets gatewayToken in the stealth-browser namespace;
 #     unset degrades url-verify eBay support to UNCONFIRMED — no other impact)
 #
 # Usage: bash deployment/scripts/deploy-app.sh
@@ -103,7 +104,7 @@ stringData:
   CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
   SERPAPI_API_KEY: "${SERPAPI_API_KEY}"
   SOLDCOMPS_API_KEY: "${SOLDCOMPS_API_KEY:-}"
-  BROWSERLESS_TOKEN: "${BROWSERLESS_TOKEN:-}"
+  STEALTH_BROWSER_TOKEN: "${STEALTH_BROWSER_TOKEN:-}"
   WITHOUTBG_API_KEY: "${WITHOUTBG_API_KEY}"
   EBAY_CLIENT_ID: "${EBAY_CLIENT_ID}"
   EBAY_CLIENT_SECRET: "${EBAY_CLIENT_SECRET}"
@@ -126,6 +127,17 @@ echo "→ Applying app manifests..."
 kubectl apply -f "${MANIFESTS}/namespace.yaml"
 kubectl apply -f "${MANIFESTS}/configmap.yaml"
 kubectl apply -f "${MANIFESTS}/secret.yaml"
+# stringData is write-only, so dropping a key from secret.yaml leaves it in the
+# live Secret. Remove the retired Browserless token explicitly. Patch only when
+# the key exists, so a real failure (RBAC, API server down) still stops the script.
+secret_data=$(kubectl get secret ai-listings-secret -n "${APP_NAMESPACE}" \
+  -o jsonpath='{.data}')
+# Test for the key itself: older templates wrote BROWSERLESS_TOKEN with an empty
+# value, which a "value is non-empty" check would skip and leave behind.
+if [[ "${secret_data}" == *'"BROWSERLESS_TOKEN"'* ]]; then
+  kubectl patch secret ai-listings-secret -n "${APP_NAMESPACE}" --type=json \
+    -p '[{"op":"remove","path":"/data/BROWSERLESS_TOKEN"}]'
+fi
 kubectl apply -f "${MANIFESTS}/service.yaml"
 
 # Patch image tag before applying deployment
@@ -136,6 +148,9 @@ kubectl apply -f "${MANIFESTS}/ingress.yaml"
 
 # ── Wait for rollout ──────────────────────────────────────────────────────────
 echo "→ Waiting for rollout..."
+# Pods read the Secret via envFrom only at startup, and an unchanged pod template
+# (e.g. TAG=latest again) triggers no rollout, so restart to pick up new values.
+kubectl rollout restart deployment/ai-listings -n "${APP_NAMESPACE}"
 kubectl rollout status deployment/ai-listings -n "${APP_NAMESPACE}" --timeout=300s
 
 echo ""
