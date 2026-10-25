@@ -128,9 +128,13 @@ kubectl apply -f "${MANIFESTS}/namespace.yaml"
 kubectl apply -f "${MANIFESTS}/configmap.yaml"
 kubectl apply -f "${MANIFESTS}/secret.yaml"
 # stringData is write-only, so dropping a key from secret.yaml leaves it in the
-# live Secret. Remove the retired Browserless token explicitly (no-op once gone).
-kubectl patch secret ai-listings-secret -n "${APP_NAMESPACE}" --type=json \
-  -p '[{"op":"remove","path":"/data/BROWSERLESS_TOKEN"}]' 2>/dev/null || true
+# live Secret. Remove the retired Browserless token explicitly. Patch only when
+# the key exists, so a real failure (RBAC, API server down) still stops the script.
+if kubectl get secret ai-listings-secret -n "${APP_NAMESPACE}" \
+  -o jsonpath='{.data.BROWSERLESS_TOKEN}' | grep -q .; then
+  kubectl patch secret ai-listings-secret -n "${APP_NAMESPACE}" --type=json \
+    -p '[{"op":"remove","path":"/data/BROWSERLESS_TOKEN"}]'
+fi
 kubectl apply -f "${MANIFESTS}/service.yaml"
 
 # Patch image tag before applying deployment
