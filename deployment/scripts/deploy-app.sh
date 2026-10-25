@@ -130,9 +130,11 @@ kubectl apply -f "${MANIFESTS}/secret.yaml"
 # stringData is write-only, so dropping a key from secret.yaml leaves it in the
 # live Secret. Remove the retired Browserless token explicitly. Patch only when
 # the key exists, so a real failure (RBAC, API server down) still stops the script.
-browserless_token=$(kubectl get secret ai-listings-secret -n "${APP_NAMESPACE}" \
-  -o jsonpath='{.data.BROWSERLESS_TOKEN}')
-if [[ -n "${browserless_token}" ]]; then
+secret_data=$(kubectl get secret ai-listings-secret -n "${APP_NAMESPACE}" \
+  -o jsonpath='{.data}')
+# Test for the key itself: older templates wrote BROWSERLESS_TOKEN with an empty
+# value, which a "value is non-empty" check would skip and leave behind.
+if [[ "${secret_data}" == *'"BROWSERLESS_TOKEN"'* ]]; then
   kubectl patch secret ai-listings-secret -n "${APP_NAMESPACE}" --type=json \
     -p '[{"op":"remove","path":"/data/BROWSERLESS_TOKEN"}]'
 fi
