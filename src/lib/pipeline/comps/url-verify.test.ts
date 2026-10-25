@@ -58,15 +58,26 @@ describe('verifyComp — eBay via the stealth-browser gateway', () => {
     listing_url: 'https://www.ebay.com/itm/123456789',
   }
 
-  it('returns UNCONFIRMED when STEALTH_BROWSER_TOKEN is not set', async () => {
-    const original = process.env.STEALTH_BROWSER_TOKEN
-    try {
-      delete process.env.STEALTH_BROWSER_TOKEN
-      const result = await verifyComp(ebayComp, 'Louis Vuitton')
-      assert.deepEqual(result, { identityConfirmed: false, soldConfirmed: false })
-    } finally {
-      if (original !== undefined) process.env.STEALTH_BROWSER_TOKEN = original
-    }
+  it('returns UNCONFIRMED and warns once when STEALTH_BROWSER_TOKEN is not set', async () => {
+    const warn = mock.method(console, 'warn', () => {})
+    delete process.env.STEALTH_BROWSER_TOKEN
+    const first = await verifyComp(ebayComp, 'Louis Vuitton')
+    const second = await verifyComp(ebayComp, 'Louis Vuitton')
+    assert.deepEqual(first, { identityConfirmed: false, soldConfirmed: false })
+    assert.deepEqual(second, { identityConfirmed: false, soldConfirmed: false })
+    const tokenWarnings = warn.mock.calls.filter((c) => String(c.arguments[0]).includes('STEALTH_BROWSER_TOKEN'))
+    assert.equal(tokenWarnings.length, 1)
+  })
+
+  it('cancels the response body when the gateway answers non-OK', async () => {
+    process.env.STEALTH_BROWSER_TOKEN = 'test-token'
+    mock.method(console, 'warn', () => {})
+    let cancelled = false
+    const body = new ReadableStream({ cancel() { cancelled = true } })
+    mockFetch.mockReturnValue(Promise.resolve(new Response(body, { status: 423 })))
+    const result = await verifyComp(ebayComp, 'Louis Vuitton')
+    assert.deepEqual(result, { identityConfirmed: false, soldConfirmed: false })
+    assert.equal(cancelled, true)
   })
 
   it('calls the gateway /content endpoint with the listing URL', async () => {
@@ -124,5 +135,19 @@ describe('verifyComp — eBay via the stealth-browser gateway', () => {
     const calledUrls = calls.map((c) => c.arguments[0] as string)
     assert.ok(calledUrls.some((u) => u === 'https://poshmark.com/listing/abc123'), 'should call poshmark URL directly')
     assert.ok(!calledUrls.some((u) => u.includes('stealth-browser')), 'should NOT call the gateway endpoint')
+  })
+
+  it('cancels the response body when a direct fetch answers non-OK', async () => {
+    mock.method(console, 'warn', () => {})
+    let cancelled = false
+    const body = new ReadableStream({ cancel() { cancelled = true } })
+    mockFetch.mockReturnValue(Promise.resolve(new Response(body, { status: 403 })))
+    const comp = {
+      source: 'poshmark_active',
+      title: 'Louis Vuitton Bag',
+      listing_url: 'https://poshmark.com/listing/abc123',
+    }
+    await verifyComp(comp, 'Louis Vuitton')
+    assert.equal(cancelled, true)
   })
 })

@@ -127,6 +127,10 @@ echo "→ Applying app manifests..."
 kubectl apply -f "${MANIFESTS}/namespace.yaml"
 kubectl apply -f "${MANIFESTS}/configmap.yaml"
 kubectl apply -f "${MANIFESTS}/secret.yaml"
+# stringData is write-only, so dropping a key from secret.yaml leaves it in the
+# live Secret. Remove the retired Browserless token explicitly (no-op once gone).
+kubectl patch secret ai-listings-secret -n "${APP_NAMESPACE}" --type=json \
+  -p '[{"op":"remove","path":"/data/BROWSERLESS_TOKEN"}]' 2>/dev/null || true
 kubectl apply -f "${MANIFESTS}/service.yaml"
 
 # Patch image tag before applying deployment
@@ -137,6 +141,9 @@ kubectl apply -f "${MANIFESTS}/ingress.yaml"
 
 # ── Wait for rollout ──────────────────────────────────────────────────────────
 echo "→ Waiting for rollout..."
+# Pods read the Secret via envFrom only at startup, and an unchanged pod template
+# (e.g. TAG=latest again) triggers no rollout, so restart to pick up new values.
+kubectl rollout restart deployment/ai-listings -n "${APP_NAMESPACE}"
 kubectl rollout status deployment/ai-listings -n "${APP_NAMESPACE}" --timeout=300s
 
 echo ""

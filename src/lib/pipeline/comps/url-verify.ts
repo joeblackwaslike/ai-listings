@@ -117,9 +117,17 @@ async function readBoundedText(res: Response, maxBytes: number): Promise<string 
 // Fetches a URL via the stealth-browser gateway (Camoufox render, eBay session).
 // Returns null on any failure — caller treats null as UNCONFIRMED. That
 // includes the gateway's 423 (eBay blocked us, profile paused 30 min) and 429.
+let warnedMissingToken = false
+
 async function fetchViaGateway(url: string): Promise<string | null> {
   const token = process.env.STEALTH_BROWSER_TOKEN
-  if (!token) return null
+  if (!token) {
+    if (!warnedMissingToken) {
+      warnedMissingToken = true
+      console.warn('fetchViaGateway: STEALTH_BROWSER_TOKEN is not set; eBay comp verification is disabled')
+    }
+    return null
+  }
 
   try {
     const res = await fetch(GATEWAY_URL, {
@@ -132,6 +140,7 @@ async function fetchViaGateway(url: string): Promise<string | null> {
       signal: AbortSignal.timeout(35_000),
     })
     if (!res.ok) {
+      await res.body?.cancel()
       console.warn(`fetchViaGateway: HTTP ${res.status} for ${url}`)
       return null
     }
@@ -177,6 +186,7 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
         // Distinct from the catch-all below: this is a clean HTTP response, just not
         // a 2xx (e.g. a 403 bot challenge from TheRealReal/Poshmark) -- worth telling
         // apart from a network-level failure if reclassification quietly stops working.
+        await res.body?.cancel()
         console.warn(`verifyComp: HTTP ${res.status} for ${comp.listing_url}`)
         return UNCONFIRMED
       }

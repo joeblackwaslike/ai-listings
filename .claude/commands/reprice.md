@@ -32,7 +32,7 @@ Batch size: ~1-4 items at a time. Present the batch list before starting researc
 **c. Go deep by default — every item, not just the first one.** Multi-platform: eBay-scoped search AND other resale platforms (Poshmark, Fashionphile, TheRealReal, or a category-appropriate alternative — e.g. Reverb for dj equipment). Try a direct WebFetch on a specific listing for a hard price where feasible. **For any URL that blocks direct WebFetch (eBay, Reddit, etc.):** route through the stealth-browser gateway (`$STEALTH_BROWSER_URL` and `$STEALTH_BROWSER_TOKEN` are in `~/creds.zsh`):
 
 ```bash
-curl -sS -X POST "$STEALTH_BROWSER_URL/content" \
+curl -sSi -X POST "$STEALTH_BROWSER_URL/content" \
   -H "Authorization: Bearer $STEALTH_BROWSER_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"url":"<target-url>","waitForTimeout":3000}' | head -c 200000
@@ -42,8 +42,10 @@ Works for: eBay item pages, eBay sold search (`?LH_Sold=1&LH_Complete=1`), Terap
 (`ebay.com/sh/research?...&tabName=SOLD`), Reddit threads. eBay URLs use the logged-in scraping
 account automatically. Pipe through `head -c 200000` — raw eBay HTML is 1–2MB and will blow the
 session context if dumped whole. Every eBay request goes out from the home IP, so fetch only what
-the item needs. If the gateway answers 401, the session expired: ask Joe to run
-`pnpm signin ebay` in the stealth-browser repo. On 423 eBay blocked the profile and it is paused
+the item needs. `-i` prints the HTTP status line first, so `head` can't cut it off. A 401 with
+a plain-text body means the bearer token is missing or wrong: check that `$STEALTH_BROWSER_TOKEN`
+is set and matches the gateway's token. A 401 with a `{"session_expired":true,...}` body means
+the eBay session expired: ask Joe to run `pnpm signin ebay` in the stealth-browser repo. On 423 eBay blocked the profile and it is paused
 for 30 minutes, so don't retry. On 429, back off and retry later.
 
 Fashionphile pages fetch fine via direct WebFetch but often hide price behind a JS
