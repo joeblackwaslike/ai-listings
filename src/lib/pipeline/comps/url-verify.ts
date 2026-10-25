@@ -36,10 +36,10 @@ const ALLOWED_HOSTNAMES: Record<string, string[]> = {
 }
 
 // Sources whose URLs require a headless browser (direct fetch is bot-blocked).
-// Fetched via the internal Browserless service instead of raw fetch().
-const BROWSERLESS_HOSTNAMES = new Set(['ebay.com', 'www.ebay.com'])
+// Fetched via the in-cluster stealth-browser gateway instead of raw fetch().
+const GATEWAY_HOSTNAMES = new Set(['ebay.com', 'www.ebay.com'])
 
-const BROWSERLESS_URL = 'http://browserless.ai-listings.svc.cluster.local:3000/content'
+const GATEWAY_URL = 'http://gateway.stealth-browser.svc.cluster.local:8080/content'
 
 // Sources actually eligible for verification -- present in both the sold-badge
 // pattern map and the hostname allowlist, so the two lists can't silently drift
@@ -114,14 +114,15 @@ async function readBoundedText(res: Response, maxBytes: number): Promise<string 
   }
 }
 
-// Fetches a URL via the internal Browserless service (real Chromium render).
-// Returns null on any failure — caller treats null as UNCONFIRMED.
-async function fetchViaBrowserless(url: string): Promise<string | null> {
-  const token = process.env.BROWSERLESS_TOKEN
+// Fetches a URL via the stealth-browser gateway (Camoufox render, eBay session).
+// Returns null on any failure — caller treats null as UNCONFIRMED. That
+// includes the gateway's 423 (eBay blocked us, profile paused 30 min) and 429.
+async function fetchViaGateway(url: string): Promise<string | null> {
+  const token = process.env.STEALTH_BROWSER_TOKEN
   if (!token) return null
 
   try {
-    const res = await fetch(BROWSERLESS_URL, {
+    const res = await fetch(GATEWAY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -131,12 +132,12 @@ async function fetchViaBrowserless(url: string): Promise<string | null> {
       signal: AbortSignal.timeout(35_000),
     })
     if (!res.ok) {
-      console.warn(`fetchViaBrowserless: HTTP ${res.status} for ${url}`)
+      console.warn(`fetchViaGateway: HTTP ${res.status} for ${url}`)
       return null
     }
     return await readBoundedText(res, MAX_RESPONSE_BYTES)
   } catch (err) {
-    console.warn('fetchViaBrowserless: failed for', url, err instanceof Error ? err.message : String(err))
+    console.warn('fetchViaGateway: failed for', url, err instanceof Error ? err.message : String(err))
     return null
   }
 }
@@ -152,8 +153,8 @@ export async function verifyComp(comp: VerifiableComp, brand: string): Promise<V
       try { return new URL(comp.listing_url).hostname } catch { return '' }
     })()
 
-    if (BROWSERLESS_HOSTNAMES.has(hostname)) {
-      html = await fetchViaBrowserless(comp.listing_url)
+    if (GATEWAY_HOSTNAMES.has(hostname)) {
+      html = await fetchViaGateway(comp.listing_url)
     } else {
       const res = await fetch(comp.listing_url, {
         headers: {

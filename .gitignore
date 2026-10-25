@@ -69,3 +69,5 @@ deployment/kubernetes/app/secret.yaml
 .beads-credential-key
 
 docs/_*.md
+# git worktrees
+.worktrees/
