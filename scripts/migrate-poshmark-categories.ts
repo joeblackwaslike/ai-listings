@@ -4,8 +4,8 @@
  * { department, category, subcategory } format expected by buildUnifiedListingForPoshmark.
  *
  * Usage:
- *   source .env.local && tsx scripts/migrate-poshmark-categories.ts
- *   tsx scripts/migrate-poshmark-categories.ts --dry-run
+ *   bun --env-file=.env.local scripts/migrate-poshmark-categories.ts
+ *   bun scripts/migrate-poshmark-categories.ts --dry-run
  */
 
 import { createClient } from '@supabase/supabase-js'

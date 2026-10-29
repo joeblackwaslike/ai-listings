@@ -2,7 +2,7 @@ As of April 22, 2026, this is the Claude Code install sheet I’d use.
 
 **Prereqs**
 - `claude` CLI installed and authenticated
-- `node`/`npx` available
+- `bun`/`bunx` available
 - Accounts/tokens as needed:
   - `APIFY_TOKEN`
   - `SERPAPI_API_KEY`
@@ -14,13 +14,13 @@ As of April 22, 2026, this is the Claude Code install sheet I’d use.
 **1. Inngest for development**
 Official MCP:
 ```bash
-npx --ignore-scripts=false inngest-cli@latest dev
+bunx inngest-cli@latest dev
 claude mcp add --transport http inngest-dev http://127.0.0.1:8288/mcp
 ```
 
 Official skills:
 ```bash
-npx skills add inngest/inngest-skills
+bunx skills add inngest/inngest-skills
 ```
 
 Quick test prompts:
@@ -57,7 +57,7 @@ claude mcp add --transport stdio \
   --env EBAY_CLIENT_SECRET=YOUR_EBAY_CLIENT_SECRET \
   --env EBAY_ENVIRONMENT=production \
   ebay \
-  -- npx -y ebay-mcp
+  -- bunx ebay-mcp
 ```
 
 Higher-rate setup with OAuth refresh token:
@@ -68,7 +68,7 @@ claude mcp add --transport stdio \
   --env EBAY_ENVIRONMENT=production \
   --env EBAY_USER_REFRESH_TOKEN=YOUR_EBAY_USER_REFRESH_TOKEN \
   ebay \
-  -- npx -y ebay-mcp
+  -- bunx ebay-mcp
 ```
 
 Quick test prompts:

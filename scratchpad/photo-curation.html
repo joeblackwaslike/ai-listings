@@ -526,9 +526,9 @@ function renderCommandBar() {
   const ok = sel.size <= 16;
   const sortedIds = l.photos.filter(p => sel.has(p.id)).map(p => p.id);
   const ids = sortedIds.join(',');
-  const cmd = `npx tsx scripts/publish-one-to-poshmark.ts --sku ${activeSku} --photos "${ids}" --commit`;
+  const cmd = `bun scripts/publish-one-to-poshmark.ts --sku ${activeSku} --photos "${ids}" --commit`;
   document.getElementById('commandBar').innerHTML = `
-    <div class="cmd-wrap"><span class="hl">npx tsx scripts/publish-one-to-poshmark.ts</span> --sku <span class="hl">${activeSku}</span> --photos "<span class="hl">${ids.slice(0, 40)}${ids.length > 40 ? '…' : ''}</span>" --commit</div>
+    <div class="cmd-wrap"><span class="hl">bun scripts/publish-one-to-poshmark.ts</span> --sku <span class="hl">${activeSku}</span> --photos "<span class="hl">${ids.slice(0, 40)}${ids.length > 40 ? '…' : ''}</span>" --commit</div>
     <span class="copied-msg" id="copiedMsg">Copied!</span>
     <button class="copy-btn" id="copyBtn" ${ok ? '' : 'disabled'}>Copy command</button>
   `;

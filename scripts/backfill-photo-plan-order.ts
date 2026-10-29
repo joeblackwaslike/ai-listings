@@ -4,9 +4,9 @@
  * Calls Claude Haiku to re-generate a properly ordered shot list for each listing.
  *
  * Usage:
- *   tsx scripts/backfill-photo-plan-order.ts                   # all active non-archived
- *   tsx scripts/backfill-photo-plan-order.ts --listing-id <id>  # single listing (test)
- *   tsx scripts/backfill-photo-plan-order.ts --dry-run          # print diffs, no writes
+ *   bun scripts/backfill-photo-plan-order.ts                   # all active non-archived
+ *   bun scripts/backfill-photo-plan-order.ts --listing-id <id>  # single listing (test)
+ *   bun scripts/backfill-photo-plan-order.ts --dry-run          # print diffs, no writes
  */
 
 import { createClient } from '@supabase/supabase-js'

@@ -1,8 +1,8 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 // Enable Best Offer on all published eBay listings by PUTting each offer
 // with bestOfferTerms: { bestOfferEnabled: true } merged into the live offer body.
 // --check: read-only status report using Browse API buyingOptions (GET /offer never returns bestOfferTerms)
-// Usage: npx tsx --env-file=.env.local scripts/ebay-enable-best-offer.ts [--check]
+// Usage: bun --env-file=.env.local scripts/ebay-enable-best-offer.ts [--check]
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getEbayCreds } from '@/lib/platforms/credentials'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
