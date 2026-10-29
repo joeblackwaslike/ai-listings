@@ -5,16 +5,18 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 [![Discord](https://img.shields.io/discord/1486035859747897414?logo=discord&label=Discord&color=5865F2)](https://discord.com/channels/1486035859747897414/1509515259864682628) [![Join Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/Fjc9zYHZyV)
 
 
-First, run the development server:
+Tooling: [pnpm](https://pnpm.io) manages dependencies and the workspace, [Bun](https://bun.com) is the runtime (dev server, build, scripts, tests, and the production image). Versions are pinned in `package.json` (`packageManager`) and `.bun-version`.
+
+All commands run from the repo root; never `cd` into a package. Use `pnpm --filter <name> <script>` for a single workspace package.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
+pnpm test
+pnpm lint
+pnpm build:sdk       # rebuild packages/poshmark-seller-sdk (its dist/ is committed)
+bun --env-file=.env.local scripts/<script>.ts
+bunx <tool>
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.

@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Apply a 10% markdown to all eBay listings live for 7+ days.
  * Updates final_price_cents in DB and pushes the new price to the live eBay listing.
@@ -6,8 +6,8 @@
  * final_price_cents from eBay's live price, so a local-only update gets clobbered.
  *
  * Usage:
- *   npx tsx scripts/apply-ebay-markdown.ts           # dry run (default)
- *   npx tsx scripts/apply-ebay-markdown.ts --commit  # apply changes
+ *   bun scripts/apply-ebay-markdown.ts           # dry run (default)
+ *   bun scripts/apply-ebay-markdown.ts --commit  # apply changes
  */
 
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'

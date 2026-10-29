@@ -15,7 +15,9 @@ on:
       - 'public/**'
       - 'packages/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.bun-version'
       - 'next.config.ts'
       - 'tsconfig.json'
       - 'postcss.config.mjs'
@@ -32,7 +34,7 @@ jobs:
     # Native ARM64 GitHub-hosted runner (free, GA for public repos) — building
     # linux/arm64 here runs natively instead of under QEMU cross-compilation,
     # which was the dominant cost on ubuntu-latest (x86) for any commit that
-    # touches source, since that always invalidates the `npm run build` layer.
+    # touches source, since that always invalidates the `pnpm run build` layer.
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -59,6 +61,31 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Tool versions
+        id: versions
+        run: |
+          echo "bun=$(cat .bun-version)" >> "$GITHUB_OUTPUT"
+          echo "pnpm=$(jq -r '.packageManager | sub("^pnpm@"; "")' package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Build image for smoke test
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/Dockerfile
+          platforms: linux/arm64
+          load: true
+          tags: ai-listings:smoke
+          build-args: |
+            BUN_VERSION=${{ steps.versions.outputs.bun }}
+            PNPM_VERSION=${{ steps.versions.outputs.pnpm }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test image
+        run: deployment/scripts/smoke-image.sh ai-listings:smoke
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -69,6 +96,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
+            BUN_VERSION=${{ steps.versions.outputs.bun }}
+            PNPM_VERSION=${{ steps.versions.outputs.pnpm }}
             NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           cache-from: type=gha

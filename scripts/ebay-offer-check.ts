@@ -1,6 +1,6 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 // Fetch one live eBay offer and log bestOfferTerms to diagnose Allow Offers state.
-// Usage: npx tsx --env-file=.env.local scripts/ebay-offer-check.ts
+// Usage: bun --env-file=.env.local scripts/ebay-offer-check.ts
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getEbayCreds } from '@/lib/platforms/credentials'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'

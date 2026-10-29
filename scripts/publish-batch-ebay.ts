@@ -1,7 +1,7 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Batch-publish all in_loop eBay-ready listings.
- * Usage: npx tsx scripts/publish-batch-ebay.ts
+ * Usage: bun scripts/publish-batch-ebay.ts
  */
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getEbayCreds } from '@/lib/platforms/credentials'

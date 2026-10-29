@@ -1,10 +1,10 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Publish a single listing to Poshmark with an explicit photo selection.
  *
  * Usage:
- *   npx tsx scripts/publish-one-to-poshmark.ts --sku HB-0128
- *   npx tsx scripts/publish-one-to-poshmark.ts --sku HB-0128 --photos "id1,id2,..." --commit
+ *   bun scripts/publish-one-to-poshmark.ts --sku HB-0128
+ *   bun scripts/publish-one-to-poshmark.ts --sku HB-0128 --photos "id1,id2,..." --commit
  *
  * --photos   comma-separated photo UUIDs in desired display order (max 16)
  *            omit to use default selection (first 16 by display_order)

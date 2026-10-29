@@ -6,7 +6,7 @@
  * leaving the chat session.
  *
  * Usage as stdio MCP server (add to .claude/settings.json or Claude Desktop):
- *   npx tsx src/lib/platforms/mcp-server.ts
+ *   bun src/lib/platforms/mcp-server.ts
  *
  * Usage as HTTP tool endpoint: see src/app/api/platforms/mcp/route.ts
  */

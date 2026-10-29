@@ -2,11 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SupabaseClient } from '@supabase/supabase-js'
 // Deliberately not co-located with route.ts (which lives under the `[id]` dynamic segment) --
-// node's built-in test runner treats `[id]` in a file path as a glob character class, so
-// `npm test`'s `find src -name '*.test.ts' | node --test` would silently discover and match
-// zero tests for anything placed inside a bracketed route directory, with no error and exit
-// code 0. Importing the handler from one level up avoids the CLI arg entirely; only the module
-// specifier (not the test-file discovery path) contains the bracket.
+// node's built-in test runner (the previous `npm test`) treated `[id]` in a file path as a glob
+// character class and would silently discover zero tests inside a bracketed route directory,
+// with no error and exit code 0. Placement is kept runner-agnostic: the handler is imported from
+// one level up, so only the module specifier (not the test-file discovery path) has the bracket.
 import { handleSkipBg } from './[id]/skip-bg/route'
 import type { ApiKeys } from '@/lib/user-api-keys'
 

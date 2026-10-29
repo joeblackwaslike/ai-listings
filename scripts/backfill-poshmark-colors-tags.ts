@@ -4,9 +4,9 @@
  * Also generates full poshmark fields for listings that have none.
  *
  * Usage:
- *   source .env.local && tsx scripts/backfill-poshmark-colors-tags.ts
- *   tsx scripts/backfill-poshmark-colors-tags.ts --dry-run
- *   tsx scripts/backfill-poshmark-colors-tags.ts --id <listing-id>
+ *   bun --env-file=.env.local scripts/backfill-poshmark-colors-tags.ts
+ *   bun scripts/backfill-poshmark-colors-tags.ts --dry-run
+ *   bun scripts/backfill-poshmark-colors-tags.ts --id <listing-id>
  */
 
 import Anthropic from '@anthropic-ai/sdk'

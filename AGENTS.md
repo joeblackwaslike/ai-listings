@@ -4,6 +4,14 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+## Tooling
+
+- **pnpm** for dependencies and the workspace (`packages/*`); **Bun** as the runtime for the dev server, build, scripts, tests and the production image. Use `pnpm`/`bun`/`bunx` only -- never `npm`, `npx`, `yarn` or `tsx`.
+- Run every command from the repo root. Never `cd` into a package: use `pnpm --filter <name> <script>` or a root script (`pnpm build:sdk`, `pnpm typecheck:sdk`).
+- Scripts: `bun --env-file=.env.local scripts/<name>.ts`. Tests: `pnpm test` (`bun test ./src`).
+- `packages/poshmark-seller-sdk/dist` is committed (the app imports it); run `pnpm build:sdk` after changing the SDK source and commit the result.
+- The production image is built by `deployment/Dockerfile` and verified by `deployment/scripts/smoke-image.sh` on an ARM64 runner (`image-smoke.yml` on PRs, and again before every deploy).
+
 ## Environments
 
 There are two env files — both are gitignored:
@@ -46,7 +54,7 @@ kubectl exec -i -n sup-ai-listings ai-listings-supabase-db-0 -- psql -U postgres
 To inspect production env vars:
 
 ```bash
-kubectl get secret -n ai-listings ai-listings-secret -o jsonpath='{.data}' | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));Object.entries(d).forEach(([k,v])=>console.log(k+'='+Buffer.from(v,'base64').toString()))"
+kubectl get secret -n ai-listings ai-listings-secret -o json | jq -r '.data | to_entries[] | "\(.key)=\(.value | @base64d)"'
 kubectl get configmap -n ai-listings ai-listings-config -o jsonpath='{.data}'
 ```
 

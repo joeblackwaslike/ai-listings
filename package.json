@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test": "node --import tsx --test $(find src -name '*.test.ts')"
+    "dev": "bun --bun next dev",
+    "build": "bun --bun next build",
+    "start": "bun --bun next start",
+    "lint": "bunx --bun eslint",
+    "test": "bun test ./src",
+    "build:sdk": "pnpm --filter @local/poshmark-seller-sdk build",
+    "typecheck:sdk": "pnpm --filter @local/poshmark-seller-sdk typecheck"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.229",
@@ -16,7 +18,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hendt/ebay-api": "^6.0.1",
-    "@local/poshmark-seller-sdk": "file:./packages/poshmark-seller-sdk",
+    "@local/poshmark-seller-sdk": "workspace:*",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
     "@tailwindcss/typography": "^0.5.20",
@@ -38,10 +40,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@typescript-eslint/eslint-plugin": "^8.68.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
-    "tsx": "^4.23.12",
     "typescript": "^5"
-  }
+  },
+  "packageManager": "pnpm@11.28.9"
 }

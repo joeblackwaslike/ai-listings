@@ -1,11 +1,11 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Publish all listings that are live on eBay but not yet on Poshmark.
  * Dry-run by default; pass --commit to apply.
  *
  * Usage:
- *   npx tsx scripts/publish-ebay-to-poshmark.ts
- *   npx tsx scripts/publish-ebay-to-poshmark.ts --commit
+ *   bun scripts/publish-ebay-to-poshmark.ts
+ *   bun scripts/publish-ebay-to-poshmark.ts --commit
  */
 
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'

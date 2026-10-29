@@ -1,5 +1,11 @@
+packages:
+  - packages/*
+
 allowBuilds:
-  esbuild: set this to true or false
-  protobufjs: set this to true or false
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  unrs-resolver: true
+
+publicHoistPattern:
+  - '@anthropic-ai/claude-agent-sdk-*'
