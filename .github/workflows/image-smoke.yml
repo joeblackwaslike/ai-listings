@@ -13,6 +13,8 @@ on:
       - 'next.config.ts'
       - 'tsconfig.json'
       - 'postcss.config.mjs'
+      - '.dockerignore'
+      - 'deployment/.dockerignore'
       - 'deployment/Dockerfile'
       - 'deployment/scripts/smoke-image.sh'
       - '.github/workflows/image-smoke.yml'
