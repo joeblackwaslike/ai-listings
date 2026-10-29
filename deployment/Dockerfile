@@ -4,7 +4,8 @@ ARG PNPM_VERSION=11.28.9
 
 FROM oven/bun:${BUN_VERSION}-alpine AS bun
 
-# Builder is Node only because pnpm 11 itself runs on Node. Bun is copied in so the build and
+# Builder is Node only because pnpm 11 itself runs on Node (bootstrapped with the npm bundled in
+# the base image). Bun is copied in so the build and
 # every package script run on Bun, matching the production runtime.
 FROM node:${NODE_VERSION}-alpine AS builder
 ARG PNPM_VERSION
