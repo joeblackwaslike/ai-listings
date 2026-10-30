@@ -1,15 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AgentBlockedKind, Listing, ListingStatus } from '@/types/listings'
 
-const PRE_PHOTO_STATUSES: ReadonlySet<ListingStatus> = new Set(['intake', 'id_gate', 'gender_gate'])
+const NOT_SETTLED_STATUSES: ReadonlySet<ListingStatus> = new Set(['intake', 'id_gate', 'gender_gate', 'published', 'sold', 'archived'])
 
 /**
- * True once every pipeline step has run and the listing isn't waiting at a pre-photo gate.
+ * True once every pipeline step has run and the listing is neither waiting at a pre-photo gate nor shipped/archived.
  * Photos must not be confirmed before this: condition review and copy review only make sense
  * on a finished draft.
  */
 export function pipelineSettled(l: Pick<Listing, 'status' | 'pipeline_step' | 'pipeline_total'>): boolean {
-  return l.pipeline_step >= l.pipeline_total && !PRE_PHOTO_STATUSES.has(l.status)
+  return l.pipeline_step >= l.pipeline_total && !NOT_SETTLED_STATUSES.has(l.status)
 }
 
 /**

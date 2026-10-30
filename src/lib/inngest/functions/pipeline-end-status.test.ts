@@ -48,9 +48,9 @@ test('unblockedUpdate nulls reason and kind', () => {
   })
 })
 
-test('pipelineSettled is false while steps remain or the listing waits at a pre-photo gate', () => {
+test('pipelineSettled is false while steps remain or the listing waits at a pre-photo gate or has shipped/archived', () => {
   assert.equal(pipelineSettled({ status: 'in_loop', pipeline_step: 3, pipeline_total: 5 }), false)
-  for (const status of ['intake', 'id_gate', 'gender_gate'] as const) {
+  for (const status of ['intake', 'id_gate', 'gender_gate', 'published', 'sold', 'archived'] as const) {
     assert.equal(pipelineSettled({ status, pipeline_step: 5, pipeline_total: 5 }), false, status)
   }
 })
