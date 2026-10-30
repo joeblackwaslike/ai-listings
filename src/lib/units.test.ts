@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mmToInches, inchesToMm, formatDualMeasurement, formatMeasurementValue, isPhysicalLengthField, formatDimensions, formatMeasurementsSummary } from './units'
+import { mmToInches, inchesToMm, formatDualMeasurement, formatMeasurementValue, isPhysicalLengthField, formatDimensions, formatMeasurementsSummary, isDimensionKey } from './units'
 import type { MeasurementField } from '@/types/listings'
 import { getMeasurementFields } from './utils'
 
@@ -145,4 +145,9 @@ test('clothing length (key "length") is not a box dimension: summary keeps the l
     assert.equal(formatDimensions({ length: 28 }, fields), null, sub)
     assert.equal(formatMeasurementsSummary({ length: 28 }, fields), 'Length: 28 in (711 mm)', sub)
   }
+})
+
+test('isDimensionKey matches only box-dimension keys, not clothing length', () => {
+  for (const k of ['width', 'depth', 'height', 'item_length_in', 'item_width_in', 'item_height_in']) assert.equal(isDimensionKey(k), true, k)
+  for (const k of ['length', 'chest', 'case_diameter_mm']) assert.equal(isDimensionKey(k), false, k)
 })

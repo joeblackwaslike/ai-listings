@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getMeasurementFields } from '@/lib/utils'
-import { formatMeasurementValue } from '@/lib/units'
+import { formatDimensions, formatMeasurementValue, isDimensionKey } from '@/lib/units'
 import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
 import type { Listing } from '@/types/listings'
 
@@ -26,6 +26,8 @@ export function DetailsList({ listing, conditionConfirmed }: Readonly<DetailsLis
   const measurements = (listing.measurements ?? {}) as Record<string, unknown>
   const populatedMeasurements = getMeasurementFields(listing.category ?? '', listing.sub_type, notableFeaturesOf(listing.intake_meta))
     .filter((f) => measurements[f.key] !== undefined && measurements[f.key] !== null && measurements[f.key] !== '')
+  const dimensions = formatDimensions(measurements, populatedMeasurements)
+  const otherMeasurements = populatedMeasurements.filter((f) => !isDimensionKey(f.key))
   const conditionLabel = conditionConfirmed && listing.condition ? CONDITION_LABELS[listing.condition] ?? listing.condition : null
   const showNotes = conditionConfirmed && !!listing.condition_notes
 
@@ -70,7 +72,12 @@ export function DetailsList({ listing, conditionConfirmed }: Readonly<DetailsLis
           <>
             <dt className="text-gray-600">Measurements</dt>
             <dd className="flex flex-wrap gap-x-5 gap-y-1 text-gray-300">
-              {populatedMeasurements.map((field) => (
+              {dimensions && (
+                <span>
+                  <span className="text-gray-600">Dimensions</span> {dimensions}
+                </span>
+              )}
+              {otherMeasurements.map((field) => (
                 <span key={field.key}>
                   <span className="text-gray-600">{field.label}</span> {formatMeasurementValue(field, measurements[field.key])}
                 </span>
