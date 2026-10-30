@@ -20,10 +20,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
   if (!photo) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const { error } = await supabase.from('photos').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  // Confirmations vouch for the studio photos; with none left they no longer hold.
+  // Confirmations vouch for the studio photos; with none left they no longer hold. Reset first so a
+  // failure leaves the photo in place and a retry can repeat it.
   const status = (photo.listings as unknown as { status: string }).status
   if (photo.type === 'studio' && status !== 'published' && status !== 'sold') {
     const { count, error: countError } = await supabase
@@ -32,7 +30,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       .eq('listing_id', photo.listing_id)
       .eq('type', 'studio')
     if (countError) return NextResponse.json({ error: countError.message }, { status: 500 })
-    if (count === 0) {
+    if (count === 1) {
       const { error: resetError } = await supabase
         .from('listings')
         .update({ photos_confirmed: false, condition_confirmed: false })
@@ -40,6 +38,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       if (resetError) return NextResponse.json({ error: resetError.message }, { status: 500 })
     }
   }
+
+  const { error } = await supabase.from('photos').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true })
 }
