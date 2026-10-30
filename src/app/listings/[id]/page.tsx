@@ -258,6 +258,7 @@ export default async function WorkspacePage({
         .select('id, role, content, created_at')
         .eq('listing_id', id)
         .eq('role', 'assistant')
+        .eq('content', firstMessage)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
