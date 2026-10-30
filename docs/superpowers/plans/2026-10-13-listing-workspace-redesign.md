@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - No new UI dependencies (no shadcn/Radix). Native `<input type="file">`, pointer events and `localStorage` wrapped in try/catch.
-- Tests are `node:test` + `node:assert/strict`, named `*.test.ts` next to the module, run with `npm test`. Only `.ts` files are collected, so put logic under test in `.ts` modules, not `.tsx`.
+- Tests are `node:test` + `node:assert/strict`, named `*.test.ts` next to the module, run with `pnpm test` (Bun's runner). Only `.ts` files are collected, so put logic under test in `.ts` modules, not `.tsx`.
 - Migrations are SQL files in `supabase/migrations/`. The next number is `0042`. Apply with `kubectl exec -i -n sup-ai-listings ai-listings-supabase-db-0 -- psql -U postgres < file` (the `-i` is required). Production is the only database. Applying the migration for real needs Joe's explicit go-ahead (Task 14).
 - Photo column default 600px, range 320px to 60% of the window; chat default 380px, range 320px to 55%; collapsed chat rail 44px; dividers 6px; double-click resets.
 - Thumbnails `repeat(auto-fill, minmax(80px, 1fr))`; main image `w-full h-auto`, max about 65vh.
@@ -63,7 +63,7 @@
     - Finalizing gate using condition plus every inclusion confirmed, plus no `quality_failed` photos.
     - `agent_blocked_kind` from context.
 - [ ] Step 4: Run the dry run again with the migration prepended inside the same `BEGIN … ROLLBACK`. Expected: no errors, every ASSERT passes, ends with `ROLLBACK`.
-- [ ] Step 5: Update the types. Run `npx tsc --noEmit`. Expected: clean.
+- [ ] Step 5: Update the types. Run `pnpm exec tsc --noEmit`. Expected: clean.
 - [ ] Step 6: Commit: `feat(db): migration 0042 for workspace redesign (not applied)`.
 
 ### Task 2: Status badge logic
@@ -89,9 +89,9 @@
   - `published` with `listing_urls {ebay}` → `Published 1/2`/emerald; with both → `Published`/purple.
   - `sold` → green; `archived` → gray.
   - `agent_blocked` wins over status.
-- [ ] Step 2: `npm test`. Expected: FAIL, cannot find module `./listing-status`.
+- [ ] Step 2: `pnpm test`. Expected: FAIL, cannot find module `./listing-status`.
 - [ ] Step 3: Implement `getStatusBadge` and use it in `StatusBadge.tsx` (keep the base classes `text-[10px] font-medium px-1.5 py-0.5 rounded-full`). Compute `ctx` from `getMeasurementFields` and the photos the dashboard and detail page already load.
-- [ ] Step 4: `npm test`. Expected: PASS.
+- [ ] Step 4: `pnpm test`. Expected: PASS.
 - [ ] Step 5: Commit: `feat(status): task-specific status badges shared by dashboard and workspace`.
 
 ### Task 3: Pipeline steps
@@ -113,12 +113,12 @@
   - Studio photos uploaded while inclusions are unconfirmed: `inclusions_auth` is active and `photo_shoot` is done, with no second active step.
   - Published: every step is done and the last label is `Published`.
   - `quality_checked_at` older than the newest studio photo's `created_at`: `quality_check` isn't done.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement. In `PipelineTimeline.tsx`:
   - Done and pending rows are one line with the sublabel as `title`. The active row shows the sublabel and gets `bg-blue-950/30`.
   - Keep today's icon and color classes.
   - When published, add "Live:" links from `listing_urls` below the steps.
-- [ ] Step 4: `npm test`. Expected: PASS.
+- [ ] Step 4: `pnpm test`. Expected: PASS.
 - [ ] Step 5: Commit: `fix(timeline): one ordered pipeline with a single active step`.
 
 ### Task 4: Publish gate and server enforcement
@@ -140,9 +140,9 @@
   - A `quality_failed` studio photo → false.
   - Everything satisfied → `{ok:true}`.
   - `canConfirmCondition` is false without confirmed photos.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement, then call it at the top of each route. Return `409` with `{ error: reason }`. Finalize keeps its `in_loop` status check, and the publish routes keep their existing status checks.
-- [ ] Step 4: `npm test` and `npx tsc --noEmit`. Expected: PASS and clean.
+- [ ] Step 4: `pnpm test` and `pnpm exec tsc --noEmit`. Expected: PASS and clean.
 - [ ] Step 5: Commit: `feat(api): enforce photos → condition → copy → finalize/publish order`.
 
 ### Task 5: One review pass, copy approval, block kinds
@@ -160,12 +160,12 @@
   - `pipelineEndUpdate(5).status === 'in_loop'`, with no `condition_gate` anywhere in it.
   - `blockedUpdate('rewrite_failed','x')` sets all three blocked fields.
   - `unblockedUpdate()` nulls the kind and the reason.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement the helpers and switch every site to them:
   - `approve-copy` sets `copy_approved_at: new Date().toISOString()`.
   - `description-rewrite` sets `copy_approved_at: null` when it starts.
   - Grep for `'condition_gate'` and check nothing else assumes a pre-photo condition gate.
-- [ ] Step 4: `npm test`, then `grep -rn "agent_blocked: true" src | grep -v test`. Expected: PASS, and only `pipeline-end.ts` matches.
+- [ ] Step 4: `pnpm test`, then `grep -rn "agent_blocked: true" src | grep -v test`. Expected: PASS, and only `pipeline-end.ts` matches.
 - [ ] Step 5: Commit: `feat(pipeline): single post-photo review pass, copy_approved_at, agent_blocked_kind`.
 
 ### Task 6: Photo readiness after upload batches
@@ -183,9 +183,9 @@
   - With unprocessed photos: `{confirmNow:false, batchReady:false}`.
   - Everything processed and not yet confirmed: `{confirmNow:true, batchReady:true}`.
   - Already confirmed and everything processed (a later upload): `{confirmNow:false, batchReady:true}`.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement. On `confirmNow`, run the existing auto-confirm update and emit `listing/photos-confirmed` (condition reassessment stays on that event). On `batchReady`, emit `listing/studio-batch-ready`. Move `batch-quality-check` to `listing/studio-batch-ready`.
-- [ ] Step 4: `npm test` and `npx tsc --noEmit`. Expected: PASS and clean.
+- [ ] Step 4: `pnpm test` and `pnpm exec tsc --noEmit`. Expected: PASS and clean.
 - [ ] Step 5: Commit: `feat(photos): debounced batch readiness; quality check reruns per upload batch`.
 
 ### Task 7: Per-shot status through the SQL functions
@@ -205,9 +205,9 @@
   - Duplicates collapse.
   - Shots already `verified` are skipped.
   - An out-of-range index is ignored.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement and switch every writer. Then `grep -rn "photo_plan" src | grep -E "update\(|\.update" | grep -v test`. Expected: no direct whole-array writes remain apart from the step 2 insert.
-- [ ] Step 4: `npm test` and `npx tsc --noEmit`. Expected: PASS and clean.
+- [ ] Step 4: `pnpm test` and `pnpm exec tsc --noEmit`. Expected: PASS and clean.
 - [ ] Step 5: Commit: `feat(photo-plan): per-shot status, atomic writes, verification from quality check`.
 
 ### Task 8: Length × Width × Height
@@ -223,9 +223,9 @@
   - `getMeasurementFields('handbag', null, …)` keys come back in the order `['width','depth','height']` with labels `['Length','Width','Height']`.
   - `formatDimensions({width:9.84,height:6.69,depth:2.76}, …)` returns `'9.84" L × 2.76" W × 6.69" H'`.
   - Sneakers list the size fields before length/width/height.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement and update the prompt strings and formatters.
-- [ ] Step 4: `npm test`. Expected: PASS.
+- [ ] Step 4: `pnpm test`. Expected: PASS.
 - [ ] Step 5: Commit: `feat(measurements): L × W × H everywhere dimensions appear`.
 
 ### Task 9: Shared studio upload helper
@@ -242,9 +242,9 @@
   - `onProgress` is called after each file.
   - A 500 with `{error:'x'}` rejects with `'x'`.
   - Non-image files are skipped.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement and switch `AgentChat`.
-- [ ] Step 4: `npm test`. Expected: PASS.
+- [ ] Step 4: `pnpm test`. Expected: PASS.
 - [ ] Step 5: Commit: `refactor(photos): shared studio upload helper`.
 
 ### Task 10: Workspace shell (columns, dividers, chat rail, unread)
@@ -265,7 +265,7 @@
   - `countUnread(['a','b','c'], 'a') === 2`.
   - `countUnread(ids, null) === ids.length`.
   - An unknown `lastSeenId` counts all.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement:
   - The grid template is `${photoW}px 6px minmax(0,1fr) ${open ? '6px ' + chatW + 'px' : '0px 44px'}`.
   - Both dividers stay in the grid, using `invisible` rather than `hidden` when the chat is closed.
@@ -274,7 +274,7 @@
   - Opening the chat writes `lastSeen`.
   - Gate messages count as assistant messages.
   - Below `lg`, columns stack as today.
-- [ ] Step 4: `npm test` and `npx tsc --noEmit`. Expected: PASS and clean.
+- [ ] Step 4: `pnpm test` and `pnpm exec tsc --noEmit`. Expected: PASS and clean.
 - [ ] Step 5: Commit: `feat(workspace): resizable photo/chat columns, collapsible chat with unread badge`.
 
 ### Task 11: Photo column
@@ -286,9 +286,9 @@
 **Interfaces:**
 - Consumes: `uploadStudioPhotos` (Task 9); `EvidenceDrawer` unchanged
 
-- [ ] Step 1: Move the price card. Run `npx tsc --noEmit`. Expected: clean.
+- [ ] Step 1: Move the price card. Run `pnpm exec tsc --noEmit`. Expected: clean.
 - [ ] Step 2: Implement the grid, upload tile and drop overlay. Accept only `image/*`. Show a spinner tile per pending file, then `router.refresh()`. The overlay uses `pointer-events-none` and a drag-depth counter.
-- [ ] Step 3: Smoke test in `npm run dev` on OT-0006 and on a listing with only an intake photo:
+- [ ] Step 3: Smoke test in `pnpm dev` on OT-0006 and on a listing with only an intake photo:
   - Grid columns reflow while dragging the divider.
   - The upload tile opens a multi-select picker.
   - Dropping 2 images shows 2 spinner tiles, then real thumbnails.
@@ -310,14 +310,14 @@
   - `'re'` matches `Receipt`, `Reseller tag/UPC` and `Warranty/registration card`, and ends with a custom option.
   - An exact match has no custom option.
   - `present` matching is case-insensitive.
-- [ ] Step 2: `npm test`. Expected: FAIL.
+- [ ] Step 2: `pnpm test`. Expected: FAIL.
 - [ ] Step 3: Implement `inclusionOptions` and the components:
   - Combobox: ARIA combobox/listbox, ↑/↓/Enter/Esc, focus opens it.
   - Inclusion rows keep the colors at `FieldsPanel.tsx:645-701`.
   - Authentication: progress bar, status icon cycling as today, guidance always visible, keep the `Skip — I know it's authentic` button.
   - Photo Shoot: number, three-state box (empty / `bg-blue-500` taken / `bg-emerald-600` verified and locked with a tooltip), HERO/required/optional tag, description always visible. Shown at every status.
   - Hide the Authentication tab when the listing isn't luxury or has no `auth_plan`.
-- [ ] Step 4: `npm test`, `npx tsc --noEmit`, then a dev-server smoke test on OT-0006. Expected:
+- [ ] Step 4: `pnpm test`, `pnpm exec tsc --noEmit`, then a dev-server smoke test on OT-0006. Expected:
   - Tab counts are correct.
   - The combobox works from the keyboard.
   - Toggling a shot saves and survives a reload.
@@ -335,7 +335,7 @@
 
 ### Task 14: Verify, apply the migration, ship
 
-- [ ] Step 1: `npm test && npx tsc --noEmit && npm run lint && npm run build`. Expected: all pass.
+- [ ] Step 1: `pnpm test && pnpm exec tsc --noEmit && pnpm lint && pnpm build`. Expected: all pass.
 - [ ] Step 2: Re-run the Task 1 dry run (`BEGIN … ROLLBACK`) against production. Expected: every assertion passes. Report the row counts the backfill would touch (run its `WHERE` clauses as `SELECT count(*)`) to Joe.
 - [ ] Step 3: Stop and get Joe's explicit go-ahead to apply 0042 to production. Then apply it with `kubectl exec -i`, and check `SELECT count(*) FROM listings_backup_0042` matches `listings`.
 - [ ] Step 4: Run `/no-mistakes` to push and open the PR (bd ai-listings-7o0 in the body), then drive it with `/pr-loop`. The deploy has to land with or after the migration, because the code reads the new columns.
