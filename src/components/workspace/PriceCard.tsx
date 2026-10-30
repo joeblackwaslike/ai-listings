@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
-import { formatPrice } from '@/lib/utils'
+import { formatPrice, parsePrice } from '@/lib/utils'
 import { EvidenceDrawer } from './EvidenceDrawer'
 import { adjustForCondition, computeAdjustedPricing, conditionDelta, isPricingGateUnlocked, resolveFinalPriceCents } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, PricingComp, AdjustedComp, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
@@ -107,8 +107,8 @@ export function PriceCard({ listing, comps, priceHistory, platformPriceHistory }
                 onChange={(e) => setPriceOverrideInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    const n = parseFloat(priceOverrideInput)
-                    if (!isNaN(n) && n > 0) void savePriceOverride(Math.round(n * 100))
+                    const n = parsePrice(priceOverrideInput)
+                    if (n !== null) void savePriceOverride(Math.round(n * 100))
                   }
                   if (e.key === 'Escape') setPriceOverrideOpen(false)
                 }}
@@ -118,8 +118,8 @@ export function PriceCard({ listing, comps, priceHistory, platformPriceHistory }
               />
               <button
                 onClick={() => {
-                  const n = parseFloat(priceOverrideInput)
-                  if (!isNaN(n) && n > 0) void savePriceOverride(Math.round(n * 100))
+                  const n = parsePrice(priceOverrideInput)
+                  if (n !== null) void savePriceOverride(Math.round(n * 100))
                 }}
                 disabled={savingPriceOverride}
                 className="text-[10px] px-2 py-1 rounded bg-emerald-900/60 text-emerald-300 hover:bg-emerald-900/80 transition-colors disabled:opacity-40"

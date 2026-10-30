@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getMeasurementFields } from './utils'
+import { getMeasurementFields, parsePrice } from './utils'
 
 test('getMeasurementFields: jewelry ring on a plain band asks for one ID reading', () => {
   const fields = getMeasurementFields('jewelry', 'ring', ['Model: Classic Gold Band Ring', 'Style: Plain polished band'])
@@ -94,4 +94,10 @@ test('getMeasurementFields: ring_inscribed_size field is configured as free text
   const fields = getMeasurementFields('jewelry', 'ring', [])
   const inscribedField = fields.find((f) => f.key === 'ring_inscribed_size')
   assert.equal(inscribedField?.textInput, true)
+})
+
+test('parsePrice accepts positive finite numbers and rejects everything else', () => {
+  assert.equal(parsePrice('12'), 12)
+  assert.equal(parsePrice(' 45.5 '), 45.5)
+  for (const bad of ['', '0', '-3', 'Infinity', '12abc', 'abc', '1e999']) assert.equal(parsePrice(bad), null, bad)
 })

@@ -6,6 +6,12 @@ export function formatPrice(cents: number | null): string {
   return `$${(cents / 100).toFixed(0)}`
 }
 
+/** A user-typed dollar amount as a number; null unless it is strictly numeric, finite, and above zero. */
+export function parsePrice(input: string): number | null {
+  const n = Number(input)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export function relativeDate(isoString: string | null | undefined): string {
   if (!isoString) return '—'
   const days = Math.floor((Date.now() - new Date(isoString).getTime()) / 86_400_000)
