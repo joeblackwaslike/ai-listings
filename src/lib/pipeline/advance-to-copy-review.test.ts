@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { advanceToCopyReview, clearCopyApproval, rewriteFailureScope } from './advance-to-copy-review'
+import { advanceToCopyReview, clearCopyApproval, rewriteFailureScope, saveRewrittenCopy } from './advance-to-copy-review'
 
 function fakeSupabase(row: Record<string, unknown> | null) {
   const filters: Array<[string, unknown]> = []
@@ -51,4 +51,48 @@ test('rewriteFailureScope: a rewrite request also fails out of in_loop and drops
   assert.equal(first.revertStatus, 'condition_gate')
   assert.deepEqual(first.fromStatuses, ['condition_gate'])
   assert.deepEqual(first.extraUpdate, { condition_confirmed: false })
+})
+
+function fakeSaveSupabase(row: Record<string, unknown> | null) {
+  const written: Array<Record<string, unknown>> = []
+  const from = () => {
+    const filters: Array<[string, unknown]> = []
+    let patch: Record<string, unknown> | null = null
+    const builder: Record<string, unknown> = {
+      update: (p: Record<string, unknown>) => ((patch = p), builder),
+      select: () => builder,
+      eq: (col: string, val: unknown) => (filters.push([col, val]), builder),
+      in: (col: string, val: unknown) => (filters.push([col, val]), builder),
+      maybeSingle: async () => {
+        const matches = filters.every(([col, val]) =>
+          Array.isArray(val) ? val.includes(row?.[col]) : row?.[col] === val,
+        )
+        if (patch && row && matches) written.push(patch)
+        return { data: row && matches ? { id: row.id, status: row.status } : null, error: null }
+      },
+    }
+    return builder
+  }
+  return { db: { from } as unknown as SupabaseClient, written }
+}
+
+test('saveRewrittenCopy writes the new copy while the listing is still before finalize', async () => {
+  for (const status of ['condition_gate', 'copy_review', 'in_loop']) {
+    const { db, written } = fakeSaveSupabase({ id: 'a', status })
+    assert.equal(await saveRewrittenCopy(db, 'a', { title: 'new' }), true, status)
+    assert.deepEqual(written, [{ title: 'new' }])
+  }
+})
+
+test('saveRewrittenCopy leaves the approved copy alone once the listing moved to finalizing or shipped', async () => {
+  for (const status of ['finalizing', 'published', 'sold']) {
+    const { db, written } = fakeSaveSupabase({ id: 'a', status })
+    assert.equal(await saveRewrittenCopy(db, 'a', { title: 'new' }), false, status)
+    assert.deepEqual(written, [], status)
+  }
+})
+
+test('saveRewrittenCopy throws for an archived or missing listing so Inngest retries', async () => {
+  await assert.rejects(saveRewrittenCopy(fakeSaveSupabase({ id: 'a', status: 'archived' }).db, 'a', {}), /archived or deleted/)
+  await assert.rejects(saveRewrittenCopy(fakeSaveSupabase(null).db, 'a', {}), /archived or deleted/)
 })

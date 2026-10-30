@@ -21,6 +21,42 @@ export async function clearCopyApproval(supabase: SupabaseClient, listingId: str
 }
 
 /**
+ * Saves rewritten copy only while the listing can still take it back to review. False when the seller
+ * approved the old copy and finalized mid-rewrite: that approved copy stands, so unreviewed text is
+ * never what gets published. Throws for an archived or missing listing so Inngest retries.
+ */
+export async function saveRewrittenCopy(
+  supabase: SupabaseClient,
+  listingId: string,
+  fields: Record<string, unknown>,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('listings')
+    .update(fields)
+    .eq('id', listingId)
+    .in('status', REWRITE_ENTRY_STATUSES)
+    .select('id')
+    .maybeSingle()
+  if (error) {
+    throw new Error(`rewrite-listing: failed to update listing ${listingId} -- ${error.message}`)
+  }
+  if (data) return true
+
+  const { data: current, error: readError } = await supabase
+    .from('listings')
+    .select('status')
+    .eq('id', listingId)
+    .maybeSingle()
+  if (readError) {
+    throw new Error(`rewrite-listing: failed to re-read listing ${listingId} -- ${readError.message}`)
+  }
+  if (!current || current.status === 'archived') {
+    throw new Error(`rewrite-listing: update matched zero rows for listing ${listingId} -- listing may be archived or deleted`)
+  }
+  return false
+}
+
+/**
  * Where a rewrite that exhausted its retries lands. A rewrite request fails out of copy_review or
  * in_loop (approving the old copy mid-rewrite) back to copy_review with the stale approval dropped.
  */
