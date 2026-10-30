@@ -147,16 +147,21 @@ export const batchQualityCheck = inngest.createFunction(
     // while the check runs is newer than the stamp and keeps step 10 open.
     const checkedAt = await step.run('capture-check-start', () => new Date().toISOString())
 
-    const { data: photos } = await supabase
-      .from('photos')
-      .select('id, processed_url, raw_url, photoroom_meta')
-      .eq('listing_id', listingId)
-      .eq('type', 'studio')
-      .order('display_order', { ascending: true })
+    // One memoized snapshot: results below are indexed into it, so a replay must not re-query the photos.
+    const photos = await step.run('load-studio-photos', async () => {
+      const { data, error } = await supabase
+        .from('photos')
+        .select('id, processed_url, raw_url')
+        .eq('listing_id', listingId)
+        .eq('type', 'studio')
+        .order('display_order', { ascending: true })
+      if (error) throw new Error(`batch-quality-check: photo load failed — ${error.message}`)
+      return (data ?? []).map((p) => ({ id: p.id as string, url: (p.processed_url ?? p.raw_url) as string }))
+    })
 
-    if (!photos || photos.length === 0) return { ok: false, listingId, reason: 'no studio photos' }
+    if (photos.length === 0) return { ok: false, listingId, reason: 'no studio photos' }
 
-    const photoUrls = photos.map((p) => ((p.processed_url ?? p.raw_url) as string))
+    const photoUrls = photos.map((p) => p.url)
     const apiKeys = await getUserApiKeys(listingRow.user_id)
 
     const plan = await step.run('capture-shot-list', () => (listingRow.photo_plan as PhotoShot[] | null) ?? [])
