@@ -1,3 +1,4 @@
+// @ts-ignore bun:test has no type declarations installed (@types/bun absent)
 import { test, expect, mock } from 'bun:test'
 
 interface Op { table: string; op: string; patch?: unknown; filters: [string, unknown][] }
