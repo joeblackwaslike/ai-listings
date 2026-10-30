@@ -80,7 +80,7 @@ test('saveRewrittenCopy writes the new copy while the listing is still before fi
   for (const status of ['condition_gate', 'copy_review', 'in_loop']) {
     const { db, written } = fakeSaveSupabase({ id: 'a', status })
     assert.equal(await saveRewrittenCopy(db, 'a', { title: 'new' }), true, status)
-    assert.deepEqual(written, [{ title: 'new' }])
+    assert.deepEqual(written, [{ title: 'new', copy_approved_at: null }])
   }
 })
 

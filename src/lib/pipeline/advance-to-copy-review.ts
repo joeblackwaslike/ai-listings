@@ -33,7 +33,7 @@ export async function saveRewrittenCopy(
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from('listings')
-    .update(fields)
+    .update({ ...fields, copy_approved_at: null })
     .eq('id', listingId)
     .in('status', REWRITE_ENTRY_STATUSES)
     .select('id')
