@@ -74,10 +74,15 @@ export function ListingTabs({ listing, photosConfirmed }: Readonly<ListingTabsPr
       // On a failed save, roll back rather than leaving inclusions displayed that were never
       // persisted. Refresh either way (the server may have persisted before failing), so PriceCard (photo column, reads the server listing)
       // reprices against the new gate without waiting for the poll.
-      if (!res.ok) setInclusions(previous)
+      if (!res.ok) {
+        setInclusions(previous)
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        toast.error(body?.error ?? "Couldn't save the inclusions")
+      }
       router.refresh()
     } catch {
       setInclusions(previous)
+      toast.error("Couldn't save the inclusions")
     } finally {
       savingInclusionsRef.current = false
     }
@@ -126,8 +131,11 @@ export function ListingTabs({ listing, photosConfirmed }: Readonly<ListingTabsPr
   async function refreshPhotoPlan() {
     setRefreshingPlan(true)
     try {
-      await fetch(`/api/listings/${listing.id}/photo-plan/refresh`, { method: 'POST' })
+      const res = await fetch(`/api/listings/${listing.id}/photo-plan/refresh`, { method: 'POST' })
+      if (!res.ok) toast.error("Couldn't refresh the photo plan")
       router.refresh()
+    } catch {
+      toast.error("Couldn't refresh the photo plan")
     } finally {
       setRefreshingPlan(false)
     }
