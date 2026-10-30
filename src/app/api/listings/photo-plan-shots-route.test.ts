@@ -6,7 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { handleShotStatusPatch } from './[id]/photo-plan/shots/route'
 
 interface StubOpts {
-  listing: { id: string } | null
+  listing: { id: string; user_id?: string } | null
   rpcResult?: { data: unknown; error: { message: string } | null }
 }
 
@@ -17,9 +17,14 @@ function stubSupabase(opts: StubOpts) {
       return {
         select: (_cols: string) => {
           calls.push({ op: `select:${table}` })
+          const filters: Record<string, string> = {}
           const chain = {
-            eq: (_col: string, _val: string) => chain,
-            maybeSingle: async () => ({ data: opts.listing, error: null }),
+            eq: (col: string, val: string) => ((filters[col] = val), chain),
+            maybeSingle: async () => {
+              const l = opts.listing
+              const matches = l && filters.id === l.id && (l.user_id === undefined || filters.user_id === l.user_id)
+              return { data: matches ? { id: l.id } : null, error: null }
+            },
           }
           return chain
         },
@@ -37,7 +42,7 @@ function stubSession(user: { id: string } | null) {
   return { auth: { getUser: async () => ({ data: { user } }) } }
 }
 
-const owned = { listing: { id: 'listing-1' } }
+const owned = { listing: { id: 'listing-1', user_id: 'user-1' } }
 
 test('shots PATCH: unauthenticated request is rejected with 401 and touches nothing', async () => {
   const { client, calls } = stubSupabase(owned)
@@ -65,6 +70,13 @@ test('shots PATCH: invalid bodies are rejected with 400 before any query', async
 
 test('shots PATCH: a listing the user does not own is 404 and never reaches the rpc', async () => {
   const { client, calls } = stubSupabase({ listing: null })
+  const res = await handleShotStatusPatch(stubSession({ id: 'user-1' }), client, 'listing-1', { shot: 'Front', status: 'taken' })
+  assert.equal(res.status, 404)
+  assert.deepEqual(calls.map((c) => c.op), ['select:listings'])
+})
+
+test('shots PATCH: a listing owned by a different user is 404 and never reaches the rpc', async () => {
+  const { client, calls } = stubSupabase({ listing: { id: 'listing-1', user_id: 'someone-else' } })
   const res = await handleShotStatusPatch(stubSession({ id: 'user-1' }), client, 'listing-1', { shot: 'Front', status: 'taken' })
   assert.equal(res.status, 404)
   assert.deepEqual(calls.map((c) => c.op), ['select:listings'])
