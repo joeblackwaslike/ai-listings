@@ -72,10 +72,10 @@ export function ListingTabs({ listing, photosConfirmed }: Readonly<ListingTabsPr
         body: JSON.stringify({ inclusions: updated }),
       })
       // On a failed save, roll back rather than leaving inclusions displayed that were never
-      // persisted. On success, refresh so PriceCard (photo column, reads the server listing)
+      // persisted. Refresh either way (the server may have persisted before failing), so PriceCard (photo column, reads the server listing)
       // reprices against the new gate without waiting for the poll.
-      if (res.ok) router.refresh()
-      else setInclusions(previous)
+      if (!res.ok) setInclusions(previous)
+      router.refresh()
     } catch {
       setInclusions(previous)
     } finally {
@@ -93,11 +93,18 @@ export function ListingTabs({ listing, photosConfirmed }: Readonly<ListingTabsPr
     pendingAuthSaves.current += 1
     setSavingAuth(true)
     try {
-      await fetch(`/api/listings/${listing.id}/auth-plan`, {
+      const res = await fetch(`/api/listings/${listing.id}/auth-plan`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ auth_plan: updated }),
       })
+      if (!res.ok) {
+        toast.error("Couldn't save the authentication plan")
+        router.refresh()
+      }
+    } catch {
+      toast.error("Couldn't save the authentication plan")
+      router.refresh()
     } finally {
       pendingAuthSaves.current -= 1
       setSavingAuth(false)

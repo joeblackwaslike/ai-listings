@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { toast } from 'sonner'
 import { PipelineTimeline } from './PipelineTimeline'
 import { ListingTabs } from './ListingTabs'
 import { DetailsList } from './DetailsList'
@@ -76,6 +77,9 @@ export function FieldsPanel({ listing, photos }: Readonly<FieldsPanelProps>) {
     try {
       const res = await fetch(`/api/listings/${listing.id}/confirm-photos`, { method: 'PATCH' })
       if (res.ok) setConfirmedLocally(true)
+      else toast.error("Couldn't confirm photos")
+    } catch {
+      toast.error("Couldn't confirm photos")
     } finally {
       setConfirmingPhotos(false)
     }

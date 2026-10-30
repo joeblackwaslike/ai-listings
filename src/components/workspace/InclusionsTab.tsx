@@ -59,7 +59,7 @@ export function InclusionsTab({ inclusions, category, subType, onAdd, onConfirm,
               </span>
               <button
                 onClick={() => onRemove(i)}
-                className="flex-none opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-gray-700 hover:text-red-400"
+                className="flex-none opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100 transition-opacity text-gray-700 hover:text-red-400"
                 title="Remove"
                 aria-label={`Remove ${item.item}`}
               >
