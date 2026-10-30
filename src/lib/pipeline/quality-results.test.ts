@@ -31,11 +31,16 @@ test('overridden photos are neither failing nor recovered', () => {
 
 test('passing photos with nothing stored need no update', () => {
   const plan = planQualityUpdates([result(0, true), result(1, true)], ids, { a: null, b: { quality_failed: false } })
-  assert.deepEqual(plan, { failing: [], recovered: [] })
+  assert.deepEqual(plan, { failing: [], recovered: [], liveIndexes: [0, 1] })
 })
 
 test('photos deleted while the check ran are ignored, but an existing photo with null meta is not', () => {
   const plan = planQualityUpdates([result(0, false), result(1, false)], ids, { b: null })
   assert.deepEqual(plan.failing.map((r) => r.index), [1])
   assert.deepEqual(plan.recovered, [])
+})
+
+test('a deleted failing photo is not a live index, so it cannot count as passing', () => {
+  const plan = planQualityUpdates([result(0, false), result(1, true)], ids, { b: null })
+  assert.deepEqual(plan.liveIndexes, [1])
 })

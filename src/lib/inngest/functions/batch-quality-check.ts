@@ -172,7 +172,7 @@ export const batchQualityCheck = inngest.createFunction(
       return completePhotoResults(raw, photos.length)
     })
 
-    const failed = await step.run('record-quality-results', async () => {
+    const { failed, liveIndexes } = await step.run('record-quality-results', async () => {
       const photoIds = photos.map((p) => p.id)
       // Re-read: a seller may have overridden a photo while the check ran.
       const { data: fresh, error: freshError } = await supabase
@@ -181,7 +181,7 @@ export const batchQualityCheck = inngest.createFunction(
         .in('id', photoIds)
       if (freshError) throw new Error(`batch-quality-check: photo re-read failed — ${freshError.message}`)
       const storedMeta = Object.fromEntries((fresh ?? []).map((p) => [p.id, p.photoroom_meta]))
-      const { failing: stillFailed, recovered } = planQualityUpdates(results, photoIds, storedMeta)
+      const { failing: stillFailed, recovered, liveIndexes } = planQualityUpdates(results, photoIds, storedMeta)
 
       if (recovered.length > 0) {
         const clears = await Promise.all(
@@ -233,9 +233,10 @@ export const batchQualityCheck = inngest.createFunction(
       }
 
       await markQualityChecked(supabase, listingId, checkedAt)
-      return stillFailed
+      return { failed: stillFailed, liveIndexes }
     })
     const failedIndexes = new Set(failed.map((r) => r.index))
+    const live = new Set(liveIndexes)
 
     // Last, and never fatal: a shot-status RPC failure must not undo the quality verdict above.
     await step.run('verify-shots', async () => {
@@ -243,7 +244,7 @@ export const batchQualityCheck = inngest.createFunction(
         await verifyShots(
           supabase,
           listingId,
-          shotsToVerify(plan, results.map((r) => ({ passed: !failedIndexes.has(r.index), shot_index: r.shot_index })))
+          shotsToVerify(plan, results.filter((r) => live.has(r.index)).map((r) => ({ passed: !failedIndexes.has(r.index), shot_index: r.shot_index })))
         )
       } catch (err) {
         console.error(`[batch-quality-check] shot verification failed for listing ${listingId} (continuing):`, err)
