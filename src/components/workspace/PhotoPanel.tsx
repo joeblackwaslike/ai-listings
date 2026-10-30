@@ -173,6 +173,9 @@ export function PhotoPanel({ photos, pendingUploads, onAddPhotos }: PhotoPanelPr
         const data = await res.json().catch(() => null) as { error?: string } | null
         toast.error(data?.error ?? 'Photo action failed')
       }
+    } catch (err) {
+      console.error('[PhotoPanel] photo action failed:', err)
+      toast.error('Photo action failed. Check your connection and try again.')
     } finally {
       setBusy((prev) => ({ ...prev, [photoId]: false }))
     }
