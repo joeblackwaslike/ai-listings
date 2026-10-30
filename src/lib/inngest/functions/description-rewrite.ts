@@ -2,7 +2,7 @@ import { inngest } from '../client'
 import type { ListingConditionConfirmedEvent, ListingRewriteRequestedEvent } from '../client'
 import { loadApiKeys, runRewriteListing } from '@/lib/pipeline/rewrite-listing'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
-import { advanceToCopyReview } from '@/lib/pipeline/advance-to-copy-review'
+import { advanceToCopyReview, clearCopyApproval, rewriteFailureScope } from '@/lib/pipeline/advance-to-copy-review'
 import { blockedUpdate, unblockedUpdate } from '@/lib/pipeline/pipeline-end'
 
 type TriggerEvent = ListingConditionConfirmedEvent | ListingRewriteRequestedEvent
@@ -23,13 +23,7 @@ export const descriptionRewrite = inngest.createFunction(
       const listingId = innerEvent.data.listingId
       if (!listingId) return
 
-      // Revert to the status the listing was in when this function fired.
-      // condition-confirmed path: listing was in condition_gate.
-      // rewrite-requested path: listing was in copy_review.
-      const revertStatus =
-        innerEvent.name === 'listing/rewrite-requested' ? 'copy_review' : 'condition_gate'
-      const extraUpdate =
-        revertStatus === 'condition_gate' ? { condition_confirmed: false } : {}
+      const { revertStatus, fromStatuses, extraUpdate } = rewriteFailureScope(innerEvent.name)
 
       const supabase = getSupabaseAdmin()
       const { data: updated, error: revertError } = await supabase
@@ -42,7 +36,7 @@ export const descriptionRewrite = inngest.createFunction(
           ...extraUpdate,
         })
         .eq('id', listingId)
-        .eq('status', revertStatus)
+        .in('status', fromStatuses)
         .select('id')
         .maybeSingle()
       if (revertError) {
@@ -55,16 +49,11 @@ export const descriptionRewrite = inngest.createFunction(
   async ({ event, step }) => {
     const { listingId, extraNotes } = (event as unknown as TriggerEvent).data
 
-    await step.run('clear-copy-approval', async () => {
-      const { error } = await getSupabaseAdmin()
-        .from('listings')
-        .update({ copy_approved_at: null })
-        .eq('id', listingId)
-        .neq('status', 'archived')
-      if (error) {
-        throw new Error(`description-rewrite: failed to clear copy_approved_at for listing ${listingId} -- ${error.message}`)
-      }
-    })
+    const cleared = await step.run('clear-copy-approval', () => clearCopyApproval(getSupabaseAdmin(), listingId))
+    if (!cleared) {
+      console.warn(`description-rewrite: skipped rewrite for ${listingId} — listing archived or already past copy review`)
+      return { ok: false, listingId, skipped: true }
+    }
 
     await step.run('rewrite-listing', async () => {
       const apiKeys = await loadApiKeys(listingId)

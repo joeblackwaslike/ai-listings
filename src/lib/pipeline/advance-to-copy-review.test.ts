@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { advanceToCopyReview } from './advance-to-copy-review'
+import { advanceToCopyReview, clearCopyApproval, rewriteFailureScope } from './advance-to-copy-review'
 
 function fakeSupabase(row: Record<string, unknown> | null) {
   const filters: Array<[string, unknown]> = []
@@ -28,4 +28,27 @@ test('advances when condition is still confirmed', async () => {
 test('matches no row when condition reassessment reset condition_confirmed', async () => {
   const db = fakeSupabase({ id: 'a', status: 'condition_gate', condition_confirmed: false })
   assert.equal(await advanceToCopyReview(db, 'a'), false)
+})
+
+test('clearCopyApproval clears approval and reports true while the listing is in a rewrite entry status', async () => {
+  for (const status of ['condition_gate', 'copy_review', 'in_loop']) {
+    assert.equal(await clearCopyApproval(fakeSupabase({ id: 'a', status }), 'a'), true, status)
+  }
+})
+
+test('clearCopyApproval reports false and skips listings that already moved on', async () => {
+  for (const status of ['finalizing', 'published', 'sold', 'archived']) {
+    assert.equal(await clearCopyApproval(fakeSupabase({ id: 'a', status }), 'a'), false, status)
+  }
+})
+
+test('rewriteFailureScope: a rewrite request also fails out of in_loop and drops approval', () => {
+  const rewrite = rewriteFailureScope('listing/rewrite-requested')
+  assert.equal(rewrite.revertStatus, 'copy_review')
+  assert.deepEqual(rewrite.fromStatuses, ['copy_review', 'in_loop'])
+  assert.deepEqual(rewrite.extraUpdate, { copy_approved_at: null })
+  const first = rewriteFailureScope('listing/condition-confirmed')
+  assert.equal(first.revertStatus, 'condition_gate')
+  assert.deepEqual(first.fromStatuses, ['condition_gate'])
+  assert.deepEqual(first.extraUpdate, { condition_confirmed: false })
 })
