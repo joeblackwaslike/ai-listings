@@ -2,7 +2,8 @@ import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import { inngest } from '../client'
 import type { StudioBatchReadyEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
-import { blockedUpdate } from '@/lib/pipeline/pipeline-end'
+import { blockedUpdate, unblockedUpdate } from '@/lib/pipeline/pipeline-end'
+import { planQualityUpdates } from '@/lib/pipeline/quality-results'
 import { toPublicUrl } from '@/lib/pipeline/to-public-url'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import type { ClaudeImageInput } from '@/lib/claude'
@@ -172,21 +173,32 @@ export const batchQualityCheck = inngest.createFunction(
     })
 
     const failed = await step.run('record-quality-results', async () => {
-      const candidates = results.filter((r) => !r.passed)
-      let stillFailed: PhotoResult[] = []
+      const photoIds = photos.map((p) => p.id)
+      // Re-read: a seller may have overridden a photo while the check ran.
+      const { data: fresh, error: freshError } = await supabase
+        .from('photos')
+        .select('id, photoroom_meta')
+        .in('id', photoIds)
+      if (freshError) throw new Error(`batch-quality-check: photo re-read failed — ${freshError.message}`)
+      const storedMeta = Object.fromEntries((fresh ?? []).map((p) => [p.id, p.photoroom_meta]))
+      const { failing: stillFailed, recovered } = planQualityUpdates(results, photoIds, storedMeta)
 
-      if (candidates.length > 0) {
-        // Re-read: a seller may have overridden a photo while the check ran.
-        const { data: fresh, error: freshError } = await supabase
-          .from('photos')
-          .select('id, photoroom_meta')
-          .in('id', candidates.map((r) => photos[r.index].id))
-        if (freshError) throw new Error(`batch-quality-check: photo re-read failed — ${freshError.message}`)
-        const overridden = new Set((fresh ?? []).filter((p) => p.photoroom_meta?.quality_overridden).map((p) => p.id))
-        stillFailed = candidates.filter((r) => !overridden.has(photos[r.index].id))
+      if (recovered.length > 0) {
+        const clears = await Promise.all(
+          recovered.map((p) => supabase.from('photos').update({ photoroom_meta: p.meta }).eq('id', p.photoId))
+        )
+        const clearError = clears.find((u) => u.error)?.error
+        if (clearError) throw new Error(`batch-quality-check: photo quality clear failed — ${clearError.message}`)
       }
 
-      if (stillFailed.length > 0) {
+      if (stillFailed.length === 0) {
+        const { error: unblockError } = await supabase
+          .from('listings')
+          .update(unblockedUpdate())
+          .eq('id', listingId)
+          .eq('agent_blocked_kind', 'photo_quality')
+        if (unblockError) throw new Error(`batch-quality-check: listing unblock failed — ${unblockError.message}`)
+      } else {
         const updates = await Promise.all(
           stillFailed.map((r) =>
             supabase
