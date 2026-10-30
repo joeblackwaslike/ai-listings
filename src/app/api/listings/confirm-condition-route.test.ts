@@ -1,4 +1,4 @@
-// @ts-ignore bun:test has no type declarations installed (@types/bun absent)
+// @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { test, expect, mock, spyOn } from 'bun:test'
 
 let updateFilters: [string, unknown][] = []
