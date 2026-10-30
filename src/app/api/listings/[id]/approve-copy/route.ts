@@ -23,6 +23,19 @@ export async function PATCH(
     .maybeSingle()
   if (!listing) return Response.json({ error: 'Not found' }, { status: 404 })
 
+  // Approving copy resolves a failed rewrite, not a photo_quality block that still needs the seller.
+  // Runs before the status flip so a failure here leaves the listing in copy_review and retryable.
+  const { error: unblockError } = await supabase
+    .from('listings')
+    .update(unblockedUpdate())
+    .eq('id', id)
+    .eq('status', 'copy_review')
+    .eq('agent_blocked_kind', 'rewrite_failed')
+  if (unblockError) {
+    console.error(`approve-copy: failed to clear rewrite_failed block for listing ${id}:`, unblockError)
+    return Response.json({ error: 'Database error — please try again' }, { status: 500 })
+  }
+
   // CAS: only advance if still in copy_review
   const { data: updated, error } = await supabase
     .from('listings')
@@ -39,14 +52,6 @@ export async function PATCH(
   if (!updated) {
     return Response.json({ error: 'Listing is no longer in copy review' }, { status: 409 })
   }
-
-  // Approving copy resolves a failed rewrite, not a photo_quality block that still needs the seller.
-  const { error: unblockError } = await supabase
-    .from('listings')
-    .update(unblockedUpdate())
-    .eq('id', id)
-    .eq('agent_blocked_kind', 'rewrite_failed')
-  if (unblockError) console.error(`approve-copy: failed to clear rewrite_failed block for listing ${id}:`, unblockError)
 
   return Response.json({ ok: true })
 }
