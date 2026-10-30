@@ -24,3 +24,11 @@ export function shotsToVerify(
 export function photoResultsInRange<T extends { index: number }>(results: T[], photoCount: number): T[] {
   return results.filter((r) => Number.isInteger(r.index) && r.index >= 0 && r.index < photoCount)
 }
+
+/** photoResultsInRange, but throws unless every photo got a result: a partial verdict must not be recorded as a completed check. */
+export function completePhotoResults<T extends { index: number }>(results: T[], photoCount: number): T[] {
+  const inRange = photoResultsInRange(results, photoCount)
+  const covered = new Set(inRange.map((r) => r.index)).size
+  if (covered < photoCount) throw new Error(`quality check returned results for ${covered} of ${photoCount} photos`)
+  return inRange
+}
