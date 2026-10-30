@@ -58,3 +58,13 @@ test('already-shipped listings skip photo, copy and quality checks', () => {
     assert.equal(canFinalizeOrPublish({ ...legacy, condition_confirmed: false }, []).ok, false)
   }
 })
+
+test('publish gate requires at least one studio photo unless already shipped', () => {
+  const intake = { type: 'intake', photoroom_meta: null } as unknown as typeof studio
+  for (const photos of [[], [intake]]) {
+    const r = canFinalizeOrPublish(ok, photos)
+    assert.equal(r.ok, false)
+    assert.match((r as { reason: string }).reason, /studio photo/i)
+  }
+  assert.deepEqual(canFinalizeOrPublish({ ...ok, status: 'sold' }, []), { ok: true })
+})

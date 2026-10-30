@@ -17,6 +17,7 @@ export function canFinalizeOrPublish(
 ): GateResult {
   const shipped = l.status === 'published' || l.status === 'sold'
   if (!shipped && !l.photos_confirmed) return { ok: false, reason: 'Confirm studio photos first.' }
+  if (!shipped && !photos.some((p) => p.type === 'studio')) return { ok: false, reason: 'Add at least one studio photo first.' }
   if (!isPricingGateUnlocked({ condition_confirmed: l.condition_confirmed, inclusions: l.inclusions ?? [] })) {
     return { ok: false, reason: 'Confirm condition and all inclusions first.' }
   }
