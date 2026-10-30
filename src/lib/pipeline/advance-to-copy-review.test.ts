@@ -92,6 +92,12 @@ test('saveRewrittenCopy leaves the approved copy alone once the listing moved to
   }
 })
 
+test('saveRewrittenCopy throws for a status that should never be rewriting so the dropped copy is not silent', async () => {
+  for (const status of ['intake', 'id_gate', 'gender_gate']) {
+    await assert.rejects(saveRewrittenCopy(fakeSaveSupabase({ id: 'a', status }).db, 'a', {}), new RegExp(`unexpected status ${status}`), status)
+  }
+})
+
 test('saveRewrittenCopy throws for an archived or missing listing so Inngest retries', async () => {
   await assert.rejects(saveRewrittenCopy(fakeSaveSupabase({ id: 'a', status: 'archived' }).db, 'a', {}), /archived or deleted/)
   await assert.rejects(saveRewrittenCopy(fakeSaveSupabase(null).db, 'a', {}), /archived or deleted/)

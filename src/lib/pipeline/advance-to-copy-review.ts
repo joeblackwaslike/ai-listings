@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const REWRITE_ENTRY_STATUSES = ['condition_gate', 'copy_review', 'in_loop']
+const PAST_COPY_REVIEW_STATUSES = ['finalizing', 'published', 'sold']
 
 /**
  * Drops a prior copy approval before a rewrite. False (nothing changed) when the listing already
@@ -23,7 +24,7 @@ export async function clearCopyApproval(supabase: SupabaseClient, listingId: str
 /**
  * Saves rewritten copy only while the listing can still take it back to review. False when the seller
  * approved the old copy and finalized mid-rewrite: that approved copy stands, so unreviewed text is
- * never what gets published. Throws for an archived or missing listing so Inngest retries.
+ * never what gets published. Throws for an archived, missing or otherwise unexpected status so Inngest retries.
  */
 export async function saveRewrittenCopy(
   supabase: SupabaseClient,
@@ -52,6 +53,9 @@ export async function saveRewrittenCopy(
   }
   if (!current || current.status === 'archived') {
     throw new Error(`rewrite-listing: update matched zero rows for listing ${listingId} -- listing may be archived or deleted`)
+  }
+  if (!PAST_COPY_REVIEW_STATUSES.includes(current.status)) {
+    throw new Error(`rewrite-listing: listing ${listingId} has unexpected status ${current.status} -- rewritten copy not saved`)
   }
   return false
 }
