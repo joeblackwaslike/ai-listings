@@ -69,8 +69,9 @@ WHERE b.id = l.id
 
 -- 4. finalizing rows must pass the new publish gate or go back to in_loop.
 WITH gate AS (
-  SELECT l.id,
+  SELECT l.id, s.has_studio,
     l.photos_confirmed
+      AND s.has_studio
       AND l.condition_confirmed
       AND NOT EXISTS (
         SELECT 1 FROM jsonb_array_elements(
@@ -84,12 +85,16 @@ WITH gate AS (
           AND p.photoroom_meta->>'quality_failed' = 'true'
       ) AS passes
   FROM listings l
+  CROSS JOIN LATERAL (
+    SELECT EXISTS (SELECT 1 FROM photos p WHERE p.listing_id = l.id AND p.type = 'studio') AS has_studio
+  ) s
   WHERE l.status = 'finalizing'
 )
 UPDATE listings l
 SET copy_approved_at = CASE WHEN g.passes THEN coalesce(l.copy_approved_at, b.updated_at) ELSE NULL END,
     status = CASE WHEN g.passes THEN l.status ELSE 'in_loop' END,
-    condition_confirmed = CASE WHEN NOT g.passes AND NOT l.photos_confirmed THEN false ELSE l.condition_confirmed END
+    photos_confirmed = CASE WHEN NOT g.has_studio THEN false ELSE l.photos_confirmed END,
+    condition_confirmed = CASE WHEN NOT g.passes AND (NOT l.photos_confirmed OR NOT g.has_studio) THEN false ELSE l.condition_confirmed END
 FROM gate g
 JOIN listings_backup_0042 b ON b.id = g.id
 WHERE l.id = g.id;

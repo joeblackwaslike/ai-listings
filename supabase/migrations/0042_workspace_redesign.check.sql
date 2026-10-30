@@ -3,7 +3,7 @@
 -- marker re-runs the whole migration to check a rerun keeps real copy approvals:
 --   awk -v m=supabase/migrations/0042_workspace_redesign.sql '/^-- @@MIGRATION@@/{while((getline l < m)>0) print l; close(m); next}1' \
 --     supabase/migrations/0042_workspace_redesign.check.sql
--- ids end in the row number: ...0a1 .. ...0b8
+-- ids end in the row number: ...0a1 .. ...0b9
 INSERT INTO listings (id, status, photos_confirmed, condition_confirmed, agent_blocked, pipeline_step, pipeline_total, inclusions, updated_at) VALUES
   ('00000000-0000-0000-0000-0000000000a1', 'condition_gate', false, true,  false, 5, 5, '[]', '2026-03-01T00:00:00Z'),
   ('00000000-0000-0000-0000-0000000000a2', 'finalizing',     true,  true,  false, 5, 5, '[{"item":"box","source":"manual","confirmed":false,"notes":null}]', '2026-02-01T00:00:00Z'),
@@ -21,14 +21,18 @@ INSERT INTO listings (id, status, photos_confirmed, condition_confirmed, agent_b
   ('00000000-0000-0000-0000-0000000000b5', 'in_loop',        false, false, true,  1, 5, '[]', '2026-03-09T00:00:00Z'),
   ('00000000-0000-0000-0000-0000000000b6', 'in_loop',        true,  true,  false, 5, 5, '[]', '2026-04-01T00:00:00Z'),
   ('00000000-0000-0000-0000-0000000000b7', 'finalizing',     true,  true,  false, 5, 5, '[{"item":"box","source":"manual","confirmed":"yes","notes":null}]', '2025-09-01T00:00:00Z'),
-  ('00000000-0000-0000-0000-0000000000b8', 'finalizing',     true,  true,  false, 5, 5, '{}', '2025-08-01T00:00:00Z');
+  ('00000000-0000-0000-0000-0000000000b8', 'finalizing',     true,  true,  false, 5, 5, '{}', '2025-08-01T00:00:00Z'),
+  ('00000000-0000-0000-0000-0000000000b9', 'finalizing',     true,  true,  false, 5, 5, '[]', '2025-07-01T00:00:00Z');
 INSERT INTO listings (id, status, photo_plan) VALUES
   ('00000000-0000-0000-0000-0000000000a5', 'in_loop',
    '[{"shot":"front","status":"taken"},{"shot":"back","status":"verified"},{"shot":"side"}]');
 INSERT INTO photos (listing_id, type, raw_url, photoroom_meta) VALUES
   ('00000000-0000-0000-0000-0000000000b0', 'studio', 'x', '{"quality_failed":true}'),
   ('00000000-0000-0000-0000-0000000000b3', 'studio', 'x', '{"quality_failed":true}'),
-  ('00000000-0000-0000-0000-0000000000b2', 'studio', 'x', '{"quality_failed":false}');
+  ('00000000-0000-0000-0000-0000000000b2', 'studio', 'x', '{"quality_failed":false}'),
+  ('00000000-0000-0000-0000-0000000000a2', 'studio', 'x', '{}'),
+  ('00000000-0000-0000-0000-0000000000b7', 'studio', 'x', '{}'),
+  ('00000000-0000-0000-0000-0000000000b8', 'studio', 'x', '{}');
 
 -- @@MIGRATION@@
 
@@ -105,6 +109,11 @@ BEGIN
 
   SELECT * INTO r FROM listings WHERE id = '00000000-0000-0000-0000-0000000000b8';
   ASSERT r.status = 'finalizing' AND r.copy_approved_at = '2025-08-01T00:00:00Z', 'b8 non-array inclusions broke the gate';
+
+  SELECT * INTO r FROM listings WHERE id = '00000000-0000-0000-0000-0000000000b9';
+  ASSERT r.status = 'in_loop' AND r.copy_approved_at IS NULL AND NOT r.photos_confirmed AND NOT r.condition_confirmed,
+    'b9 confirmed photos with no studio photo not reset like unconfirmed photos';
+  ASSERT r.quality_checked_at IS NULL, 'b9 got quality_checked_at';
 
   plan := update_photo_plan('00000000-0000-0000-0000-0000000000a5',
     '[{"shot":"front"},{"shot":"back","status":"pending"},{"shot":"side","status":"verified"},{"shot":"top","status":"verified"},{"shot":"bottom","status":"taken"}]');
