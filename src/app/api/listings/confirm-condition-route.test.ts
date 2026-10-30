@@ -1,4 +1,4 @@
-import { test, expect, mock } from 'bun:test'
+import { test, expect, mock, spyOn } from 'bun:test'
 
 let updateFilters: [string, unknown][] = []
 let updateResult: unknown = { id: 'l1' }
@@ -17,13 +17,18 @@ function builder(isUpdate: boolean) {
   return b
 }
 
+const realServer = await import('@/lib/supabase/server')
 mock.module('@/lib/supabase/server', () => ({
+  ...realServer,
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) } }),
 }))
+const realPush = await import('@/lib/pipeline/supabase-push')
 mock.module('@/lib/pipeline/supabase-push', () => ({
+  ...realPush,
   getSupabaseAdmin: () => ({ from: () => ({ select: () => builder(false), update: () => builder(true) }) }),
 }))
-mock.module('@/lib/inngest/client', () => ({ inngest: { send: async () => ({}) } }))
+const { inngest } = await import('@/lib/inngest/client')
+spyOn(inngest, 'send').mockResolvedValue({ ids: [] })
 
 const { PATCH } = await import('./[id]/confirm-condition/route')
 const ctx = { params: Promise.resolve({ id: 'l1' }) }

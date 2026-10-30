@@ -19,10 +19,14 @@ function builder(op: string, patch?: unknown) {
   return b
 }
 
+const realServer = await import('@/lib/supabase/server')
 mock.module('@/lib/supabase/server', () => ({
+  ...realServer,
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) } }),
 }))
+const realPush = await import('@/lib/pipeline/supabase-push')
 mock.module('@/lib/pipeline/supabase-push', () => ({
+  ...realPush,
   getSupabaseAdmin: () => ({
     from: () => ({
       select: () => builder('owner'),
