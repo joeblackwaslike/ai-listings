@@ -185,7 +185,13 @@ export const batchQualityCheck = inngest.createFunction(
 
       if (recovered.length > 0) {
         const clears = await Promise.all(
-          recovered.map((p) => supabase.from('photos').update({ photoroom_meta: p.meta }).eq('id', p.photoId))
+          recovered.map((p) =>
+            supabase
+              .from('photos')
+              .update({ photoroom_meta: p.meta })
+              .eq('id', p.photoId)
+              .or('photoroom_meta->>quality_overridden.is.null,photoroom_meta->>quality_overridden.neq.true')
+          )
         )
         const clearError = clears.find((u) => u.error)?.error
         if (clearError) throw new Error(`batch-quality-check: photo quality clear failed — ${clearError.message}`)

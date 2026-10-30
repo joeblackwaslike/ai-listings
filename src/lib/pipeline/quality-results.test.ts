@@ -33,3 +33,9 @@ test('passing photos with nothing stored need no update', () => {
   const plan = planQualityUpdates([result(0, true), result(1, true)], ids, { a: null, b: { quality_failed: false } })
   assert.deepEqual(plan, { failing: [], recovered: [] })
 })
+
+test('photos deleted while the check ran are ignored, but an existing photo with null meta is not', () => {
+  const plan = planQualityUpdates([result(0, false), result(1, false)], ids, { b: null })
+  assert.deepEqual(plan.failing.map((r) => r.index), [1])
+  assert.deepEqual(plan.recovered, [])
+})
