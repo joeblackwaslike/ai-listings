@@ -79,6 +79,7 @@ export async function PATCH(
     .eq('user_id', user.id)
     .eq('status', 'condition_gate')
     .eq('condition_confirmed', false)
+    .eq('photos_confirmed', true)
     .select('id')
     .maybeSingle()
 
@@ -86,7 +87,7 @@ export async function PATCH(
     console.error(`confirm-condition: failed to update listing ${id}:`, updateError)
     return Response.json({ error: 'Failed to save condition. Please try again.' }, { status: 500 })
   }
-  if (!updatedListing) return Response.json({ error: 'listing is not in condition_gate status' }, { status: 409 })
+  if (!updatedListing) return Response.json({ error: 'Listing is not awaiting condition confirmation (status or photo confirmation changed)' }, { status: 409 })
 
   try {
     await inngest.send({
