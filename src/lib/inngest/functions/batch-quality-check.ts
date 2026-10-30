@@ -217,6 +217,7 @@ export const batchQualityCheck = inngest.createFunction(
                 },
               })
               .eq('id', photos[r.index].id)
+              .or('photoroom_meta->>quality_overridden.is.null,photoroom_meta->>quality_overridden.neq.true')
           )
         )
         const photoError = updates.find((u) => u.error)?.error
