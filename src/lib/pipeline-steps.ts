@@ -18,7 +18,7 @@ interface StepDef {
 }
 
 function isQualityCheckDone(listing: Listing, studio: Photo[]): boolean {
-  if (!listing.photos_confirmed || !listing.quality_checked_at) return false
+  if (!listing.photos_confirmed || !listing.quality_checked_at || studio.length === 0) return false
   const checkedAt = Date.parse(listing.quality_checked_at)
   const newestUpload = Math.max(0, ...studio.map((p) => Date.parse(p.created_at)))
   const anyFailed = studio.some((p) => p.photoroom_meta?.quality_failed === true)

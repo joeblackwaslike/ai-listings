@@ -93,3 +93,8 @@ test('quality_check not done when checked before newest studio photo', () => {
   assert.equal(q([studio({ created_at: T0 })]), 'done')
   assert.equal(q([studio({ created_at: T0, photoroom_meta: { quality_failed: true } })]), 'active')
 })
+
+test('quality_check is not done with no studio photos', () => {
+  const l = listing({ photos_confirmed: true, quality_checked_at: T1 })
+  assert.notEqual(buildPipelineSteps(l, []).find((s) => s.key === 'quality_check')?.state, 'done')
+})
