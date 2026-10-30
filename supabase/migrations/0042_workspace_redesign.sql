@@ -8,6 +8,12 @@
 --   2. Deploy the app.
 --   3. Re-sync the Inngest app so photo-readiness is registered and batch-quality-check's
 --      trigger moves to listing/studio-batch-ready.
+--   4. After the deploy, re-run statement 1 (idempotent, WHERE agent_blocked_kind IS NULL) to
+--      classify rows the old app blocked between step 1 and step 2.
+--
+-- Run the full file once: statements 5 and 6 re-evaluate current rows, so a rerun after the new
+-- app is live can move rows again. The backup table keeps the first run's snapshot (CREATE TABLE
+-- IF NOT EXISTS) and real copy approvals survive a rerun (coalesce in statement 4).
 
 -- The updated_at trigger bumps every row these UPDATEs touch, so copy_approved_at is
 -- backfilled from the snapshot's original updated_at, never from listings.updated_at.
@@ -67,8 +73,10 @@ WITH gate AS (
     l.photos_confirmed
       AND l.condition_confirmed
       AND NOT EXISTS (
-        SELECT 1 FROM jsonb_array_elements(l.inclusions) i
-        WHERE coalesce((i->>'confirmed')::boolean, false) = false
+        SELECT 1 FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(l.inclusions) = 'array' THEN l.inclusions ELSE '[]'::jsonb END
+        ) i
+        WHERE i->'confirmed' IS DISTINCT FROM 'true'::jsonb
       )
       AND NOT EXISTS (
         SELECT 1 FROM photos p
@@ -79,7 +87,7 @@ WITH gate AS (
   WHERE l.status = 'finalizing'
 )
 UPDATE listings l
-SET copy_approved_at = CASE WHEN g.passes THEN b.updated_at ELSE NULL END,
+SET copy_approved_at = CASE WHEN g.passes THEN coalesce(l.copy_approved_at, b.updated_at) ELSE NULL END,
     status = CASE WHEN g.passes THEN l.status ELSE 'in_loop' END,
     condition_confirmed = CASE WHEN NOT g.passes AND NOT l.photos_confirmed THEN false ELSE l.condition_confirmed END
 FROM gate g
