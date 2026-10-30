@@ -81,7 +81,7 @@
 - [ ] Step 1: Write the tests, one per row of the spec's amber table plus the non-amber states:
   - `id_gate` → `{label:'Confirm ID', tone:'amber'}`.
   - `gender_gate` with `needsGender && !gender` → `Pick gender`; with gender set and `needsMeasurements` → `Add measurements`.
-  - `agent_blocked_kind:'photo_quality'` → `Retake photos` (the same for `intake_failed`/`rewrite_failed`).
+  - `agent_blocked_kind:'photo_quality'` → `Retake photos`; `intake_failed` → `Intake failed`; `rewrite_failed` → `Rewrite failed`.
   - `in_loop`, `pipeline_step >= pipeline_total`, `!hasStudioPhotos` → `Needs photos`.
   - `in_loop` with `copy_approved_at` set → `Finalize`.
   - `in_loop` with `pipeline_step < pipeline_total` → `Processing`/gray.

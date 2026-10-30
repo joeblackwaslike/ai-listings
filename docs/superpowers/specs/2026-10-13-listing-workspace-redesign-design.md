@@ -103,7 +103,7 @@ Order for a luxury listing (non-luxury drops Auth Plan and uses "Inclusions" for
 | 11 | Condition Review | Grade confirmed from studio photos | `condition_confirmed` |
 | 12 | Copy Review | Approve the rewritten description | `copy_approved_at` is set |
 | 13 | Finalize | Package size and weight | status is `finalizing` or later |
-| 14 | Publish | List on eBay and Poshmark | status is `published` (label reads "Published" once done) |
+| 14 | Publish | List on eBay and Poshmark | status is `published` or `sold` (label reads "Published" once done) |
 
 Gate steps that don't apply to a category (the gender/details gate) are left out rather than shown as done. Steps 7 and 8 aren't enforced in order by the backend, so a later step can be done while an earlier one isn't; show those later steps as done (checked) but never active. There's never more than one active step.
 
