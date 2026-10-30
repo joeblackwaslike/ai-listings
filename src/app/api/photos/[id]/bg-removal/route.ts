@@ -51,6 +51,10 @@ export async function POST(
       await inngest.send({ name: 'listing/studio-photo-processed', data: { listingId: photo.listing_id } })
     } catch (err) {
       console.error(`bg-removal: readiness event failed for listing ${photo.listing_id}:`, err)
+      return NextResponse.json(
+        { error: 'Photo saved, but the readiness check could not be queued. Try again.' },
+        { status: 502 }
+      )
     }
   } else {
     await supabase

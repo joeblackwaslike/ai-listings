@@ -3,6 +3,7 @@
 import { useState, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { toast } from 'sonner'
 import { RotateCcw, ImageOff, Image as ImageIcon, Trash2, Plus, Loader2 } from 'lucide-react'
 import {
   DndContext,
@@ -168,6 +169,9 @@ export function PhotoPanel({ photos, pendingUploads, onAddPhotos }: PhotoPanelPr
         if (data.raw_url) {
           setUrlOverrides((prev) => ({ ...prev, [photoId]: { raw_url: data.raw_url, processed_url: data.processed_url } }))
         }
+      } else {
+        const data = await res.json().catch(() => null) as { error?: string } | null
+        toast.error(data?.error ?? 'Photo action failed')
       }
     } finally {
       setBusy((prev) => ({ ...prev, [photoId]: false }))
