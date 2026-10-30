@@ -12,6 +12,7 @@ import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
 import { studioPhotosReady } from '@/lib/utils'
 import { buildGenderGatePrompt, buildIdGatePrompt, isGenderGateAnswered, shouldAttemptPersistGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
+import { nextDisplayOrder, splitPhotos } from '@/lib/photos/photo-column'
 import { getSetting } from '@/lib/user-settings'
 
 type WorkspaceContext = {
@@ -310,6 +311,7 @@ export default async function WorkspacePage({
             firstMessage={firstMessage}
             suggestions={suggestions}
             inputUnit={measurementInputUnit}
+            nextPhotoOrder={nextDisplayOrder(splitPhotos(photos).gridPhotos)}
           />
         }
       />

@@ -10,6 +10,7 @@ import type { Suggestion } from './SuggestedReplies'
 import { MeasurementFields } from './MeasurementFields'
 import { formatMeasurementValue } from '@/lib/units'
 import { uploadStudioPhotos } from '@/lib/photos/upload-studio-photos'
+import { reserveStartOrder } from '@/lib/photos/photo-column'
 import type { DetailGateContext, Measurements } from '@/types/listings'
 import { AssistantMessageContext } from './WorkspaceShell'
 
@@ -39,6 +40,8 @@ interface AgentChatProps {
   readonly pendingGenderGate?: boolean
   readonly detailGateContext?: DetailGateContext
   readonly inputUnit?: 'imperial' | 'metric'
+  /** First display_order free after the listing's existing photos, so chat uploads sort last. */
+  readonly nextPhotoOrder?: number
   /** Called once per assistant message added after mount, when it is complete (not mid-stream). */
   readonly onAssistantMessage?: (id: string) => void
 }
@@ -127,7 +130,7 @@ async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setM
   }
 }
 
-export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext, inputUnit, onAssistantMessage }: AgentChatProps) {
+export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext, inputUnit, nextPhotoOrder = 0, onAssistantMessage }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
@@ -146,17 +149,18 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   const idGateResolvedRef = useRef(false)
   const genderGateResolvedRef = useRef(false)
   const isFirstRenderRef = useRef(true)
+  const reservedOrderRef = useRef(0)
   const [pendingGender, setPendingGender] = useState<string | null>(null)
   const [showMeasurements, setShowMeasurements] = useState(false)
   const [shownFirstMessage, setShownFirstMessage] = useState(firstMessage)
 
   // A gate prompt that arrives by polling after mount (initialMessages is only read once) is
   // appended so it shows, with its suggestion chips. Matching on content is safe because
-  // insert_conversation_if_new dedups on content. With no messages yet, the firstMessage
-  // bubble below already shows it.
+  // insert_conversation_if_new dedups on content. While no messages exist the firstMessage
+  // bubble shows it; once this appends it, that bubble hides, so it never doubles.
   if (firstMessage !== shownFirstMessage) {
     setShownFirstMessage(firstMessage)
-    if (firstMessage && messages.length > 0 && !messages.some((m) => m.content === firstMessage)) {
+    if (firstMessage && !messages.some((m) => m.content === firstMessage)) {
       setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: firstMessage }])
       setSuggestionsDismissed(false)
     }
@@ -223,7 +227,9 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   }
 
   function uploadImages(files: File[]): Promise<string[]> {
-    return uploadStudioPhotos(listingId, files, 0)
+    const { start, reserved } = reserveStartOrder(nextPhotoOrder, reservedOrderRef.current, files.length)
+    reservedOrderRef.current = reserved
+    return uploadStudioPhotos(listingId, files, start)
   }
 
   async function doSend(text: string, imagesToUpload: File[]) {
