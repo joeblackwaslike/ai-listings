@@ -6,7 +6,8 @@ import { runStep3PricingResearch } from '@/lib/pipeline/step3-pricing-research'
 import { runStep4aDraftListing } from '@/lib/pipeline/step4a-draft-listing'
 import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
-import { getSupabaseAdmin, pushPipelineStep } from '@/lib/pipeline/supabase-push'
+import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { finishPipeline, blockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import { detectClothingSubType } from '@/lib/utils'
 import { detectJewelrySubType } from '@/lib/jewelry-detection'
@@ -55,8 +56,7 @@ export const intakePipeline = inngest.createFunction(
         .from('listings')
         .update({
           status: 'in_loop',
-          agent_blocked: true,
-          agent_blocked_reason: userMessage,
+          ...blockedUpdate('intake_failed', userMessage),
         })
         .eq('id', listingId)
         .neq('status', 'archived')
@@ -213,14 +213,10 @@ export const intakePipeline = inngest.createFunction(
     }
 
     const totalSteps = step2Result.isLuxury ? 5 : 4
-    await pushPipelineStep(listingId, {
-      status: 'condition_gate',
-      condition_confirmed: false,
-      pipeline_total: totalSteps,
-      agent_blocked: false,
-      agent_blocked_reason: null,
-    })
+    await step.run('finish-pipeline', () => finishPipeline(getSupabaseAdmin(), listingId, totalSteps))
+    // Studio photos uploaded while the pipeline ran were held back by photo-readiness; re-run it now.
+    await step.sendEvent('recheck-photo-readiness', { name: 'listing/studio-photo-processed', data: { listingId } })
 
-    return { ok: true, listingId, status: 'condition_gate' }
+    return { ok: true, listingId, status: 'in_loop' }
   }
 )

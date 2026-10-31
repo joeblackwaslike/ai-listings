@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Copy, Check, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { CopyField } from './CopyField'
+import { CollapsibleFields } from './CollapsibleFields'
 import type { Listing, ListingStatus } from '@/types/listings'
 
 interface PlatformTabsProps {
@@ -115,7 +116,11 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform, listing_url: url }),
       })
-      const data = await res.json() as { ok?: boolean; listing_urls?: Record<string, string> }
+      const data = await res.json() as { ok?: boolean; listing_urls?: Record<string, string>; error?: string }
+      if (!res.ok) {
+        toast.error(data.error ?? 'Failed to save listing URL')
+        return
+      }
       if (data.ok && data.listing_urls) {
         setSavedUrls({ ebay: data.listing_urls.ebay, poshmark: data.listing_urls.poshmark })
         setUrlInputs((prev) => ({ ...prev, [platform]: '' }))
@@ -133,7 +138,11 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mark_published: true }),
       })
-      const data = await res.json() as { ok?: boolean; status?: string }
+      const data = await res.json() as { ok?: boolean; status?: string; error?: string }
+      if (!res.ok) {
+        toast.error(data.error ?? 'Failed to mark listing as published')
+        return
+      }
       if (data.ok && data.status) {
         setListingStatus(data.status as ListingStatus)
       }
@@ -213,7 +222,7 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
               <p className="text-sm text-gray-600">No eBay fields generated yet — pipeline step 4 must complete first.</p>
             ) : (
               <>
-                <div className="rounded-xl border border-gray-800 bg-gray-900/30 divide-y divide-gray-800/60">
+                <CollapsibleFields label="eBay fields" count={4 + Object.keys(ebay.item_specifics ?? {}).length}>
                   <CopyField label="Title" value={ebay.title} />
                   <CopyField label="Category ID" value={ebay.category_id} />
                   <CopyField label="Condition" value={ebay.condition_id} />
@@ -221,7 +230,7 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
                   {Object.entries(ebay.item_specifics ?? {}).map(([key, val]) => (
                     <CopyField key={key} label={key} value={val} />
                   ))}
-                </div>
+                </CollapsibleFields>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => void postToEbay()}
@@ -286,7 +295,7 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
               <p className="text-sm text-gray-600">No Poshmark fields generated yet — pipeline step 4 must complete first.</p>
             ) : (
               <>
-                <div className="rounded-xl border border-gray-800 bg-gray-900/30 divide-y divide-gray-800/60">
+                <CollapsibleFields label="Poshmark fields" count={poshmark.original_price_cents != null ? 5 : 4}>
                   <CopyField label="Title" value={poshmark.title} />
                   <CopyField label="Category" value={poshmark.category} />
                   <CopyField label="Size" value={poshmark.size} />
@@ -294,7 +303,7 @@ export function PlatformTabs({ listing }: PlatformTabsProps) {
                     <CopyField label="Original Price" value={`$${(poshmark.original_price_cents / 100).toFixed(2)}`} />
                   )}
                   <CopyField label="Description" value={poshmark.description} multiline />
-                </div>
+                </CollapsibleFields>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => void postToPoshmark()}

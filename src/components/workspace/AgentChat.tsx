@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { Send, Zap, Check, X, AlertCircle, ImagePlus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -9,7 +9,10 @@ import { SuggestedReplies } from './SuggestedReplies'
 import type { Suggestion } from './SuggestedReplies'
 import { MeasurementFields } from './MeasurementFields'
 import { formatMeasurementValue } from '@/lib/units'
+import { uploadStudioPhotos } from '@/lib/photos/upload-studio-photos'
+import { reserveStartOrder } from '@/lib/photos/photo-column'
 import type { DetailGateContext, Measurements } from '@/types/listings'
+import { AssistantMessageContext } from './WorkspaceShell'
 
 interface ChatMessage {
   id: string
@@ -37,6 +40,10 @@ interface AgentChatProps {
   readonly pendingGenderGate?: boolean
   readonly detailGateContext?: DetailGateContext
   readonly inputUnit?: 'imperial' | 'metric'
+  /** First display_order free after the listing's existing photos, so chat uploads sort last. */
+  readonly nextPhotoOrder?: number
+  /** Called once per assistant message added after mount, when it is complete (not mid-stream). */
+  readonly onAssistantMessage?: (id: string) => void
 }
 
 type AgentEvent =
@@ -123,7 +130,7 @@ async function readStream(body: ReadableStream<Uint8Array>, ctx: StreamCtx, setM
   }
 }
 
-export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext, inputUnit }: AgentChatProps) {
+export function AgentChat({ listingId, initialMessages, firstMessage, suggestions, pendingIdGate, pendingGenderGate, detailGateContext, inputUnit, nextPhotoOrder = 0, onAssistantMessage }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: m.id,
@@ -142,8 +149,41 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
   const idGateResolvedRef = useRef(false)
   const genderGateResolvedRef = useRef(false)
   const isFirstRenderRef = useRef(true)
+  const reservedOrderRef = useRef(0)
   const [pendingGender, setPendingGender] = useState<string | null>(null)
   const [showMeasurements, setShowMeasurements] = useState(false)
+  const [shownFirstMessage, setShownFirstMessage] = useState(firstMessage)
+
+  // A gate prompt that arrives by polling after mount (initialMessages is only read once) is
+  // appended so it shows, with its suggestion chips. Matching on content is safe because
+  // insert_conversation_if_new dedups on content. While no messages exist the firstMessage
+  // bubble shows it; once this appends it, that bubble hides, so it never doubles.
+  if (firstMessage !== shownFirstMessage) {
+    setShownFirstMessage(firstMessage)
+    if (firstMessage && !messages.some((m) => m.content === firstMessage)) {
+      setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: firstMessage }])
+      setSuggestionsDismissed(false)
+    }
+  }
+
+  // A new gate prompt means a new pending gate; an earlier answer must not block answering it.
+  useEffect(() => {
+    idGateResolvedRef.current = false
+    genderGateResolvedRef.current = false
+  }, [firstMessage])
+
+  const reportFromShell = useContext(AssistantMessageContext)
+  const reportAssistantMessage = onAssistantMessage ?? reportFromShell
+  const reportedIdsRef = useRef(new Set(initialMessages.map((m) => m.id)))
+
+  useEffect(() => {
+    if (streaming || !reportAssistantMessage) return
+    for (const m of messages) {
+      if (m.role !== 'assistant' || reportedIdsRef.current.has(m.id)) continue
+      reportedIdsRef.current.add(m.id)
+      reportAssistantMessage(m.id)
+    }
+  }, [messages, streaming, reportAssistantMessage])
 
   // Skip the initial mount: a listing can load with a long id-gate/gender-gate description
   // already in `messages` (from initialMessages), and scrolling straight to the chips+input
@@ -186,27 +226,10 @@ export function AgentChat({ listingId, initialMessages, firstMessage, suggestion
     setPendingGender(null)
   }
 
-  async function uploadImages(files: File[]): Promise<string[]> {
-    const urls: string[] = []
-    for (let index = 0; index < files.length; index++) {
-      const file = files[index]
-      const form = new FormData()
-      form.append('photo', file)
-      form.append('listingId', listingId)
-      form.append('displayOrder', String(index))
-      const res = await fetch('/api/studio-upload', { method: 'POST', body: form })
-      if (!res.ok) {
-        let msg = `Upload failed (${res.status})`
-        try {
-          const body = await res.json() as { error?: string }
-          if (body.error) msg = body.error
-        } catch { /* non-JSON body (e.g. HTML redirect) — use status message */ }
-        throw new Error(msg)
-      }
-      const data = await res.json() as { photoUrl: string }
-      urls.push(data.photoUrl)
-    }
-    return urls
+  function uploadImages(files: File[]): Promise<string[]> {
+    const { start, reserved } = reserveStartOrder(nextPhotoOrder, reservedOrderRef.current, files.length)
+    reservedOrderRef.current = reserved
+    return uploadStudioPhotos(listingId, files, start)
   }
 
   async function doSend(text: string, imagesToUpload: File[]) {

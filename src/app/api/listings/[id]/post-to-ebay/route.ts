@@ -4,6 +4,7 @@ import { getEbayCreds } from '@/lib/platforms/credentials'
 import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
 import { publishListingToEbay } from '@/lib/platforms/publish-to-ebay'
 import { mapPostToEbayError } from '@/lib/platforms/post-to-ebay-error'
+import { canFinalizeOrPublish } from '@/lib/publish-gate'
 import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
 import type { Listing, Photo, PricingComp } from '@/types/listings'
 
@@ -99,6 +100,9 @@ export async function POST(
     return Response.json({ error: `Failed to load pricing data: ${compsError.message}` }, { status: 500 })
   }
   const photos = (photoRows ?? []) as unknown as Photo[]
+
+  const gate = canFinalizeOrPublish(listing, photos)
+  if (!gate.ok) return Response.json({ error: gate.reason }, { status: 409 })
   const comps = (compRows ?? []) as unknown as PricingComp[]
 
   try {

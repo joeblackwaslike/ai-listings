@@ -1,6 +1,7 @@
 import { inngest } from '../client'
 import type { StudioUploadedEvent } from '../client'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { unblockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { removeBackground } from '@/lib/pipeline/remove-background'
 import { processRawPhoto } from '@/lib/pipeline/process-raw-photo'
 import { categorySkipsBackgroundRemoval } from '@/lib/pipeline/step4b-photoroom'
@@ -35,33 +36,10 @@ async function reconcileQualityEscalation(
   if (!error && count === 0) {
     await supabase
       .from('listings')
-      .update({ agent_blocked: false, agent_blocked_reason: null })
+      .update(unblockedUpdate())
       .eq('id', listingId)
+      .eq('agent_blocked_kind', 'photo_quality')
   }
-}
-
-async function autoConfirmPhotosIfComplete(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  listingId: string
-): Promise<boolean> {
-  const { count, error } = await supabase
-    .from('photos')
-    .select('id', { count: 'exact', head: true })
-    .eq('listing_id', listingId)
-    .eq('type', 'studio')
-    .is('processed_url', null)
-
-  if (!error && count === 0) {
-    const { data } = await supabase
-      .from('listings')
-      .update({ photos_confirmed: true, condition_confirmed: false })
-      .eq('id', listingId)
-      .eq('photos_confirmed', false)
-      .select('id')
-      .maybeSingle()
-    return data !== null
-  }
-  return false
 }
 
 export const photoQualityGate = inngest.createFunction(
@@ -101,13 +79,7 @@ export const photoQualityGate = inngest.createFunction(
       await processRawPhoto(photoId, photoRow.raw_url as string, storagePath)
       await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
       await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
-      const confirmedSkipped = await step.run('auto-confirm-photos', () => autoConfirmPhotosIfComplete(supabase, listingId))
-      if (confirmedSkipped) {
-        await step.sendEvent('trigger-condition-reassessment', {
-          name: 'listing/photos-confirmed',
-          data: { listingId },
-        })
-      }
+      await step.sendEvent('photo-processed', { name: 'listing/studio-photo-processed', data: { listingId } })
       return { ok: true, listingId, photoId, skipped: true }
     }
 
@@ -116,13 +88,7 @@ export const photoQualityGate = inngest.createFunction(
 
     await step.run('supersede-replaced-photo', () => supersedeReplacedPhoto(supabase, listingId, replacesPhotoId))
     await step.run('reconcile-quality-escalation', () => reconcileQualityEscalation(supabase, listingId))
-    const confirmed = await step.run('auto-confirm-photos', () => autoConfirmPhotosIfComplete(supabase, listingId))
-    if (confirmed) {
-      await step.sendEvent('trigger-condition-reassessment', {
-        name: 'listing/photos-confirmed',
-        data: { listingId },
-      })
-    }
+    await step.sendEvent('photo-processed', { name: 'listing/studio-photo-processed', data: { listingId } })
 
     return { ok: true, listingId, photoId }
   }

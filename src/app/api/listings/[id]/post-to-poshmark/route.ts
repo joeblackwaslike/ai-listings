@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { getPoshmarkCreds } from '@/lib/platforms/credentials'
 import { PoshmarkAdapter } from '@/lib/platforms/adapters/poshmark'
 import { publishListingToPoshmark } from '@/lib/platforms/publish-to-poshmark'
+import { canFinalizeOrPublish } from '@/lib/publish-gate'
 import { isPricingGateUnlocked } from '@/lib/pipeline/pricing-adjust'
 import { PoshmarkCreatePendingError, PlatformError } from '@/lib/platforms/errors'
 import type { Listing, Photo } from '@/types/listings'
@@ -94,6 +95,9 @@ export async function POST(
     .order('display_order', { ascending: true })
 
   const photos = (photoRows ?? []) as unknown as Photo[]
+
+  const gate = canFinalizeOrPublish(listing, photos)
+  if (!gate.ok) return Response.json({ error: gate.reason }, { status: 409 })
 
   try {
     const result = await publishListingToPoshmark(

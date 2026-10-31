@@ -5,6 +5,7 @@ import { runStep4aDraftListing } from '@/lib/pipeline/step4a-draft-listing'
 import { runStep4bPhotoRoom } from '@/lib/pipeline/step4b-photoroom'
 import { runStep5AuthPlan } from '@/lib/pipeline/step5-auth-plan'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { unblockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import { notableFeaturesOf } from '@/lib/pipeline/gate-messages'
 
@@ -103,8 +104,12 @@ export const retryStep = inngest.createFunction(
 
     await supabase
       .from('listings')
-      .update({ agent_blocked: false, agent_blocked_reason: null })
+      .update(unblockedUpdate())
       .eq('id', listingId)
+      .eq('agent_blocked_kind', 'intake_failed')
+
+    // If this retry finished the pipeline, studio photos held back by photo-readiness can go now.
+    await step.sendEvent('recheck-photo-readiness', { name: 'listing/studio-photo-processed', data: { listingId } })
 
     return { ok: true, listingId, retriedStep: stepNum }
   }

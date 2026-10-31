@@ -3,7 +3,8 @@
 import { useState, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { RotateCcw, ImageOff, Image as ImageIcon, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { RotateCcw, ImageOff, Image as ImageIcon, Trash2, Plus, Loader2 } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -14,16 +15,22 @@ import {
 } from '@dnd-kit/core'
 import {
   SortableContext,
-  horizontalListSortingStrategy,
+  rectSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { applyIdOrder, reorderUpdates, splitPhotos } from '@/lib/photos/photo-column'
 import type { Photo } from '@/types/listings'
+
+export interface PendingUpload {
+  readonly key: string
+  readonly name: string
+}
 
 interface PhotoPanelProps {
   readonly photos: Photo[]
-  readonly listingId: string
+  readonly pendingUploads: readonly PendingUpload[]
+  readonly onAddPhotos: () => void
 }
 
 function bgRemoved(photo: Photo): boolean {
@@ -46,7 +53,6 @@ interface SortableThumbnailProps {
   onRotate: () => void
   onBgRemoval: () => void
   onDelete: () => void
-  draggable: boolean
 }
 
 function SortableThumbnail({
@@ -61,11 +67,9 @@ function SortableThumbnail({
   onRotate,
   onBgRemoval,
   onDelete,
-  draggable,
 }: SortableThumbnailProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: photo.id as string,
-    disabled: !draggable,
   })
 
   const url = (urlOverride?.processed_url ?? urlOverride?.raw_url ?? photo.processed_url ?? photo.raw_url) as string
@@ -74,17 +78,17 @@ function SortableThumbnail({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`relative flex-none group ${isDragging ? 'z-50 opacity-80' : ''}`}
+      className={`relative group ${isDragging ? 'z-50 opacity-80' : ''}`}
       {...attributes}
     >
       <button
         onClick={onSelect}
-        {...(draggable ? listeners : {})}
-        className={`relative w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors block ${
+        {...listeners}
+        className={`relative w-full aspect-square rounded-lg overflow-hidden border-2 bg-gray-900 transition-colors block cursor-grab active:cursor-grabbing ${
           isSelected ? 'border-emerald-500' : 'border-transparent opacity-60 hover:opacity-80'
-        } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        }`}
       >
-        <Image src={url} alt="" fill className="object-cover" />
+        <Image src={url} alt="" fill sizes="160px" draggable={false} className="object-cover" />
       </button>
       {isStudio && (
         <div className="absolute inset-0 rounded-lg flex items-end justify-end gap-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
@@ -120,26 +124,35 @@ function SortableThumbnail({
   )
 }
 
-export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
+function PendingTile({ name }: Readonly<{ name: string }>) {
+  return (
+    <div className="relative aspect-square rounded-lg border-2 border-transparent overflow-hidden bg-gray-900" title={`Uploading ${name}`}>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+      </div>
+      <span className="absolute bottom-1 left-1 right-1 text-[9px] text-gray-300 truncate">{name}</span>
+    </div>
+  )
+}
+
+/** Main photo, sortable thumbnail grid with pending-upload tiles, and the add-photos affordance. */
+export function PhotoPanel({ photos, pendingUploads, onAddPhotos }: PhotoPanelProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [urlOverrides, setUrlOverrides] = useState<Record<string, PhotoUrls>>({})
-  const [orderedPhotos, setOrderedPhotos] = useState<Photo[] | null>(null)
+  const [orderedIds, setOrderedIds] = useState<string[] | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  const nonIntakePhotos = [...photos]
-    .filter((p) => p.type !== 'intake')
-    .sort((a, b) => a.display_order - b.display_order)
-  const intakePhotos = photos.filter((p) => p.type === 'intake')
-  const isIntakeFallback = nonIntakePhotos.length === 0 && intakePhotos.length > 0
-  // Use local ordered state if set (after a drag), otherwise use server-sorted list
-  const basePhotos = nonIntakePhotos.length > 0 ? nonIntakePhotos : intakePhotos
-  const displayPhotos = orderedPhotos ?? basePhotos
+  const { displayPhotos: basePhotos, isIntakeFallback, showWideDropZone } = splitPhotos(photos)
+  // Local order from a drag wins until the server's photo set changes (upload or delete);
+  // otherwise new uploads would never appear after a reorder.
+  const displayPhotos = applyIdOrder(basePhotos, orderedIds)
 
-  const selectedPhoto = selectedId ? displayPhotos.find((p) => p.id === selectedId) : displayPhotos[0]
+  const selectedPhoto = (selectedId ? displayPhotos.find((p) => p.id === selectedId) : undefined) ?? displayPhotos[0]
+  const selectedIndex = selectedPhoto ? displayPhotos.indexOf(selectedPhoto) : -1
   const mainOverride = selectedPhoto ? urlOverrides[selectedPhoto.id as string] : undefined
   const mainUrl = mainOverride?.processed_url ?? mainOverride?.raw_url ?? selectedPhoto?.processed_url ?? selectedPhoto?.raw_url
 
@@ -156,7 +169,13 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
         if (data.raw_url) {
           setUrlOverrides((prev) => ({ ...prev, [photoId]: { raw_url: data.raw_url, processed_url: data.processed_url } }))
         }
+      } else {
+        const data = await res.json().catch(() => null) as { error?: string } | null
+        toast.error(data?.error ?? 'Photo action failed')
       }
+    } catch (err) {
+      console.error('[PhotoPanel] photo action failed:', err)
+      toast.error('Photo action failed. Check your connection and try again.')
     } finally {
       setBusy((prev) => ({ ...prev, [photoId]: false }))
     }
@@ -169,91 +188,55 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
     try {
       await fetch(`/api/photos/${photoId}`, { method: 'DELETE' })
       setSelectedId(null)
-      setOrderedPhotos(null)
+      setOrderedIds(null)
       router.refresh()
     } finally {
       setBusy((prev) => ({ ...prev, [photoId]: false }))
     }
   }, [router])
 
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
-    if (!over || active.id === over.id) return
+    if (!over) return
+    const updates = reorderUpdates(displayPhotos.map((p) => p.id), String(active.id), String(over.id))
+    if (!updates) return
+    setOrderedIds(updates.map((u) => u.id))
 
-    setOrderedPhotos((prev) => {
-      const current = prev ?? basePhotos
-      const oldIndex = current.findIndex((p) => p.id === active.id)
-      const newIndex = current.findIndex((p) => p.id === over.id)
-      const reordered = arrayMove(current, oldIndex, newIndex).map((p, i) => ({
-        ...p,
-        display_order: i * 1000,
-      }))
-
-      // Persist async — fire and forget; revert to server state on error
-      const updates = reordered.map(({ id, display_order }) => ({ id: id as string, display_order }))
-      fetch('/api/photos/reorder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updates }),
-      }).then((res) => {
-        if (!res.ok) {
-          setOrderedPhotos(null)
-          router.refresh()
-        }
-      }).catch(() => {
-        setOrderedPhotos(null)
-        router.refresh()
-      })
-
-      return reordered
-    })
-  }, [basePhotos, router])
+    // Persist async — fire and forget; revert to server state on error
+    const revert = () => {
+      setOrderedIds(null)
+      router.refresh()
+    }
+    fetch('/api/photos/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates }),
+    }).then((res) => {
+      if (!res.ok) revert()
+    }).catch(revert)
+  }, [displayPhotos, router])
 
   return (
-    <div className="space-y-6">
-      {displayPhotos.length > 0 ? (
-        <div className="space-y-2">
-          <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-900 border border-gray-800">
-            {mainUrl && (
-              <Image src={mainUrl as string} alt="Listing photo" fill className="object-contain" />
-            )}
-            {selectedPhoto && (
-              <span className="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-gray-400 capitalize">
-                {selectedPhoto.type}
-              </span>
-            )}
-          </div>
-          {displayPhotos.length > 1 && (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext
-                items={displayPhotos.map((p) => p.id as string)}
-                strategy={horizontalListSortingStrategy}
-              >
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {displayPhotos.map((photo) => {
-                    const isStudio = photo.type === 'studio' && !isIntakeFallback
-                    return (
-                      <SortableThumbnail
-                        key={photo.id as string}
-                        photo={photo}
-                        isSelected={photo.id === (selectedPhoto?.id ?? displayPhotos[0]?.id)}
-                        isStudio={isStudio}
-                        isBusy={busy[photo.id as string] ?? false}
-                        isPending={isPending}
-                        hasBgRemoval={bgRemoved(photo)}
-                        urlOverride={urlOverrides[photo.id as string]}
-                        onSelect={() => setSelectedId(photo.id as string)}
-                        onRotate={() => void photoAction(photo.id as string, 'rotate')}
-                        onBgRemoval={() => void photoAction(photo.id as string, 'bg-removal', { action: bgRemoved(photo) ? 'skip' : 'apply' })}
-                        onDelete={() => void deletePhoto(photo.id as string)}
-                        draggable={!isIntakeFallback}
-                      />
-                    )
-                  })}
-                </div>
-              </SortableContext>
-            </DndContext>
+    <div className="space-y-3">
+      {selectedPhoto ? (
+        <div className="relative rounded-xl overflow-hidden bg-gray-900 border border-gray-800">
+          {mainUrl && (
+            <Image
+              src={mainUrl as string}
+              alt="Listing photo"
+              draggable={false}
+              width={0}
+              height={0}
+              sizes="(min-width: 1024px) 60vw, 100vw"
+              className="block w-full h-auto max-h-[65vh] object-contain mx-auto"
+            />
           )}
+          <span className="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded bg-black/70 text-gray-300 uppercase tracking-wider">
+            {selectedPhoto.type}
+          </span>
+          <span className="absolute bottom-2 right-2 text-[10px] px-1.5 py-0.5 rounded bg-black/70 text-gray-300">
+            {selectedIndex + 1} / {displayPhotos.length}
+          </span>
         </div>
       ) : (
         <div className="aspect-square rounded-xl bg-gray-900 border border-gray-800 flex items-center justify-center">
@@ -261,7 +244,57 @@ export function PhotoPanel({ photos, listingId }: PhotoPanelProps) {
         </div>
       )}
       {isIntakeFallback && (
-        <p className="text-xs text-gray-600 -mt-4">Catalog / intake reference — not a seller photo</p>
+        <p className="text-xs text-gray-600">Catalog / intake reference — not a seller photo</p>
+      )}
+      {(!showWideDropZone || pendingUploads.length > 0) && (
+        <DndContext id="photo-grid" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext
+            items={showWideDropZone ? [] : displayPhotos.map((p) => p.id as string)}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(80px,1fr))]">
+              {!showWideDropZone && displayPhotos.map((photo) => (
+                <SortableThumbnail
+                  key={photo.id as string}
+                  photo={photo}
+                  isSelected={photo.id === selectedPhoto?.id}
+                  isStudio={photo.type === 'studio'}
+                  isBusy={busy[photo.id as string] ?? false}
+                  isPending={isPending}
+                  hasBgRemoval={bgRemoved(photo)}
+                  urlOverride={urlOverrides[photo.id as string]}
+                  onSelect={() => setSelectedId(photo.id as string)}
+                  onRotate={() => void photoAction(photo.id as string, 'rotate')}
+                  onBgRemoval={() => void photoAction(photo.id as string, 'bg-removal', { action: bgRemoved(photo) ? 'skip' : 'apply' })}
+                  onDelete={() => void deletePhoto(photo.id as string)}
+                />
+              ))}
+              {pendingUploads.map((u) => <PendingTile key={u.key} name={u.name} />)}
+              {!showWideDropZone && (
+                <button
+                  type="button"
+                  onClick={onAddPhotos}
+                  title="Add photos — click to browse or drop files here"
+                  className="aspect-square rounded-lg border-2 border-dashed border-gray-700 hover:border-emerald-500 hover:text-emerald-400 text-gray-500 flex flex-col items-center justify-center gap-0.5 transition-colors"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span className="text-[10px] leading-tight">Add photos</span>
+                </button>
+              )}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
+      {showWideDropZone && (
+        <button
+          type="button"
+          onClick={onAddPhotos}
+          className="w-full rounded-xl border-2 border-dashed border-gray-700 hover:border-emerald-500 hover:text-emerald-400 text-gray-500 py-6 flex flex-col items-center justify-center gap-1 transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          <span className="text-xs font-medium">Add studio photos</span>
+          <span className="text-[10px] text-gray-600">Click to browse or drop image files here</span>
+        </button>
       )}
     </div>
   )

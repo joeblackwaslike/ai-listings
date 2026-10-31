@@ -15,7 +15,7 @@ interface MeasurementFieldsProps {
   defaultValues?: Partial<Record<string, string | number>>
   // Label-above-input costs a full row per field -- fine on the workspace page's wide column,
   // but inside the dashboard card's cramped gate overlay it pushed Continue below the fold for
-  // any category needing 2+ fields (width/height/depth, sneaker size) even though single-field
+  // any category needing 2+ fields (Length/Width/Height stored as width/depth/height, sneaker size) even though single-field
   // categories (ring size, chain length) fit -- had to scroll to find the button (ai-listings
   // dashboard report, 2026-08-23). Puts label and input on one row instead, opt-in so the
   // workspace page's layout is untouched.

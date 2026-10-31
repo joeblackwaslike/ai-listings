@@ -48,7 +48,7 @@ export default async function PublishPage({
           ← Workspace
         </a>
         <span className="text-gray-800">/</span>
-        <span className="text-xs text-gray-500">Publish Export</span>
+        <span className="text-xs text-gray-500">Publish</span>
         <span className="ml-auto text-xs font-mono text-gray-700">{listing.sku ?? id.slice(0, 8)}</span>
       </header>
 

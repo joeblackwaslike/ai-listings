@@ -1,107 +1,6 @@
 import { Check, Loader2, Circle } from 'lucide-react'
 import type { Listing, Photo } from '@/types/listings'
-import { studioPhotosReady } from '@/lib/utils'
-
-type StepState = 'done' | 'active' | 'pending'
-
-interface Step {
-  label: string
-  sublabel?: string
-  state: StepState
-}
-
-function automatedStepState(n: number, pipeline_step: number, pipeline_total: number, status: string): StepState {
-  if (pipeline_step > n) return 'done'
-  if (pipeline_step === n && status === 'in_loop' && n === pipeline_total) return 'done'
-  if (pipeline_step === n) return 'active'
-  return 'pending'
-}
-
-function buildAutomatedSteps(listing: Listing): Step[] {
-  const { pipeline_step, pipeline_total, status, is_luxury } = listing
-  const defs = is_luxury
-    ? [
-        { n: 1, label: 'Product ID', sublabel: 'Identified item from photo' },
-        { n: 2, label: 'Vision Analysis', sublabel: 'Condition, brand, features' },
-        { n: 3, label: 'Pricing Research', sublabel: 'Market comparables' },
-        { n: 4, label: 'Draft Listing', sublabel: 'Description, tags, platform fields' },
-        { n: 5, label: 'Auth Plan', sublabel: 'Authentication checklist' },
-      ]
-    : [
-        { n: 1, label: 'Product ID', sublabel: 'Identified item from photo' },
-        { n: 2, label: 'Vision Analysis', sublabel: 'Condition, brand, features' },
-        { n: 3, label: 'Pricing Research', sublabel: 'Market comparables' },
-        { n: 4, label: 'Draft Listing', sublabel: 'Description, tags, platform fields' },
-      ]
-
-  return defs.map(({ n, label, sublabel }) => ({
-    label,
-    sublabel,
-    state: automatedStepState(n, pipeline_step, pipeline_total, status),
-  }))
-}
-
-function humanStepState(conditions: { done: boolean; ready: boolean }): StepState {
-  if (conditions.done) return 'done'
-  if (conditions.ready) return 'active'
-  return 'pending'
-}
-
-function buildHumanSteps(listing: Listing, photos: Photo[]): Step[] {
-  const { status, is_luxury, auth_plan, photos_confirmed, skip_background_removal } = listing
-  const isPublished = status === 'published'
-  const studioPhotos = photos.filter((p) => p.type === 'studio')
-  const hasStudio = studioPhotos.length > 0
-  const allProcessed = studioPhotosReady(listing, photos)
-  const authAllDone = !is_luxury || (auth_plan.length > 0 && auth_plan.every((s) => s.status === 'done'))
-
-  return [
-    {
-      label: 'Upload Photos',
-      sublabel: 'Studio shots and flat lays',
-      state: humanStepState({ done: isPublished || hasStudio, ready: true }),
-    },
-    {
-      label: skip_background_removal ? 'Keep Original Backgrounds' : 'Remove Backgrounds',
-      sublabel: skip_background_removal ? 'Background removal turned off' : 'Auto-processed after upload',
-      state: humanStepState({ done: isPublished || allProcessed, ready: hasStudio }),
-    },
-    {
-      label: 'Confirm Photos',
-      sublabel: 'Review processed images',
-      state: humanStepState({ done: isPublished || photos_confirmed, ready: allProcessed }),
-    },
-    {
-      label: 'Review Condition',
-      sublabel: 'Grade confirmed from studio photos',
-      state: humanStepState({
-        done: (!!photos_confirmed && listing.condition_confirmed === true) || isPublished,
-        ready: !!photos_confirmed && listing.condition_confirmed !== true,
-      }),
-    },
-    {
-      label: 'Review Listing',
-      sublabel: 'Title, description, condition',
-      state: humanStepState({ done: isPublished, ready: photos_confirmed }),
-    },
-    {
-      label: is_luxury ? 'Auth + Inclusions' : 'Inclusions',
-      sublabel: is_luxury ? 'Checklist & box contents' : "Confirm what's in the box",
-      state: humanStepState({ done: isPublished || (photos_confirmed && authAllDone), ready: photos_confirmed }),
-    },
-    {
-      label: 'Publish',
-      sublabel: 'Set final price and list',
-      state: humanStepState({ done: isPublished, ready: false }),
-    },
-  ]
-}
-
-function buildSteps(listing: Listing, photos: Photo[]): Step[] {
-  const automated = buildAutomatedSteps(listing)
-  if (listing.pipeline_step < listing.pipeline_total) return automated
-  return [...automated, ...buildHumanSteps(listing, photos)]
-}
+import { buildPipelineSteps, type StepState } from '@/lib/pipeline-steps'
 
 function StepIcon({ state }: Readonly<{ state: StepState }>) {
   if (state === 'done') {
@@ -131,21 +30,24 @@ const labelClass: Record<StepState, string> = {
   pending: 'text-gray-700',
 }
 
-const sublabelClass: Record<StepState, string> = {
-  done: 'text-gray-700',
-  active: 'text-blue-400/70',
-  pending: 'text-gray-800',
-}
+const sublabelClass = { active: 'text-blue-400/70' }
 
 export function PipelineTimeline({ listing, photos }: Readonly<{ listing: Listing; photos: Photo[] }>) {
-  const steps = buildSteps(listing, photos)
+  const steps = buildPipelineSteps(listing, photos)
+  const liveLinks = Object.entries(listing.listing_urls ?? {}).filter(([, url]) => !!url)
+  const isLive = listing.status === 'published' || listing.status === 'sold'
 
   return (
     <div className="space-y-0">
       {steps.map((step, i) => {
         const isLast = i === steps.length - 1
+        const isActive = step.state === 'active'
         return (
-          <div key={step.label} className="flex gap-3">
+          <div
+            key={step.key}
+            title={isActive ? undefined : step.sublabel}
+            className={`flex gap-3 ${isActive ? 'bg-blue-950/30 rounded' : ''}`}
+          >
             <div className="flex flex-col items-center">
               <div className="flex-none mt-0.5">
                 <StepIcon state={step.state} />
@@ -156,13 +58,26 @@ export function PipelineTimeline({ listing, photos }: Readonly<{ listing: Listin
             </div>
             <div className="pb-3 min-w-0">
               <p className={`text-xs leading-tight ${labelClass[step.state]}`}>{step.label}</p>
-              {step.sublabel && (
-                <p className={`text-[10px] leading-snug mt-0.5 ${sublabelClass[step.state]}`}>{step.sublabel}</p>
+              {isActive && (
+                <p className={`text-[10px] leading-snug mt-0.5 ${sublabelClass.active}`}>{step.sublabel}</p>
               )}
             </div>
           </div>
         )
       })}
+      {isLive && liveLinks.length > 0 && (
+        <p className="pt-2 text-xs text-gray-400">
+          Live:{' '}
+          {liveLinks.map(([platform, url], i) => (
+            <span key={platform}>
+              {i > 0 && ', '}
+              <a href={url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">
+                {platform}
+              </a>
+            </span>
+          ))}
+        </p>
+      )}
     </div>
   )
 }

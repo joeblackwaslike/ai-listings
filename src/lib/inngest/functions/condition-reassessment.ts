@@ -7,6 +7,8 @@ import { getUserApiKeys } from '@/lib/user-api-keys'
 import type { ClaudeImageInput } from '@/lib/claude'
 import type { ConditionValue } from '@/types/listings'
 
+const SKIP_STATUSES = ['published', 'sold', 'archived', 'intake', 'id_gate', 'gender_gate'] as const
+
 interface ConditionOutput {
   condition: ConditionValue
   condition_notes: string
@@ -61,6 +63,18 @@ export const conditionReassessment = inngest.createFunction(
     retries: 1,
     debounce: { period: '30s', key: 'event.data.listingId' },
     concurrency: { limit: 1, key: 'event.data.listingId' },
+    // Without the reassessment the listing would sit in in_loop with photos confirmed and no way
+    // into copy review; review the condition already on file instead.
+    onFailure: async ({ event }) => {
+      const { listingId } = (event as unknown as { data: { event: ListingPhotosConfirmedEvent } }).data.event.data
+      const { error } = await getSupabaseAdmin()
+        .from('listings')
+        .update({ condition_confirmed: false, status: 'condition_gate' })
+        .eq('id', listingId)
+        .eq('status', 'in_loop')
+        .eq('photos_confirmed', true)
+      if (error) console.error(`[condition-reassessment] onFailure: failed to open condition_gate for listing ${listingId}`, error)
+    },
   },
   async ({ event, step }) => {
     const { listingId } = (event as unknown as ListingPhotosConfirmedEvent).data
@@ -95,16 +109,16 @@ export const conditionReassessment = inngest.createFunction(
     if (!result) return { ok: false, listingId, reason: 'no studio photos or listing not found' }
 
     // Single atomic write: condition fields + status transition together.
-    // Guard against overwriting a finalized or archived listing — those statuses are terminal
-    // and photos confirmed after that point shouldn't reopen the workflow. Any other status
-    // (in_loop, id_gate, gender_gate, condition_gate, intake, finalizing) transitions to
-    // condition_gate so the seller can confirm the reassessed condition before proceeding.
+    // Published, sold and archived listings are settled; photos confirmed after that point
+    // shouldn't reopen the workflow. A listing still at intake or a pre-photo gate is left alone
+    // too: its pipeline end lands it in condition_gate once photos are confirmed. Any other
+    // status (in_loop, condition_gate, copy_review, finalizing) transitions to condition_gate so
+    // the seller can confirm the reassessed condition before proceeding.
     const { data: updatedRow, error: updateError } = await supabase
       .from('listings')
       .update({ condition: result.condition, condition_notes: result.condition_notes, condition_confirmed: false, status: 'condition_gate' })
       .eq('id', listingId)
-      .neq('status', 'published')
-      .neq('status', 'archived')
+      .not('status', 'in', `(${SKIP_STATUSES.join(',')})`)
       .select('id')
       .maybeSingle()
 
@@ -112,7 +126,7 @@ export const conditionReassessment = inngest.createFunction(
       throw new Error(`condition-reassessment: failed to set condition_gate for listing ${listingId} -- ${updateError.message}`)
     }
     if (!updatedRow) {
-      console.warn(`[condition-reassessment] listing ${listingId} is published or archived — condition_gate transition skipped`)
+      console.warn(`[condition-reassessment] listing ${listingId} is ${SKIP_STATUSES.join('/')} — condition_gate transition skipped`)
     }
 
     return { ok: true, listingId }

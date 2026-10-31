@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { unblockedUpdate } from '@/lib/pipeline/pipeline-end'
 
 export async function PATCH(
   _req: Request,
@@ -22,10 +23,23 @@ export async function PATCH(
     .maybeSingle()
   if (!listing) return Response.json({ error: 'Not found' }, { status: 404 })
 
+  // Approving copy resolves a failed rewrite, not a photo_quality block that still needs the seller.
+  // Runs before the status flip so a failure here leaves the listing in copy_review and retryable.
+  const { error: unblockError } = await supabase
+    .from('listings')
+    .update(unblockedUpdate())
+    .eq('id', id)
+    .eq('status', 'copy_review')
+    .eq('agent_blocked_kind', 'rewrite_failed')
+  if (unblockError) {
+    console.error(`approve-copy: failed to clear rewrite_failed block for listing ${id}:`, unblockError)
+    return Response.json({ error: 'Database error — please try again' }, { status: 500 })
+  }
+
   // CAS: only advance if still in copy_review
   const { data: updated, error } = await supabase
     .from('listings')
-    .update({ status: 'in_loop', agent_blocked: false })
+    .update({ status: 'in_loop', copy_approved_at: new Date().toISOString() })
     .eq('id', id)
     .eq('status', 'copy_review')
     .select('id')

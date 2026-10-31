@@ -46,6 +46,16 @@ export async function POST(
       .from('photos')
       .update({ processed_url: photo.raw_url })
       .eq('id', photoId)
+    // Skipping can be what finishes a photo whose BG removal failed, so re-run readiness.
+    try {
+      await inngest.send({ name: 'listing/studio-photo-processed', data: { listingId: photo.listing_id } })
+    } catch (err) {
+      console.error(`bg-removal: readiness event failed for listing ${photo.listing_id}:`, err)
+      return NextResponse.json(
+        { error: 'Photo saved, but the readiness check could not be queued. Try again.' },
+        { status: 502 }
+      )
+    }
   } else {
     await supabase
       .from('photos')

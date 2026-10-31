@@ -8,7 +8,7 @@ import { StatusBadge } from './StatusBadge'
 import { formatPrice, getMeasurementFields, detectClothingSubType } from '@/lib/utils'
 import { detectJewelrySubType } from '@/lib/jewelry-detection'
 import { MeasurementFields, type MeasurementFieldsHandle } from '@/components/workspace/MeasurementFields'
-import type { ListingStatus, Measurements } from '@/types/listings'
+import type { AgentBlockedKind, Listing, ListingStatus, ListingUrls, Measurements } from '@/types/listings'
 
 interface CardListing {
   id: string
@@ -25,6 +25,11 @@ interface CardListing {
   sold_price_cents: number | null
   agent_blocked: boolean
   agent_blocked_reason: string | null
+  agent_blocked_kind: AgentBlockedKind | null
+  copy_approved_at: string | null
+  listing_urls: ListingUrls
+  gender: string | null
+  sub_type: Listing['sub_type']
   pipeline_step: number
   pipeline_total: number
   skip_background_removal: boolean
@@ -37,6 +42,7 @@ interface CoverPhoto {
 
 export interface ListingWithCover extends CardListing {
   coverPhoto?: CoverPhoto
+  hasStudioPhotos?: boolean
   isPriority?: boolean
 }
 
@@ -484,7 +490,7 @@ export function ListingCard({
       <div className="p-2.5 space-y-1">
         <div className="flex items-center justify-between gap-1">
           <span className="text-[10px] text-gray-600 font-mono truncate">{listing.sku ?? '—'}</span>
-          <StatusBadge listing={listing} />
+          <StatusBadge listing={listing} hasStudioPhotos={listing.hasStudioPhotos ?? false} />
         </div>
         <p className="text-xs font-medium text-gray-200 line-clamp-2 leading-snug">
           {listing.title ?? listing.brand ?? 'Untitled'}

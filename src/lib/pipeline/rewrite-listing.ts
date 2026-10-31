@@ -1,12 +1,13 @@
 import { runStructured, ClaudeStructuredOutputError } from '@/lib/claude'
 import type { ClaudeImageInput } from '@/lib/claude'
 import { getSupabaseAdmin } from './supabase-push'
+import { saveRewrittenCopy } from './advance-to-copy-review'
 import { toPublicUrl } from './to-public-url'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 import type { ApiKeys } from '@/lib/user-api-keys'
 import { getPlatformRules } from '@/lib/platform-rules'
 import { getMeasurementFields } from '@/lib/utils'
-import { formatMeasurementValue } from '@/lib/units'
+import { formatMeasurementsSummary } from '@/lib/units'
 import { buildShoeSizingPromptSection, buildShoeSizingTitleString } from '@/lib/sizing/shoe-conversion'
 import type { ClothingSubType, Inclusion, JewelrySubType, PlatformFields } from '@/types/listings'
 
@@ -120,15 +121,11 @@ export async function runRewriteListing(
         return value !== undefined && value !== null && value !== ''
       })
     : []
-  const measurementsLine =
-    populatedMeasurements.length > 0
-      ? `Measurements: ${populatedMeasurements
-          .map(
-            (field) =>
-              `${field.label}: ${formatMeasurementValue(field, (listing.measurements as Record<string, unknown>)[field.key])}`
-          )
-          .join(', ')}`
-      : ''
+  const measurementsSummary = formatMeasurementsSummary(
+    (listing.measurements ?? {}) as Record<string, unknown>,
+    populatedMeasurements
+  )
+  const measurementsLine = measurementsSummary ? `Measurements: ${measurementsSummary}` : ''
 
   // Only confirmed inclusions go into the prompt
   const confirmedInclusions = ((listing.inclusions ?? []) as Inclusion[]).filter(
@@ -247,31 +244,14 @@ Rules:
   }
 
   // Single update — title, description, condition_notes, and merged platform_fields together.
-  // .select('id').maybeSingle() lets us detect zero-rows-affected (archived or deleted listing)
-  // and throw so Inngest retries rather than silently succeeding with no DB change.
-  const { data: updatedRow, error: updateError } = await supabase
-    .from('listings')
-    .update({
-      title: rewrite.canonical_title,
-      description: rewrite.canonical_description,
-      condition_notes: rewrite.condition_notes,
-      platform_fields: updatedPlatformFields,
-    })
-    .eq('id', listingId)
-    .neq('status', 'archived')
-    .select('id')
-    .maybeSingle()
-
-  if (updateError) {
-    throw new Error(
-      `rewrite-listing: failed to update listing ${listingId} -- ${updateError.message}`
-    )
-  }
-
-  if (!updatedRow) {
-    throw new Error(
-      `rewrite-listing: update matched zero rows for listing ${listingId} -- listing may be archived or deleted`
-    )
+  const saved = await saveRewrittenCopy(supabase, listingId, {
+    title: rewrite.canonical_title,
+    description: rewrite.canonical_description,
+    condition_notes: rewrite.condition_notes,
+    platform_fields: updatedPlatformFields,
+  })
+  if (!saved) {
+    console.warn(`rewrite-listing: listing ${listingId} was finalized mid-rewrite — keeping the approved copy`)
   }
 
   return { ok: true }

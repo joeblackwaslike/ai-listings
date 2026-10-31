@@ -13,12 +13,31 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   // Verify ownership: photo must belong to a listing owned by this user
   const { data: photo } = await supabase
     .from('photos')
-    .select('id, listing_id, listings!inner(user_id)')
+    .select('id, listing_id, type, listings!inner(user_id, status)')
     .eq('id', id)
     .eq('listings.user_id', user.id)
     .single()
 
   if (!photo) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  // Confirmations vouch for the studio photos; with none left they no longer hold. Reset first so a
+  // failure leaves the photo in place and a retry can repeat it.
+  const status = (photo.listings as unknown as { status: string }).status
+  if (photo.type === 'studio' && status !== 'published' && status !== 'sold') {
+    const { count, error: countError } = await supabase
+      .from('photos')
+      .select('id', { count: 'exact', head: true })
+      .eq('listing_id', photo.listing_id)
+      .eq('type', 'studio')
+    if (countError) return NextResponse.json({ error: countError.message }, { status: 500 })
+    if (count === 1) {
+      const { error: resetError } = await supabase
+        .from('listings')
+        .update({ photos_confirmed: false, condition_confirmed: false })
+        .eq('id', photo.listing_id)
+      if (resetError) return NextResponse.json({ error: resetError.message }, { status: 500 })
+    }
+  }
 
   const { error } = await supabase.from('photos').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

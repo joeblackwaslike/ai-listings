@@ -5,8 +5,8 @@ import { computeEstimatedShippingBox, estimatedShippingBoxFromMeasuredBox, SHIPP
 test('computeEstimatedShippingBox: generic category pads each of width/height/depth by 2x the padding constant', () => {
   const box = computeEstimatedShippingBox('handbag', { width: 10, height: 8, depth: 4 })
   assert.deepEqual(box, {
-    length: 4 + 2 * SHIPPING_BOX_PADDING_IN,
-    width: 10 + 2 * SHIPPING_BOX_PADDING_IN,
+    length: 10 + 2 * SHIPPING_BOX_PADDING_IN,
+    width: 4 + 2 * SHIPPING_BOX_PADDING_IN,
     height: 8 + 2 * SHIPPING_BOX_PADDING_IN,
   })
 })

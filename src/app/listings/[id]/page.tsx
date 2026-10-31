@@ -5,11 +5,14 @@ import { AgentChat } from '@/components/workspace/AgentChat'
 import { ArchiveButton } from '@/components/workspace/ArchiveButton'
 import { FinalizeButton } from '@/components/workspace/FinalizeButton'
 import { PhotoSection } from '@/components/workspace/PhotoSection'
+import { PriceCard } from '@/components/workspace/PriceCard'
+import { WorkspaceShell } from '@/components/workspace/WorkspaceShell'
 import { AutoRefresh } from '@/components/shared/AutoRefresh'
 import type { Suggestion } from '@/components/workspace/SuggestedReplies'
 import type { DetailGateContext, Listing, Photo, PricingComp, ListingPriceEvent, PlatformPriceEvent } from '@/types/listings'
 import { studioPhotosReady } from '@/lib/utils'
 import { buildGenderGatePrompt, buildIdGatePrompt, isGenderGateAnswered, shouldAttemptPersistGreeting, synthesizeIdGateAnswer } from '@/lib/pipeline/gate-messages'
+import { nextDisplayOrder, splitPhotos } from '@/lib/photos/photo-column'
 import { getSetting } from '@/lib/user-settings'
 
 type WorkspaceContext = {
@@ -198,7 +201,7 @@ export default async function WorkspacePage({
       .from('conversations')
       .select('id, role, content, created_at')
       .eq('listing_id', id)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(100),
     supabase
       .from('listing_price_events')
@@ -216,7 +219,7 @@ export default async function WorkspacePage({
     notFound()
   }
   if (compsResult.error) {
-    // A failed comps fetch must not silently degrade to "no comps" -- FieldsPanel's price
+    // A failed comps fetch must not silently degrade to "no comps" -- PriceCard's price
     // display is comp-dependent (premiums, gate-aware pricing), so an empty comp set here would
     // show a different, unpremiumed price than a later publish could actually resolve.
     throw new Error(`workspace page: pricing_comps fetch failed — ${compsResult.error.message}`)
@@ -225,7 +228,8 @@ export default async function WorkspacePage({
   const listing = listingResult.data as unknown as Listing
   const photos = (photosResult.data ?? []) as unknown as Photo[]
   const comps = (compsResult.data ?? []) as unknown as PricingComp[]
-  const history = historyResult.data ?? []
+  // Newest 100, put back in chronological order, so a long conversation still shows its latest turns.
+  const history = (historyResult.data ?? []).reverse()
   const priceHistory = (priceHistoryResult.data ?? []) as unknown as ListingPriceEvent[]
   const platformPriceHistory = (platformPriceHistoryResult.data ?? []) as unknown as PlatformPriceEvent[]
 
@@ -239,7 +243,7 @@ export default async function WorkspacePage({
     // Atomic check-and-insert (migration 0022) -- deciding "does this already match the last
     // message" here against `history` (fetched moments earlier) raced under concurrent page
     // loads and produced duplicate gate prompts (ai-listings dashboard report, 2026-08-21).
-    const { error: firstMessageError } = await supabase.rpc('insert_conversation_if_new', {
+    const { data: inserted, error: firstMessageError } = await supabase.rpc('insert_conversation_if_new', {
       p_listing_id: id,
       p_role: 'assistant',
       p_content: firstMessage,
@@ -247,7 +251,23 @@ export default async function WorkspacePage({
     if (firstMessageError) {
       console.error(`Failed to persist greeting for listing ${id}:`, firstMessageError.message)
     }
+    // `history` predates this insert; add the new gate prompt to it so the chat shows it and the
+    // collapsed chat's badge counts it on this render rather than after the next poll.
+    if (inserted === true) {
+      const { data: greeting } = await supabase
+        .from('conversations')
+        .select('id, role, content, created_at')
+        .eq('listing_id', id)
+        .eq('role', 'assistant')
+        .eq('content', firstMessage)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (greeting) history.push(greeting)
+    }
   }
+
+  const assistantMessageTimes = history.filter((m) => m.role === 'assistant').map((m) => m.created_at as string)
 
   return (
     <div className="h-screen flex flex-col">
@@ -262,20 +282,21 @@ export default async function WorkspacePage({
           {listing.status === 'in_loop' && <FinalizeButton listingId={id} />}
           <ArchiveButton listingId={id} />
           <a href={`/listings/${id}/publish`} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
-            Export →
+            Publish →
           </a>
         </div>
       </header>
 
-      <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_1fr] xl:grid-cols-[3fr_2fr]">
-        <div className="overflow-y-auto border-r border-gray-800">
-          <div className="flex flex-col gap-6 p-6">
-            <PhotoSection photos={photos} listingId={id} initialSkip={listing.skip_background_removal} />
-            <FieldsPanel listing={listing} photos={photos} comps={comps} priceHistory={priceHistory} platformPriceHistory={platformPriceHistory} />
-          </div>
-        </div>
-
-        <div className="overflow-hidden">
+      <WorkspaceShell
+        listingId={id}
+        assistantMessageTimes={assistantMessageTimes}
+        photos={
+          <PhotoSection photos={photos} listingId={id} initialSkip={listing.skip_background_removal}>
+            <PriceCard listing={listing} comps={comps} priceHistory={priceHistory} platformPriceHistory={platformPriceHistory} />
+          </PhotoSection>
+        }
+        fields={<FieldsPanel listing={listing} photos={photos} />}
+        chat={
           <AgentChat
             listingId={id}
             initialMessages={history.map((m) => ({
@@ -290,9 +311,10 @@ export default async function WorkspacePage({
             firstMessage={firstMessage}
             suggestions={suggestions}
             inputUnit={measurementInputUnit}
+            nextPhotoOrder={nextDisplayOrder(splitPhotos(photos).gridPhotos)}
           />
-        </div>
-      </div>
+        }
+      />
     </div>
   )
 }

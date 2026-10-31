@@ -62,11 +62,33 @@ export interface StudioUploadedEvent {
 // Namespaced `listing/` rather than `pipeline/` because this event doesn't
 // originate from a pipeline step — it's fired directly from an API route
 // (confirm-photos/route.ts, a later task) when a user confirms processed
-// studio photos, not from within the Inngest pipeline chain itself.
+// studio photos, not from within the Inngest pipeline chain itself. Also fired by
+// photo-readiness.ts on the first auto-confirmation. First confirmation only: it drives
+// condition-reassessment.ts; batch-quality-check.ts listens to studio-batch-ready instead.
 export interface ListingPhotosConfirmedEvent {
   name: 'listing/photos-confirmed'
   data: {
     listingId: string
+  }
+}
+
+// Fired by photo-quality-gate.ts each time a studio photo finishes processing (and by the
+// bg-removal skip route). Feeds photo-readiness.ts, which is debounced per listing.
+export interface StudioPhotoProcessedEvent {
+  name: 'listing/studio-photo-processed'
+  data: {
+    listingId: string
+  }
+}
+
+// Fired by photo-readiness.ts (its only producer) once an upload batch has settled with
+// every studio photo processed.
+// Triggers batch-quality-check.ts on every batch, not just the first.
+export interface StudioBatchReadyEvent {
+  name: 'listing/studio-batch-ready'
+  data: {
+    listingId: string
+    firstConfirmation: boolean
   }
 }
 

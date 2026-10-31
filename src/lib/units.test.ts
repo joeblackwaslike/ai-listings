@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mmToInches, inchesToMm, formatDualMeasurement, formatMeasurementValue, isPhysicalLengthField } from './units'
+import { mmToInches, inchesToMm, formatDualMeasurement, formatMeasurementValue, isPhysicalLengthField, formatDimensions, formatMeasurementsSummary, isDimensionKey } from './units'
 import type { MeasurementField } from '@/types/listings'
+import { getMeasurementFields } from './utils'
 
 test('mmToInches converts millimeters to inches rounded to 2 decimals', () => {
   assert.equal(mmToInches(813), 32.01)
@@ -95,4 +96,58 @@ test('isPhysicalLengthField excludes the four jewelry mm fields (natively mm, no
 
 test('isPhysicalLengthField excludes any _mm-suffixed key by naming convention, not just known keys', () => {
   assert.equal(isPhysicalLengthField('some_future_jewelry_id_mm'), false)
+})
+
+test('formatDimensions renders generic fields as L x W x H in field order', () => {
+  const fields = getMeasurementFields('handbag', null, [])
+  assert.equal(formatDimensions({ width: 9.84, height: 6.69, depth: 2.76 }, fields), '9.84" L × 2.76" W × 6.69" H')
+})
+
+test('formatDimensions only includes fields that have values, and returns null when none do', () => {
+  const fields = getMeasurementFields('handbag', null, [])
+  assert.equal(formatDimensions({ width: 9.84, height: 6.69 }, fields), '9.84" L × 6.69" H')
+  assert.equal(formatDimensions({}, fields), null)
+})
+
+test('formatDimensions uses only Length/Width/Height fields for sneakers, skipping size fields', () => {
+  const fields = getMeasurementFields('sneakers', null, [])
+  assert.equal(
+    formatDimensions({ shoe_size_raw: '9', us_size: 9, item_length_in: 11, item_width_in: 4, item_height_in: 5 }, fields),
+    '11" L × 4" W × 5" H'
+  )
+})
+
+test('formatDimensions ignores non-dimension fields (clothing)', () => {
+  assert.equal(formatDimensions({ waist: 32, inseam: 30 }, getMeasurementFields('clothing', 'jeans', [])), null)
+})
+
+test('formatMeasurementsSummary leads with the L x W x H string, then non-box fields as labeled values', () => {
+  const fields = getMeasurementFields('sneakers', null, [])
+  const out = formatMeasurementsSummary({ us_size: 9, item_length_in: 11, item_width_in: 4, item_height_in: 5 }, fields)
+  assert.equal(out, '11" L × 4" W × 5" H, US Size (if directly on the tag): 9')
+})
+
+test('formatMeasurementsSummary keeps clothing as labeled dual-unit lines and returns null when nothing is populated', () => {
+  const fields = getMeasurementFields('clothing', 'jeans', [])
+  assert.equal(formatMeasurementsSummary({ waist: 32, inseam: 30 }, fields), 'Waist: 32 in (813 mm), Inseam: 30 in (762 mm)')
+  assert.equal(formatMeasurementsSummary({}, fields), null)
+})
+
+test('formatMeasurementsSummary generic handbag is just the dimensions string', () => {
+  const fields = getMeasurementFields('handbag', null, [])
+  assert.equal(formatMeasurementsSummary({ width: 8, depth: 2, height: 5 }, fields), '8" L × 2" W × 5" H')
+})
+
+test('clothing length (key "length") is not a box dimension: summary keeps the labeled dual-unit value', () => {
+  for (const [sub, key] of [['shirt', 'length'], ['dress', 'length'], ['tshirt', 'length']] as const) {
+    const fields = getMeasurementFields('clothing', sub, [])
+    assert.ok(fields.some((f) => f.key === key), sub)
+    assert.equal(formatDimensions({ length: 28 }, fields), null, sub)
+    assert.equal(formatMeasurementsSummary({ length: 28 }, fields), 'Length: 28 in (711 mm)', sub)
+  }
+})
+
+test('isDimensionKey matches only box-dimension keys, not clothing length', () => {
+  for (const k of ['width', 'depth', 'height', 'item_length_in', 'item_width_in', 'item_height_in']) assert.equal(isDimensionKey(k), true, k)
+  for (const k of ['length', 'chest', 'case_diameter_mm']) assert.equal(isDimensionKey(k), false, k)
 })

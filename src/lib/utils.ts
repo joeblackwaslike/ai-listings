@@ -6,6 +6,12 @@ export function formatPrice(cents: number | null): string {
   return `$${(cents / 100).toFixed(0)}`
 }
 
+/** A user-typed dollar amount as a number; null unless it is strictly numeric, finite, and above zero. */
+export function parsePrice(input: string): number | null {
+  const n = Number(input)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export function relativeDate(isoString: string | null | undefined): string {
   if (!isoString) return '—'
   const days = Math.floor((Date.now() - new Date(isoString).getTime()) / 86_400_000)
@@ -33,9 +39,9 @@ export function detectClothingSubType(notableFeatures: string[]): import('@/type
 // Everything else (handbag, small_leather_goods, electronics, keyboards,
 // collectibles, watches, jewelry sub-types with no dedicated fields, other, etc.) — 3D dimensions
 const genericDimensionFields: import('@/types/listings').MeasurementField[] = [
-  { key: 'width', label: 'Width', hint: 'in inches — side to side at the widest point' },
+  { key: 'width', label: 'Length', hint: 'in inches — side to side at the widest point' },
+  { key: 'depth', label: 'Width', hint: 'in inches — front to back' },
   { key: 'height', label: 'Height', hint: 'in inches — base to top' },
-  { key: 'depth', label: 'Depth', hint: 'in inches — front to back' },
 ]
 
 export function getMeasurementFields(

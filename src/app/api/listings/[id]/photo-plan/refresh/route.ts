@@ -38,14 +38,17 @@ export async function POST(
     anthropicKey: apiKeys.anthropic,
   })
 
+  const { data: storedPlan, error: planErr } = await supabase.rpc('update_photo_plan', {
+    p_listing_id: id,
+    p_plan: photoPlan,
+  })
+  if (planErr) return Response.json({ error: planErr.message }, { status: 500 })
+
   const { error: updateErr } = await supabase
     .from('listings')
-    .update({
-      photo_plan: photoPlan,
-      photo_plan_generated_at: new Date().toISOString(),
-    })
+    .update({ photo_plan_generated_at: new Date().toISOString() })
     .eq('id', id)
 
   if (updateErr) return Response.json({ error: updateErr.message }, { status: 500 })
-  return Response.json({ ok: true, photo_plan: photoPlan })
+  return Response.json({ ok: true, photo_plan: storedPlan })
 }

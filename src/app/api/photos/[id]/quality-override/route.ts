@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
+import { unblockedUpdate } from '@/lib/pipeline/pipeline-end'
 import { removeBackground } from '@/lib/pipeline/remove-background'
 import { getUserApiKeys } from '@/lib/user-api-keys'
 
@@ -92,8 +93,9 @@ export async function PATCH(
   if (!countError && count === 0) {
     const { error: unblockError } = await supabase
       .from('listings')
-      .update({ agent_blocked: false, agent_blocked_reason: null })
+      .update(unblockedUpdate())
       .eq('id', photoRow.listing_id)
+      .eq('agent_blocked_kind', 'photo_quality')
     if (unblockError) {
       // The underlying quality-failed state is already resolved (count === 0), but the write
       // to actually clear agent_blocked failed -- the listing stays visibly blocked with no
