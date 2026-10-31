@@ -172,7 +172,7 @@ export const batchQualityCheck = inngest.createFunction(
       return completePhotoResults(raw, photos.length)
     })
 
-    const { failed, liveIndexes } = await step.run('record-quality-results', async () => {
+    const { failed, liveIndexes } = await step.run('record-quality-results-v2', async () => {
       const photoIds = photos.map((p) => p.id)
       // Re-read: a seller may have overridden a photo while the check ran.
       const { data: fresh, error: freshError } = await supabase
