@@ -52,3 +52,23 @@ test('studio-upload: owner uploads, inserts the photo row and fires the event', 
   assert.equal(s.admin.writes.length, 1)
   assert.equal(s.calls.length, 2)
 })
+
+test('studio-upload: replacesPhotoId must reference a quality-failed studio photo on this listing', async () => {
+  const photos = (meta: unknown) => [{ id: 'p1', listing_id: 'l1', type: 'studio', photoroom_meta: meta }]
+  const run = async (meta: unknown) => {
+    const s = setup({ id: 'owner' })
+    s.session.tables.photos = photos(meta)
+    const req = await uploadRequest()
+    const form = await req.formData()
+    form.set('replacesPhotoId', 'p1')
+    const res = await handleStudioUpload(new Request('http://x', { method: 'POST', body: form }), s.session.client, s.admin.client, s.deps)
+    return { res, s }
+  }
+
+  const rejected = await run({ quality_failed: false })
+  assert.equal(rejected.res.status, 400)
+  assert.deepEqual(rejected.s.calls, [])
+
+  const accepted = await run({ quality_failed: true })
+  assert.equal(accepted.res.status, 200)
+})

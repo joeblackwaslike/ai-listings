@@ -13,11 +13,13 @@ export interface FakeSupabase {
   client: SupabaseClient
   tables: Record<string, Row[]>
   writes: RecordedWrite[]
+  reads: string[]
   effectiveWrites: () => RecordedWrite[]
 }
 
 export function fakeSupabase(tables: Record<string, Row[]>, user: { id: string } | null = null): FakeSupabase {
   const writes: RecordedWrite[] = []
+  const reads: string[] = []
 
   function from(table: string) {
     const rows = (tables[table] ??= [])
@@ -25,11 +27,23 @@ export function fakeSupabase(tables: Record<string, Row[]>, user: { id: string }
     let op: 'select' | 'insert' | 'update' | 'delete' = 'select'
     let values: Row | undefined
 
+    const valueOf = (r: Row, col: string) => {
+      const [base, key] = col.split('->>')
+      if (key === undefined) return r[col]
+      const nested = (r[base!] as Row | null | undefined)?.[key]
+      return nested === undefined || nested === null ? undefined : String(nested)
+    }
+
     const matching = () =>
-      rows.filter((r) => filters.every(([col, val]) => (Array.isArray(val) ? val.includes(r[col]) : r[col] === val)))
+      rows.filter((r) =>
+        filters.every(([col, val]) => (Array.isArray(val) ? val.includes(valueOf(r, col)) : valueOf(r, col) === val))
+      )
 
     const run = (): Row[] => {
-      if (op === 'select') return matching()
+      if (op === 'select') {
+        reads.push(table)
+        return matching()
+      }
       if (op === 'insert') {
         const row = { id: `${table}-${rows.length + 1}`, ...values }
         rows.push(row)
@@ -63,6 +77,8 @@ export function fakeSupabase(tables: Record<string, Row[]>, user: { id: string }
         filters.push([col, val])
         return chain
       },
+      order: () => chain,
+      limit: () => chain,
       in: (col: string, val: unknown[]) => {
         filters.push([col, val])
         return chain
@@ -83,5 +99,5 @@ export function fakeSupabase(tables: Record<string, Row[]>, user: { id: string }
     from,
   } as unknown as SupabaseClient
 
-  return { client, tables, writes, effectiveWrites: () => writes.filter((w) => w.affected > 0) }
+  return { client, tables, writes, reads, effectiveWrites: () => writes.filter((w) => w.affected > 0) }
 }
