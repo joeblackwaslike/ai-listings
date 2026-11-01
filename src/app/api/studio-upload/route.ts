@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import sharp from 'sharp'
 import '@/lib/sharp-config'
@@ -15,7 +15,19 @@ function getSupabaseAdmin() {
   )
 }
 
-export async function POST(request: Request) {
+export interface StudioUploadDeps {
+  uploadFile: typeof uploadFile
+  sendEvent: (event: { name: string; data: Record<string, unknown> }) => Promise<unknown>
+}
+
+const defaultDeps: StudioUploadDeps = { uploadFile, sendEvent: (event) => inngest.send(event) }
+
+export async function handleStudioUpload(
+  request: Request,
+  sessionClient: SupabaseClient,
+  supabase: SupabaseClient,
+  deps: StudioUploadDeps = defaultDeps
+) {
   const formData = await request.formData()
   const file = formData.get('photo') as File | null
   const listingId = formData.get('listingId') as string | null
@@ -27,11 +39,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'photo and listingId required' }, { status: 400 })
   }
 
-  const cookieStore = await cookies()
-  const sbCookies = cookieStore.getAll().filter(c => c.name.startsWith('sb-'))
-  console.log('[studio-upload] auth attempt cookies:', sbCookies.map(c => c.name))
-
-  const sessionClient = await createClient()
   let getResult = await sessionClient.auth.getUser()
   if (getResult.error?.name === 'AuthRetryableFetchError') {
     await new Promise(r => setTimeout(r, 150))
@@ -41,6 +48,16 @@ export async function POST(request: Request) {
   if (!user) {
     console.error('[studio-upload] auth failed:', getUserError)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: ownedListing } = await sessionClient
+    .from('listings')
+    .select('id')
+    .eq('id', listingId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!ownedListing) {
+    return NextResponse.json({ error: 'Listing not found' }, { status: 404 })
   }
 
   if (replacesPhotoId) {
@@ -57,7 +74,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const supabase = getSupabaseAdmin()
   const timestamp = Date.now()
   const ext = file.name.split('.').pop() ?? 'jpg'
   const storagePath = `studio/${listingId}/${timestamp}.${ext}`
@@ -78,7 +94,7 @@ export async function POST(request: Request) {
 
   let photoUrl: string
   try {
-    photoUrl = await uploadFile(storagePath, buffer, file.type || 'image/jpeg')
+    photoUrl = await deps.uploadFile(storagePath, buffer, file.type || 'image/jpeg')
   } catch (err) {
     console.error('[studio-upload] R2 upload failed:', err)
     return NextResponse.json({ error: 'Storage upload failed' }, { status: 500 })
@@ -101,7 +117,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await inngest.send({
+    await deps.sendEvent({
       name: 'studio/uploaded',
       data: {
         listingId,
@@ -115,4 +131,12 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ photoId: photoRow.id, photoUrl })
+}
+
+export async function POST(request: Request) {
+  const cookieStore = await cookies()
+  const sbCookies = cookieStore.getAll().filter(c => c.name.startsWith('sb-'))
+  console.log('[studio-upload] auth attempt cookies:', sbCookies.map(c => c.name))
+
+  return handleStudioUpload(request, await createClient(), getSupabaseAdmin())
 }

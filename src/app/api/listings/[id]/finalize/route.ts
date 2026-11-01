@@ -1,19 +1,12 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { canFinalizeOrPublish } from '@/lib/publish-gate'
 import type { Inclusion, Photo } from '@/types/listings'
 
-export async function PATCH(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params
-
-  const sessionClient = await createClient()
+export async function handleFinalize(sessionClient: SupabaseClient, supabase: SupabaseClient, id: string) {
   const { data: { user } } = await sessionClient.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const supabase = getSupabaseAdmin()
 
   const { data: listing } = await supabase
     .from('listings')
@@ -42,6 +35,7 @@ export async function PATCH(
     .from('listings')
     .update({ status: 'finalizing' })
     .eq('id', id)
+    .eq('user_id', user.id)
     .eq('status', 'in_loop')
     .select('status')
     .maybeSingle()
@@ -49,4 +43,12 @@ export async function PATCH(
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
   return Response.json({ ok: true, status: updated?.status ?? 'unchanged' })
+}
+
+export async function PATCH(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  return handleFinalize(await createClient(), getSupabaseAdmin(), id)
 }
