@@ -45,8 +45,8 @@ session context if dumped whole. Every eBay request goes out from the home IP, s
 the item needs. `-i` prints the HTTP status line first, so `head` can't cut it off. A 401 with
 a plain-text body means the bearer token is missing or wrong: check that `$STEALTH_BROWSER_TOKEN`
 is set and matches the gateway's token. A 401 with a `{"session_expired":true,...}` body means
-the eBay session expired: ask Joe to run `pnpm signin ebay` in the stealth-browser repo. On 423 eBay blocked the profile and it is paused
-for 30 minutes, so don't retry. On 429, back off and retry later.
+the eBay session expired: ask Joe to run `pnpm signin ebay` in the stealth-browser repo.
+A 423 means the site served a bot check. The gateway solves reCAPTCHA challenge forms itself when a solver key is configured, so a 423 on eBay or Reddit means the challenge went unsolved. Those two hosts then pause for 30 minutes. Stop, and don't retry them before the `Retry-After` header on the paused 423 runs out. A request during the pause gets `{"blocked":true,"profile":...,"reason":"paused"}` with no html. Other hosts never pause, so retrying them is fine. A fresh block's body is `{blocked, profile, host, reason, marker, html, capture}`. `marker` is the check that matched (`captcha_widget:g-recaptcha`, `captcha_widget:h-captcha`, `captcha_widget:amazon`, `google_sorry`, `interruption_page`, `verify_human`, `ebay_challenge_redirect`, `ebay_error_page`, or `http_block_status`). `capture` is the saved file name, left out if the save failed. `html` is the full page the site served and can be large, so pull fields with `jq -r '.marker'` and never print the body. On 429, back off and retry later.
 
 Fashionphile pages fetch fine via direct WebFetch but often hide price behind a JS
 placeholder on sold-out listings — one attempt is still worth it, just don't chase it if
