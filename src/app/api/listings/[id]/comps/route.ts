@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { recalculateListingPrice } from '@/lib/pipeline/step3-pricing-research'
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id: listingId } = await params
+type Recalculate = typeof recalculateListingPrice
 
-  const supabase = await createClient()
+export async function handleAddComp(
+  supabase: SupabaseClient,
+  listingId: string,
+  request: Request,
+  recalculate: Recalculate = recalculateListingPrice
+) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -75,7 +77,7 @@ export async function POST(
   // added regardless; recalculated:false tells the client the displayed price may be stale
   // until the next successful recalc (e.g. deleting and re-adding, or the next automated run).
   try {
-    const result = await recalculateListingPrice(listingId)
+    const result = await recalculate(listingId)
     return NextResponse.json({ ok: true, recalculated: true, ...result })
   } catch (err) {
     console.error(`comps route: recalculateListingPrice failed after successful insert for listing ${listingId}`, err)
@@ -83,13 +85,12 @@ export async function POST(
   }
 }
 
-export async function DELETE(
+export async function handleDeleteComp(
+  supabase: SupabaseClient,
+  listingId: string,
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  recalculate: Recalculate = recalculateListingPrice
 ) {
-  const { id: listingId } = await params
-
-  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -121,10 +122,26 @@ export async function DELETE(
   // Same reasoning as POST above: the delete already committed, so a recalculation failure
   // here must not read back as "the comp wasn't removed."
   try {
-    const result = await recalculateListingPrice(listingId)
+    const result = await recalculate(listingId)
     return NextResponse.json({ ok: true, recalculated: true, ...result })
   } catch (err) {
     console.error(`comps route: recalculateListingPrice failed after successful delete for listing ${listingId}`, err)
     return NextResponse.json({ ok: true, recalculated: false })
   }
+}
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  return handleAddComp(await createClient(), id, request)
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  return handleDeleteComp(await createClient(), id, request)
 }
