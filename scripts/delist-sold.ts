@@ -9,11 +9,8 @@
  */
 
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
-import { getEbayCreds, getPoshmarkCreds } from '@/lib/platforms/credentials'
-import { EbayAdapter } from '@/lib/platforms/adapters/ebay'
+import { createDelisters, delistFromOtherPlatforms } from '@/lib/platforms/delist-sold'
 import type { ListingUrls, PlatformFields } from '@/types/listings'
-// Import from source: the built ESM package breaks the script loader (see publish-ebay-to-poshmark.ts)
-import { PoshmarkClient } from '../packages/poshmark-seller-sdk/src/index.js'
 
 const USER_ID = 'c4042680-fec9-4b09-805c-86e7adb62971'
 const commit = process.argv.includes('--commit')
@@ -25,11 +22,7 @@ async function main() {
   if (soldOn !== 'ebay' && soldOn !== 'poshmark') throw new Error('Pass --sold-on=ebay|poshmark')
 
   const supabase = getSupabaseAdmin()
-  const ebayCreds = await getEbayCreds(USER_ID)
-  const poshCreds = await getPoshmarkCreds(USER_ID)
-  if (!ebayCreds || !poshCreds) throw new Error('Missing eBay or Poshmark credentials')
-  const ebay = new EbayAdapter(ebayCreds)
-  const posh = new PoshmarkClient({ cookie: poshCreds.sessionCookies, requestDelayMs: 500 })
+  const delisters = createDelisters(USER_ID)
 
   const { data, error } = await supabase
     .from('listings')
@@ -46,27 +39,21 @@ async function main() {
       continue
     }
     try {
-      const pf = l.platform_fields as PlatformFields
-      const urls = { ...((l.listing_urls ?? {}) as ListingUrls) }
-      const targets = (['ebay', 'poshmark'] as const).filter((p) => p !== soldOn && urls[p])
+      const urls = (l.listing_urls ?? {}) as ListingUrls
+      const targets = Object.keys(urls).filter((p) => p !== soldOn && urls[p] && delisters[p])
       console.log(`${sku}: status=${l.status} delist=[${targets}] -> ${commit ? 'applying' : 'dry-run'}`)
       if (!commit) continue
 
-      for (const p of targets) {
-        if (p === 'ebay') {
-          const offerId = pf?.ebay?.ebay_offer_id
-          if (!offerId) throw new Error('no ebay_offer_id')
-          await ebay.withdrawOffer(offerId)
-        } else {
-          const id = pf?.poshmark?.listing_id
-          if (!id) throw new Error('no poshmark listing_id')
-          await posh.deleteListing(id)
-        }
-        delete urls[p]
-        const { error: urlErr } = await supabase.from('listings').update({ listing_urls: urls }).eq('id', l.id)
-        if (urlErr) throw new Error(`${p} delisted but listing_urls update failed: ${urlErr.message}`)
-        console.log(`${sku}: ${p} delisted`)
-      }
+      const delisted = await delistFromOtherPlatforms(
+        { listing_urls: urls, platform_fields: l.platform_fields as PlatformFields },
+        soldOn,
+        delisters,
+        async (remaining) => {
+          const { error: urlErr } = await supabase.from('listings').update({ listing_urls: remaining }).eq('id', l.id)
+          if (urlErr) throw new Error(`listing_urls update failed: ${urlErr.message}`)
+        },
+      )
+      for (const p of delisted) console.log(`${sku}: ${p} delisted`)
 
       const { error: upErr } = await supabase
         .from('listings')
