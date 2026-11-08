@@ -51,6 +51,16 @@ async function setPoshmarkPrice(client: PoshmarkClient, id: string, priceCents: 
   throw new Error(`Poshmark price did not change to $${want}`)
 }
 
+async function ebayPriceCents(ebay: EbayAdapter, offerId: string): Promise<number | undefined> {
+  try {
+    const offer = await ebay.getRawOffer(offerId)
+    const value = (offer.pricingSummary as { price?: { value?: string } } | undefined)?.price?.value
+    return value === undefined ? undefined : Math.round(Number.parseFloat(value) * 100)
+  } catch {
+    return undefined
+  }
+}
+
 async function main() {
   const supabase = getSupabaseAdmin()
 
@@ -163,6 +173,7 @@ async function main() {
     }
 
     let pushAttempted = false
+    let eventId: string | undefined
     try {
       // GET the full current offer to use as the base for the PUT.
       const currentOffer = await ebay.getRawOffer(ebayOfferId)
@@ -194,9 +205,10 @@ async function main() {
         .single()
       if (eventError || !event) {
         console.error(`    ✗ price event insert failed, eBay untouched: ${eventError?.message}`)
-        skipped++
+        partial.push(`${label}: price event insert failed, eBay untouched`)
         continue
       }
+      eventId = event.id as string
 
       pushAttempted = true
       await ebay.updateOfferPrice(ebayOfferId, newPrice, currentOffer)
@@ -243,15 +255,22 @@ async function main() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(`    ✗ failed: ${msg}`)
-      if (pushAttempted) {
-        partial.push(`${label}: eBay push errored (${msg}) — check the live eBay price; guard row kept so a rerun skips it`)
-      } else {
+      const livePrice = pushAttempted ? await ebayPriceCents(ebay, ebayOfferId) : undefined
+      if (!pushAttempted) {
         skipped++
+      } else if (livePrice === newPrice) {
+        partial.push(`${label}: eBay push errored (${msg}) but the live price is already ${dollars(newPrice)}`)
+      } else if (livePrice === undefined) {
+        partial.push(`${label}: eBay push errored (${msg}) and the live price can't be read — check it; guard row kept`)
+      } else {
+        // eBay confirmed unchanged: drop the guard row so a rerun retries this listing.
+        await supabase.from('listing_price_events').delete().eq('id', eventId)
+        partial.push(`${label}: eBay push failed (${msg}), price unchanged, safe to rerun`)
       }
     }
   }
 
-  console.log(`\nDone: ${applied} updated, ${skipped} skipped, ${partial.length} needing attention`)
+  console.log(`\nDone: ${applied} updated, ${skipped} skipped, ${partial.length} issues`)
   if (partial.length) {
     console.log(`Needs attention:\n  ${partial.join('\n  ')}`)
     process.exitCode = 1
