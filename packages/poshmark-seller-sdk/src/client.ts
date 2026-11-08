@@ -498,7 +498,7 @@ function buildListingUpdate(fields: UpdateListingFields): Record<string, unknown
   if (fields.price !== undefined) {
     // Poshmark prices are whole dollars; createListing floors the same way.
     const dollars = typeof fields.price === "number" ? fields.price : Number.parseFloat(fields.price);
-    if (!Number.isFinite(dollars) || dollars < 0) {
+    if (!Number.isFinite(dollars) || dollars < 1) {
       throw new PoshmarkDataError(`Invalid price: ${String(fields.price)}`);
     }
     post["price_amount"] = { val: Math.floor(dollars), currency_code: "USD", currency_symbol: "$" };

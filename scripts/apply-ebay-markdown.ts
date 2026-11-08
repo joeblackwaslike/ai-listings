@@ -101,8 +101,6 @@ async function main() {
 
   let applied = 0
   let skipped = 0
-  const poshmarkFailures: string[] = []
-  const poshmarkUnsynced: string[] = []
   const partial: string[] = []
 
   for (const listing of listings) {
@@ -153,7 +151,7 @@ async function main() {
         applied++
       } catch (err) {
         console.error(`    ✗ poshmark failed: ${err instanceof Error ? err.message : String(err)}`)
-        poshmarkFailures.push(`${label} (${poshmarkId})`)
+        partial.push(`${label}: Poshmark ${poshmarkId} not updated, should be $${Math.floor(newPrice / 100)}`)
       }
       continue
     }
@@ -164,6 +162,7 @@ async function main() {
       continue
     }
 
+    let pushAttempted = false
     try {
       // GET the full current offer to use as the base for the PUT.
       const currentOffer = await ebay.getRawOffer(ebayOfferId)
@@ -181,63 +180,81 @@ async function main() {
         continue
       }
 
+      // Written before the eBay push: this row is what the rerun guard reads, so it must exist
+      // even if the process dies mid-listing.
+      const { data: event, error: eventError } = await supabase
+        .from('listing_price_events')
+        .insert({
+          listing_id: listing.id,
+          event_type: 'manual_change',
+          price_cents: newPrice,
+          note: `Markdown ${DISCOUNT_PCT}% — was ${dollars(currentPrice)}, now ${dollars(newPrice)}`,
+        })
+        .select('id')
+        .single()
+      if (eventError || !event) {
+        console.error(`    ✗ price event insert failed, eBay untouched: ${eventError?.message}`)
+        skipped++
+        continue
+      }
+
+      pushAttempted = true
       await ebay.updateOfferPrice(ebayOfferId, newPrice, currentOffer)
 
+      let clean = true
       const { error: updateError } = await supabase
         .from('listings')
         .update({ final_price_cents: newPrice })
         .eq('id', listing.id)
-      let dbStale = false
       if (updateError) {
         console.error(`    ✗ DB update failed after eBay push: ${updateError.message}`)
-        partial.push(`${label}: eBay ${dollars(newPrice)}, DB still ${dollars(currentPrice)}`)
-        dbStale = true
+        partial.push(
+          `${label}: eBay is ${dollars(newPrice)}, DB still ${dollars(currentPrice)} — set final_price_cents=${newPrice} before running --poshmark-only`,
+        )
+        clean = false
       }
 
       let poshmarkNote = ''
       if (poshmarkId && !poshmark) {
-        poshmarkUnsynced.push(`${label} → ${dollars(newPrice)} (${poshmarkId})`)
+        partial.push(`${label}: Poshmark ${poshmarkId} not updated (no credentials), should be $${Math.floor(newPrice / 100)}`)
         poshmarkNote = ' (Poshmark NOT synced)'
-      }
-      if (poshmarkId && poshmark) {
+        clean = false
+      } else if (poshmarkId && poshmark) {
         try {
           await setPoshmarkPrice(poshmark, poshmarkId, newPrice)
           poshmarkNote = ' (+ Poshmark)'
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           console.error(`    ✗ poshmark failed: ${msg}`)
-          poshmarkFailures.push(`${label} (${poshmarkId})`)
+          partial.push(`${label}: Poshmark ${poshmarkId} not updated, should be $${Math.floor(newPrice / 100)}`)
           poshmarkNote = ' (Poshmark FAILED)'
+          clean = false
         }
       }
 
-      const { error: eventError } = await supabase.from('listing_price_events').insert({
-        listing_id: listing.id,
-        event_type: 'manual_change',
-        price_cents: newPrice,
-        note: `Markdown ${DISCOUNT_PCT}%${poshmarkNote} — was ${dollars(currentPrice)}, now ${dollars(newPrice)}`,
-      })
-      if (eventError) {
-        console.error(`    ✗ price event insert failed: ${eventError.message}`)
-        partial.push(`${label}: no audit row — rerun guard will not see this markdown`)
+      if (poshmarkNote) {
+        await supabase
+          .from('listing_price_events')
+          .update({ note: `Markdown ${DISCOUNT_PCT}%${poshmarkNote} — was ${dollars(currentPrice)}, now ${dollars(newPrice)}` })
+          .eq('id', event.id)
       }
 
-      if (dbStale || poshmarkNote.includes('FAILED')) continue
-      applied++
+      if (clean) applied++
     } catch (err) {
-      console.error(`    ✗ failed: ${err instanceof Error ? err.message : String(err)}`)
-      skipped++
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`    ✗ failed: ${msg}`)
+      if (pushAttempted) {
+        partial.push(`${label}: eBay push errored (${msg}) — check the live eBay price; guard row kept so a rerun skips it`)
+      } else {
+        skipped++
+      }
     }
   }
 
-  console.log(`\nDone: ${applied} updated, ${skipped} skipped, ${partial.length + poshmarkFailures.length} needing attention`)
-  if (partial.length) console.log(`Partial state:\n  ${partial.join('\n  ')}`)
-  if (partial.length || poshmarkFailures.length) process.exitCode = 1
-  if (poshmarkFailures.length) {
-    console.log(`Poshmark price sync failed for ${poshmarkFailures.length}:\n  ${poshmarkFailures.join('\n  ')}`)
-  }
-  if (poshmarkUnsynced.length) {
-    console.log(`Poshmark price NOT updated for ${poshmarkUnsynced.length}:\n  ${poshmarkUnsynced.join('\n  ')}`)
+  console.log(`\nDone: ${applied} updated, ${skipped} skipped, ${partial.length} needing attention`)
+  if (partial.length) {
+    console.log(`Needs attention:\n  ${partial.join('\n  ')}`)
+    process.exitCode = 1
   }
   if (!commit) console.log('Re-run with --commit to apply.')
 }

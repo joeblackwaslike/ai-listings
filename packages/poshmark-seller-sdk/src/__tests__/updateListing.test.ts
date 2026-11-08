@@ -63,7 +63,7 @@ describe("PoshmarkClient.updateListing", () => {
     expect(JSON.parse(init.body as string).post.price_amount.val).toBe(171);
   });
 
-  it.each(["abc", "", -5, Number.NaN])("rejects invalid price %s before any request", async (price) => {
+  it.each(["abc", "", -5, 0.99, Number.NaN])("rejects invalid price %s before any request", async (price) => {
     const fetchImpl = fetchStub();
 
     await expect(makeClient(fetchImpl as unknown as typeof fetch).updateListing(LISTING_ID, { price })).rejects.toThrow(
@@ -83,5 +83,16 @@ describe("PoshmarkClient.getListing", () => {
     const listing = await makeClient(fetchImpl as unknown as typeof fetch).getListing(LISTING_ID);
 
     expect(listing).toMatchObject({ id: LISTING_ID, title: "Card holder", price: "190.00 USD" });
+  });
+
+  it("falls back to the price field when price_amount.val is not numeric", async () => {
+    const body = { data: { id: LISTING_ID, title: "T", price_amount: { val: "abc" }, price: "12.00 USD" } };
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    const listing = await makeClient(fetchImpl as unknown as typeof fetch).getListing(LISTING_ID);
+
+    expect(listing.price).toBe("12.00 USD");
   });
 });
