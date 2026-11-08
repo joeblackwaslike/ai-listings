@@ -90,28 +90,20 @@ export class PoshmarkClient {
       referer: DEFAULT_REFERER,
     });
 
-    return normalizeListing(raw);
+    return normalizeListing(unwrapData(raw));
   }
 
   public async updateListing(id: string, fields: UpdateListingFields): Promise<void> {
     assertNonEmpty(id, "id");
     assertUpdateFields(fields);
 
-    const existing = await this.requestJson<Record<string, unknown>>({
-      path: `/vm-rest/posts/${encodeURIComponent(id)}`,
-      query: {
-        app_version: "2.55",
-        _: Date.now(),
-      },
-      referer: DEFAULT_REFERER,
-    });
+    // Poshmark applies a partial post; echoing back the full GET payload is silently ignored.
     const csrfToken = await this.getEditListingCsrfToken(id);
-    const post = mergeListingForUpdate(existing, fields);
-
     await this.requestText({
       method: "POST",
       path: `/vm-rest/posts/${encodeURIComponent(id)}`,
-      body: { post },
+      query: { pm_version: "2026.40.00" },
+      body: { post: buildListingUpdate(fields) },
       headers: {
         "Content-Type": "application/json",
       },
@@ -486,8 +478,13 @@ function normalizeListing(raw: Record<string, unknown>): PoshmarkListing {
   };
 }
 
-function mergeListingForUpdate(raw: Record<string, unknown>, fields: UpdateListingFields): Record<string, unknown> {
-  const post = { ...raw };
+function unwrapData(raw: Record<string, unknown>): Record<string, unknown> {
+  const data = raw["data"];
+  return data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : raw;
+}
+
+function buildListingUpdate(fields: UpdateListingFields): Record<string, unknown> {
+  const post: Record<string, unknown> = {};
 
   if (fields.title !== undefined) {
     post["title"] = fields.title;
@@ -498,15 +495,13 @@ function mergeListingForUpdate(raw: Record<string, unknown>, fields: UpdateListi
   }
 
   if (fields.price !== undefined) {
-    post["price"] = typeof fields.price === "number" ? `${fields.price.toFixed(2)} USD` : fields.price;
+    // Poshmark prices are whole dollars; createListing floors the same way.
+    const dollars = typeof fields.price === "number" ? fields.price : Number.parseFloat(fields.price);
+    post["price_amount"] = { val: Math.floor(dollars), currency_code: "USD", currency_symbol: "$" };
   }
 
   if (fields.brand !== undefined) {
-    const existingBrand = post["brand"];
-    post["brand"] =
-      existingBrand && typeof existingBrand === "object" && !Array.isArray(existingBrand)
-        ? { ...existingBrand, display: fields.brand }
-        : { display: fields.brand };
+    post["brand"] = { display: fields.brand };
   }
 
   return post;
@@ -582,6 +577,11 @@ function readNestedDisplay(source: Record<string, unknown>, key: string): string
 }
 
 function readPrice(source: Record<string, unknown>): string | undefined {
+  const amount = source["price_amount"];
+  if (amount && typeof amount === "object" && !Array.isArray(amount)) {
+    const val = (amount as Record<string, unknown>)["val"];
+    if (typeof val === "string" || typeof val === "number") return `${Number(val).toFixed(2)} USD`;
+  }
   const value = source["price"];
   if (typeof value === "string" && value.length > 0) {
     return value;
