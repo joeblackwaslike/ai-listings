@@ -691,6 +691,15 @@ export class EbayAdapter implements PlatformSDK {
 		);
 	}
 
+	async withdrawOffer(offerId: string): Promise<void> {
+		const token = await this.getAccessToken();
+		await this.ebayFetch(
+			`${this.baseUrl}/sell/inventory/v1/offer/${offerId}/withdraw`,
+			{ method: "POST" },
+			token,
+		);
+	}
+
 	async getListing(platformId: string): Promise<PlatformListing> {
 		const token = await this.getAccessToken();
 

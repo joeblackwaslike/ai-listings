@@ -226,11 +226,12 @@ export class PoshmarkAdapter implements PlatformSDK {
     }
   }
 
-  async deleteListing(_platformId: string): Promise<void> {
-    throw new UnsupportedOperationError(
-      this.platform,
-      'deleteListing — reverse-engineered endpoint not yet confirmed',
-    );
+  async deleteListing(platformId: string): Promise<void> {
+    try {
+      await this.client.deleteListing(platformId);
+    } catch (err) {
+      throw mapPoshmarkError(err);
+    }
   }
 
   async getOrders(): Promise<PlatformOrder[]> {
