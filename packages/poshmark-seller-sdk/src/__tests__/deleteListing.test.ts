@@ -41,6 +41,17 @@ describe("PoshmarkClient.deleteListing", () => {
     expect((deleteInit.headers as Headers).get("X-XSRF-TOKEN")).toBe("test-csrf-token");
   });
 
+  it("succeeds when the DELETE response has an empty body", async () => {
+    const fetchImpl = vi.fn().mockImplementation((rawUrl: string | URL) => {
+      const url = new URL(String(rawUrl));
+      return Promise.resolve(
+        url.pathname.startsWith("/edit-listing/") ? htmlResp(CSRF_HTML) : new Response(null, { status: 204 }),
+      );
+    });
+
+    await expect(makeClient(fetchImpl as unknown as typeof fetch).deleteListing(LISTING_ID)).resolves.toBeUndefined();
+  });
+
   it("throws and sends no DELETE when the CSRF token is missing", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(htmlResp("<html><head></head></html>"));
 

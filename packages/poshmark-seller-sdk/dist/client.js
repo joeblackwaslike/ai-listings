@@ -232,7 +232,7 @@ export class PoshmarkClient {
     async deleteListing(id) {
         assertNonEmpty(id, "id");
         const csrfToken = await this.getEditListingCsrfToken(id);
-        await this.requestText({
+        await this.request({
             method: "DELETE",
             path: `/vm-rest/posts/${encodeURIComponent(id)}`,
             query: { app_version: "2.55", app_type: "web" },
