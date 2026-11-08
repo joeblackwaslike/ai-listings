@@ -10,8 +10,8 @@
  *   bun scripts/apply-ebay-markdown.ts                    # dry run (default)
  *   bun scripts/apply-ebay-markdown.ts --commit           # apply changes
  *   bun scripts/apply-ebay-markdown.ts --commit --sku=X   # apply to one SKU only
- *   --poshmark-only --commit                                 # set Poshmark to floor(DB price) only
- *   --skip=A,B                                                # skip SKUs already marked down
+ *   bun scripts/apply-ebay-markdown.ts --commit --skip=A,B  # exclude the listed SKUs
+ *   bun scripts/apply-ebay-markdown.ts --poshmark-only --commit  # set Poshmark to floor(DB price) only
  */
 
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
@@ -55,7 +55,8 @@ async function ebayPriceCents(ebay: EbayAdapter, offerId: string): Promise<numbe
   try {
     const offer = await ebay.getRawOffer(offerId)
     const value = (offer.pricingSummary as { price?: { value?: string } } | undefined)?.price?.value
-    return value === undefined ? undefined : Math.round(Number.parseFloat(value) * 100)
+    const cents = value === undefined ? Number.NaN : Math.round(Number.parseFloat(value) * 100)
+    return Number.isFinite(cents) ? cents : undefined
   } catch {
     return undefined
   }
@@ -264,8 +265,12 @@ async function main() {
         partial.push(`${label}: eBay push errored (${msg}) and the live price can't be read — check it; guard row kept`)
       } else {
         // eBay confirmed unchanged: drop the guard row so a rerun retries this listing.
-        await supabase.from('listing_price_events').delete().eq('id', eventId)
-        partial.push(`${label}: eBay push failed (${msg}), price unchanged, safe to rerun`)
+        const { error: deleteError } = await supabase.from('listing_price_events').delete().eq('id', eventId)
+        partial.push(
+          deleteError
+            ? `${label}: eBay push failed (${msg}), price unchanged, but the guard row could not be deleted (${deleteError.message}) — delete listing_price_events ${eventId} before rerunning`
+            : `${label}: eBay push failed (${msg}), price unchanged, safe to rerun`,
+        )
       }
     }
   }
