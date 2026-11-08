@@ -31,8 +31,10 @@ const commit = process.argv.includes('--commit')
 // Re-sync Poshmark to the DB price without touching eBay or the DB (for listings already marked down).
 const poshmarkOnly = process.argv.includes('--poshmark-only')
 const skipSkus = new Set(
-  process.argv.find((a) => a.startsWith('--skip='))?.slice('--skip='.length).split(',') ?? [],
+  (process.argv.find((a) => a.startsWith('--skip='))?.slice('--skip='.length).split(',') ?? []).filter(Boolean),
 )
+// A listing marked down within this window is skipped, so a rerun after a crash can't cut it twice.
+const RERUN_GUARD_HOURS = 24
 const onlySku = process.argv.find((a) => a.startsWith('--sku='))?.slice('--sku='.length)
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`
@@ -58,12 +60,26 @@ async function main() {
     .eq('status', 'published')
     .order('sku')
   if (onlySku) query = query.eq('sku', onlySku)
-  if (skipSkus.size) query = query.not('sku', 'in', `(${[...skipSkus].join(',')})`)
 
-  const { data: listings, error: listingsError } = await query
+  const { data: allListings, error: listingsError } = await query
 
   if (listingsError) throw new Error(`Listings fetch failed: ${listingsError.message}`)
-  if (!listings?.length) {
+  // Filtered here, not in SQL: NOT IN drops rows with a NULL sku.
+  const listings = (allListings ?? []).filter((l) => !skipSkus.has(l.sku as string))
+
+  const recentlyMarkedDown = new Set<string>()
+  if (!poshmarkOnly) {
+    const since = new Date(Date.now() - RERUN_GUARD_HOURS * 3_600_000).toISOString()
+    const { data: events, error: eventsError } = await supabase
+      .from('listing_price_events')
+      .select('listing_id')
+      .ilike('note', '%markdown%')
+      .gte('created_at', since)
+    if (eventsError) throw new Error(`Price events fetch failed: ${eventsError.message}`)
+    for (const e of events ?? []) recentlyMarkedDown.add(e.listing_id as string)
+  }
+
+  if (!listings.length) {
     console.log('No published listings found.')
     return
   }
@@ -73,7 +89,10 @@ async function main() {
   const ebay = new EbayAdapter(creds)
 
   const poshCreds = await getPoshmarkCreds(USER_ID)
-  if (!poshCreds) console.log('⚠ No Poshmark credentials — Poshmark prices will not be synced')
+  if (!poshCreds) {
+    if (poshmarkOnly) throw new Error('No Poshmark credentials found for user')
+    console.log('⚠ No Poshmark credentials — Poshmark prices will not be synced')
+  }
   const poshmark = poshCreds
     ? new PoshmarkClient({ cookie: poshCreds.sessionCookies, requestDelayMs: 500 })
     : null
@@ -84,6 +103,7 @@ async function main() {
   let skipped = 0
   const poshmarkFailures: string[] = []
   const poshmarkUnsynced: string[] = []
+  const partial: string[] = []
 
   for (const listing of listings) {
     const label = (listing.sku as string | null) ?? (listing.id as string)
@@ -93,6 +113,12 @@ async function main() {
 
     if (!currentPrice || currentPrice <= 0) {
       console.log(`  SKIP  ${label} — no price`)
+      skipped++
+      continue
+    }
+
+    if (recentlyMarkedDown.has(listing.id as string)) {
+      console.log(`  SKIP  ${label} — already marked down in the last ${RERUN_GUARD_HOURS}h`)
       skipped++
       continue
     }
@@ -118,7 +144,10 @@ async function main() {
     if (!commit) continue
 
     if (poshmarkOnly) {
-      if (!poshmarkId || !poshmark) continue
+      if (!poshmarkId || !poshmark) {
+        skipped++
+        continue
+      }
       try {
         await setPoshmarkPrice(poshmark, poshmarkId, newPrice)
         applied++
@@ -158,10 +187,18 @@ async function main() {
         .from('listings')
         .update({ final_price_cents: newPrice })
         .eq('id', listing.id)
-      if (updateError) throw new Error(`DB update failed after eBay push: ${updateError.message}`)
+      let dbStale = false
+      if (updateError) {
+        console.error(`    ✗ DB update failed after eBay push: ${updateError.message}`)
+        partial.push(`${label}: eBay ${dollars(newPrice)}, DB still ${dollars(currentPrice)}`)
+        dbStale = true
+      }
 
       let poshmarkNote = ''
-      if (poshmarkId && !poshmark) poshmarkUnsynced.push(`${label} → ${dollars(newPrice)} (${poshmarkId})`)
+      if (poshmarkId && !poshmark) {
+        poshmarkUnsynced.push(`${label} → ${dollars(newPrice)} (${poshmarkId})`)
+        poshmarkNote = ' (Poshmark NOT synced)'
+      }
       if (poshmarkId && poshmark) {
         try {
           await setPoshmarkPrice(poshmark, poshmarkId, newPrice)
@@ -174,13 +211,18 @@ async function main() {
         }
       }
 
-      await supabase.from('listing_price_events').insert({
+      const { error: eventError } = await supabase.from('listing_price_events').insert({
         listing_id: listing.id,
         event_type: 'manual_change',
         price_cents: newPrice,
         note: `Markdown ${DISCOUNT_PCT}%${poshmarkNote} — was ${dollars(currentPrice)}, now ${dollars(newPrice)}`,
       })
+      if (eventError) {
+        console.error(`    ✗ price event insert failed: ${eventError.message}`)
+        partial.push(`${label}: no audit row — rerun guard will not see this markdown`)
+      }
 
+      if (dbStale || poshmarkNote.includes('FAILED')) continue
       applied++
     } catch (err) {
       console.error(`    ✗ failed: ${err instanceof Error ? err.message : String(err)}`)
@@ -188,7 +230,9 @@ async function main() {
     }
   }
 
-  console.log(`\nDone: ${applied} updated, ${skipped} skipped`)
+  console.log(`\nDone: ${applied} updated, ${skipped} skipped, ${partial.length + poshmarkFailures.length} needing attention`)
+  if (partial.length) console.log(`Partial state:\n  ${partial.join('\n  ')}`)
+  if (partial.length || poshmarkFailures.length) process.exitCode = 1
   if (poshmarkFailures.length) {
     console.log(`Poshmark price sync failed for ${poshmarkFailures.length}:\n  ${poshmarkFailures.join('\n  ')}`)
   }

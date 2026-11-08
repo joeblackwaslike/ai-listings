@@ -53,4 +53,35 @@ describe("PoshmarkClient.updateListing", () => {
       "at least one field",
     );
   });
+
+  it("accepts the adapter's \"171.72 USD\" price string", async () => {
+    const fetchImpl = fetchStub();
+
+    await makeClient(fetchImpl as unknown as typeof fetch).updateListing(LISTING_ID, { price: "171.72 USD" });
+
+    const [, init] = fetchImpl.mock.calls[1];
+    expect(JSON.parse(init.body as string).post.price_amount.val).toBe(171);
+  });
+
+  it.each(["abc", "", -5, Number.NaN])("rejects invalid price %s before any request", async (price) => {
+    const fetchImpl = fetchStub();
+
+    await expect(makeClient(fetchImpl as unknown as typeof fetch).updateListing(LISTING_ID, { price })).rejects.toThrow(
+      "Invalid price",
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoshmarkClient.getListing", () => {
+  it("unwraps the data envelope and reads price_amount", async () => {
+    const body = { data: { id: LISTING_ID, title: "Card holder", price_amount: { val: "190.0" } }, meta: {} };
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    const listing = await makeClient(fetchImpl as unknown as typeof fetch).getListing(LISTING_ID);
+
+    expect(listing).toMatchObject({ id: LISTING_ID, title: "Card holder", price: "190.00 USD" });
+  });
 });

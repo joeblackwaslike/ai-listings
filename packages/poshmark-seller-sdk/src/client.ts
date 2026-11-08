@@ -97,13 +97,14 @@ export class PoshmarkClient {
     assertNonEmpty(id, "id");
     assertUpdateFields(fields);
 
-    // Poshmark applies a partial post; echoing back the full GET payload is silently ignored.
+    // For price, Poshmark applies a partial post; echoing back the full GET payload is silently ignored.
+    const post = buildListingUpdate(fields);
     const csrfToken = await this.getEditListingCsrfToken(id);
     await this.requestText({
       method: "POST",
       path: `/vm-rest/posts/${encodeURIComponent(id)}`,
       query: { pm_version: "2026.40.00" },
-      body: { post: buildListingUpdate(fields) },
+      body: { post },
       headers: {
         "Content-Type": "application/json",
       },
@@ -497,6 +498,9 @@ function buildListingUpdate(fields: UpdateListingFields): Record<string, unknown
   if (fields.price !== undefined) {
     // Poshmark prices are whole dollars; createListing floors the same way.
     const dollars = typeof fields.price === "number" ? fields.price : Number.parseFloat(fields.price);
+    if (!Number.isFinite(dollars) || dollars < 0) {
+      throw new PoshmarkDataError(`Invalid price: ${String(fields.price)}`);
+    }
     post["price_amount"] = { val: Math.floor(dollars), currency_code: "USD", currency_symbol: "$" };
   }
 
@@ -580,7 +584,8 @@ function readPrice(source: Record<string, unknown>): string | undefined {
   const amount = source["price_amount"];
   if (amount && typeof amount === "object" && !Array.isArray(amount)) {
     const val = (amount as Record<string, unknown>)["val"];
-    if (typeof val === "string" || typeof val === "number") return `${Number(val).toFixed(2)} USD`;
+    const n = Number(val);
+    if ((typeof val === "string" || typeof val === "number") && Number.isFinite(n)) return `${n.toFixed(2)} USD`;
   }
   const value = source["price"];
   if (typeof value === "string" && value.length > 0) {
