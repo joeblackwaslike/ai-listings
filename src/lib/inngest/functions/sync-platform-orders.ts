@@ -6,6 +6,7 @@ import { MercariAdapter } from '@/lib/platforms/adapters/mercari'
 import { EtsyAdapter } from '@/lib/platforms/adapters/etsy'
 import { getEbayCreds, getPoshmarkCreds, getMercariCreds } from '@/lib/platforms/credentials'
 import { getEbayListingIdPattern } from '@/lib/platforms/ebay-utils'
+import { createDelisters, delistFromOtherPlatforms } from '@/lib/platforms/delist-sold'
 
 const PLATFORM_CRED_KEYS = [
   { platform: 'ebay', credKey: 'ebay_refresh_token' },
@@ -99,12 +100,23 @@ export const syncPlatformOrders = inngest.createFunction(
               if (order.platform === 'ebay' && order.listingId && order.status !== 'cancelled') {
                 const { data: listing, error: lookupError } = await supabase
                   .from('listings')
-                  .select('id, status')
+                  .select('id, status, listing_urls, platform_fields')
                   .eq('user_id', userId)
                   .like('listing_urls->>ebay', getEbayListingIdPattern(order.listingId))
                   .maybeSingle()
                 if (lookupError) throw lookupError
                 if (listing && listing.status === 'published') {
+                  // Delist before marking sold: on failure the listing stays published, so the next sync retries.
+                  try {
+                    await delistFromOtherPlatforms(listing, 'ebay', createDelisters(userId), async (urls) => {
+                      const { error } = await supabase.from('listings').update({ listing_urls: urls }).eq('id', listing.id)
+                      if (error) throw error
+                    })
+                  } catch (delistError) {
+                    console.error(`[sync-platform-orders] delist after sale failed for listing ${listing.id}:`, delistError)
+                    continue
+                  }
+
                   const { error: updateError } = await supabase
                     .from('listings')
                     .update({
