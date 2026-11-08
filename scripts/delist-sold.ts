@@ -37,38 +37,52 @@ async function main() {
     .in('sku', skus)
   if (error) throw new Error(`Listings fetch failed: ${error.message}`)
 
+  const failed: string[] = []
   for (const sku of skus) {
     const l = data?.find((r) => r.sku === sku)
     if (!l) {
       console.log(`${sku}: not found`)
+      failed.push(sku)
       continue
     }
-    const pf = l.platform_fields as PlatformFields
-    const urls = { ...((l.listing_urls ?? {}) as ListingUrls) }
-    const targets = (['ebay', 'poshmark'] as const).filter((p) => p !== soldOn && urls[p])
-    console.log(`${sku}: status=${l.status} delist=[${targets}] -> ${commit ? 'applying' : 'dry-run'}`)
-    if (!commit) continue
+    try {
+      const pf = l.platform_fields as PlatformFields
+      const urls = { ...((l.listing_urls ?? {}) as ListingUrls) }
+      const targets = (['ebay', 'poshmark'] as const).filter((p) => p !== soldOn && urls[p])
+      console.log(`${sku}: status=${l.status} delist=[${targets}] -> ${commit ? 'applying' : 'dry-run'}`)
+      if (!commit) continue
 
-    for (const p of targets) {
-      if (p === 'ebay') {
-        const offerId = pf?.ebay?.ebay_offer_id
-        if (!offerId) throw new Error(`${sku}: no ebay_offer_id`)
-        await ebay.withdrawOffer(offerId)
-      } else {
-        const id = pf?.poshmark?.listing_id
-        if (!id) throw new Error(`${sku}: no poshmark listing_id`)
-        await posh.deleteListing(id)
+      for (const p of targets) {
+        if (p === 'ebay') {
+          const offerId = pf?.ebay?.ebay_offer_id
+          if (!offerId) throw new Error('no ebay_offer_id')
+          await ebay.withdrawOffer(offerId)
+        } else {
+          const id = pf?.poshmark?.listing_id
+          if (!id) throw new Error('no poshmark listing_id')
+          await posh.deleteListing(id)
+        }
+        delete urls[p]
+        const { error: urlErr } = await supabase.from('listings').update({ listing_urls: urls }).eq('id', l.id)
+        if (urlErr) throw new Error(`${p} delisted but listing_urls update failed: ${urlErr.message}`)
+        console.log(`${sku}: ${p} delisted`)
       }
-      delete urls[p]
-      console.log(`${sku}: ${p} delisted`)
-    }
 
-    const { error: upErr } = await supabase
-      .from('listings')
-      .update({ status: 'sold', sold_at: l.sold_at ?? new Date().toISOString(), listing_urls: urls })
-      .eq('id', l.id)
-    if (upErr) throw new Error(`${sku}: update failed: ${upErr.message}`)
-    console.log(`${sku}: db updated`)
+      const { error: upErr } = await supabase
+        .from('listings')
+        .update({ status: 'sold', sold_at: l.sold_at ?? new Date().toISOString() })
+        .eq('id', l.id)
+      if (upErr) throw new Error(`update failed: ${upErr.message}`)
+      console.log(`${sku}: db updated`)
+    } catch (e) {
+      console.error(`${sku}: FAILED: ${e instanceof Error ? e.message : e}`)
+      failed.push(sku)
+    }
+  }
+
+  if (failed.length) {
+    console.error(`Failed SKUs: ${failed.join(', ')}`)
+    process.exitCode = 1
   }
 }
 

@@ -229,6 +229,17 @@ export class PoshmarkClient {
         }
         return match[1];
     }
+    async deleteListing(id) {
+        assertNonEmpty(id, "id");
+        const csrfToken = await this.getEditListingCsrfToken(id);
+        await this.requestText({
+            method: "DELETE",
+            path: `/vm-rest/posts/${encodeURIComponent(id)}`,
+            query: { app_version: "2.55", app_type: "web" },
+            referer: `${this.baseUrl.origin}/edit-listing/${encodeURIComponent(id)}`,
+            csrfToken,
+        });
+    }
     async getSalesPage(maxId) {
         const response = await this.requestJson({
             path: "/order/sales",

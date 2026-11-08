@@ -15,6 +15,7 @@ export declare class PoshmarkClient {
     createListing(params: PoshmarkCreateListingParams): Promise<PoshmarkCreateListingResult>;
     private uploadPhoto;
     private getCreateListingCsrfToken;
+    deleteListing(id: string): Promise<void>;
     getSalesPage(maxId?: string): Promise<SalesPage>;
     getOrderDetailHtml(orderId: string): Promise<string>;
     requestJson<T>(options: PoshmarkRequestOptions): Promise<T>;
