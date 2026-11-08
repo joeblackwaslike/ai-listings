@@ -11,8 +11,9 @@ export function isPoshmarkAlreadyGone(err: unknown): boolean {
 }
 
 /**
- * Delists a sold listing from every other platform it is published on. `saveUrls` runs after
- * each successful delist, so a later failure never loses an earlier one.
+ * Delists a sold listing from every other platform it is published on. Each platform is
+ * attempted independently and `saveUrls` runs after each success, so one failure neither skips
+ * the rest nor loses an earlier delist; failures are thrown together at the end.
  * @returns the platforms that were delisted
  */
 export async function delistFromOtherPlatforms(
@@ -23,15 +24,21 @@ export async function delistFromOtherPlatforms(
 ): Promise<string[]> {
   const urls: ListingUrls = { ...(listing.listing_urls ?? {}) }
   const delisted: string[] = []
+  const failures: string[] = []
 
   for (const platform of Object.keys(urls)) {
     const delist = delisters[platform]
     if (platform === soldOn || !urls[platform] || !delist) continue
-    await delist(listing.platform_fields)
-    delete urls[platform]
-    await saveUrls(urls)
-    delisted.push(platform)
+    try {
+      await delist(listing.platform_fields)
+      delete urls[platform]
+      await saveUrls(urls)
+      delisted.push(platform)
+    } catch (err) {
+      failures.push(`${platform}: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
+  if (failures.length) throw new Error(failures.join('; '))
   return delisted
 }
 

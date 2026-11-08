@@ -106,6 +106,17 @@ export const syncPlatformOrders = inngest.createFunction(
                   .maybeSingle()
                 if (lookupError) throw lookupError
                 if (listing && listing.status === 'published') {
+                  // Delist before marking sold: on failure the listing stays published, so the next sync retries.
+                  try {
+                    await delistFromOtherPlatforms(listing, 'ebay', createDelisters(userId), async (urls) => {
+                      const { error } = await supabase.from('listings').update({ listing_urls: urls }).eq('id', listing.id)
+                      if (error) throw error
+                    })
+                  } catch (delistError) {
+                    console.error(`[sync-platform-orders] delist after sale failed for listing ${listing.id}:`, delistError)
+                    continue
+                  }
+
                   const { error: updateError } = await supabase
                     .from('listings')
                     .update({
@@ -115,15 +126,6 @@ export const syncPlatformOrders = inngest.createFunction(
                     })
                     .eq('id', listing.id)
                   if (updateError) throw updateError
-
-                  try {
-                    await delistFromOtherPlatforms(listing, 'ebay', createDelisters(userId), async (urls) => {
-                      const { error } = await supabase.from('listings').update({ listing_urls: urls }).eq('id', listing.id)
-                      if (error) throw error
-                    })
-                  } catch (delistError) {
-                    console.error(`[sync-platform-orders] delist after sale failed for listing ${listing.id}:`, delistError)
-                  }
                 }
               }
             }

@@ -39,17 +39,18 @@ test('delists every published platform except the one it sold on, saving after e
   assert.deepEqual(saved, [{ ebay: 'e' }])
 })
 
-test('keeps earlier delists saved when a later platform throws', async () => {
-  const { saved, delisters, saveUrls } = setup({
-    poshmark: async () => {
+test('attempts every platform, saves the successes, then throws the failures', async () => {
+  const { calls, saved, delisters, saveUrls } = setup({
+    ebay: async () => {
       throw new Error('boom')
     },
   })
   const listing = { listing_urls: { ebay: 'e', poshmark: 'p', mercari: 'm' }, platform_fields: platformFields }
   const withMercari = { ...delisters, mercari: async () => {} }
 
-  await assert.rejects(delistFromOtherPlatforms(listing, 'mercari', withMercari, saveUrls), /boom/)
-  assert.deepEqual(saved, [{ poshmark: 'p', mercari: 'm' }])
+  await assert.rejects(delistFromOtherPlatforms(listing, 'mercari', withMercari, saveUrls), /ebay: boom/)
+  assert.deepEqual(calls, ['ebay:offer-1', 'poshmark:posh-1'])
+  assert.deepEqual(saved, [{ ebay: 'e', mercari: 'm' }])
 })
 
 test('does not mutate the listing_urls it was given', async () => {
