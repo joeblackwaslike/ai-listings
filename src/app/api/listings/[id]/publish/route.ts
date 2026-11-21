@@ -1,16 +1,11 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/pipeline/supabase-push'
 import { checkTitleLengths } from '@/lib/pipeline/title-check'
 import { canFinalizeOrPublish } from '@/lib/publish-gate'
 import type { Inclusion, Listing, Photo } from '@/types/listings'
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params
-
-  const sessionClient = await createClient()
+export async function handlePublish(sessionClient: SupabaseClient, supabase: SupabaseClient, id: string, req: Request) {
   const { data: { user } } = await sessionClient.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -59,20 +54,15 @@ export async function PATCH(
     }
   }
 
-  const supabase = getSupabaseAdmin()
-
   const { data: current, error: fetchError } = await supabase
     .from('listings')
     .select('listing_urls, status, user_id, platform_fields, photos_confirmed, copy_approved_at, condition_confirmed, inclusions')
     .eq('id', id)
+    .eq('user_id', user.id)
     .single()
 
   if (fetchError || !current) {
     return Response.json({ error: 'Listing not found' }, { status: 404 })
-  }
-
-  if (current.user_id !== user.id) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const { data: photoRows, error: photosError } = await supabase
@@ -111,6 +101,7 @@ export async function PATCH(
     .from('listings')
     .update(updates)
     .eq('id', id)
+    .eq('user_id', user.id)
     .select('status, listing_urls')
     .single()
 
@@ -128,4 +119,12 @@ export async function PATCH(
     listing_urls: updated.listing_urls,
     ...(titleWarning ?? {}),
   })
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  return handlePublish(await createClient(), getSupabaseAdmin(), id, req)
 }
