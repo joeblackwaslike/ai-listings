@@ -11,7 +11,7 @@ bun scripts/nr.ts backtest       # replays every condition over the last 7 days
 bun scripts/nr.ts backtest --since "3 days"
 ```
 
-`apply` matches resources by name, so a second run reports only `noop`. It never deletes: removing an entry from the JSON leaves the resource in New Relic, and the existing "Pi cluster critical" and "Pi cluster warning" policies are never touched. An update to the email destination, channel or workflow is reported but refused; change those in New Relic.
+`apply` matches resources by name, so a second run reports only `noop`. It never deletes, so removing an entry from the JSON leaves the resource in New Relic, and it never touches the existing "Pi cluster critical" and "Pi cluster warning" policies. An update to the email destination, channel or workflow is reported but refused; change those in New Relic.
 
 `apply` refuses a condition with `"enabled": true` unless its `historyQuery` shows at least 7 days of data.
 
