@@ -1,34 +1,9 @@
+import type { ConditionFile } from './config'
+
+export type { AlertsFile, ConditionFile } from './config'
+
 export const MIN_HISTORY_SECONDS = 7 * 86400
 export const ALLOWED_NOTIFICATION_EMAIL = 'joeblackwaslike@gmail.com'
-
-export interface ConditionFile {
-  name: string
-  description: string
-  enabled: boolean
-  nrql: string
-  historyQuery: string
-  operator: 'ABOVE' | 'BELOW'
-  threshold: number
-  thresholdDuration: number
-  aggregationWindow: number
-  aggregationMethod: 'EVENT_FLOW' | 'EVENT_TIMER' | 'CADENCE'
-  aggregationDelay: number
-  fillOption: 'NONE' | 'STATIC' | 'LAST_VALUE'
-  fillValue?: number
-  expirationDuration: number
-}
-
-export interface AlertsFile {
-  policy: { name: string; incidentPreference: string }
-  notifications: {
-    email: string
-    destinationName: string
-    channelName: string
-    channelSubject: string
-    workflowName: string
-  }
-  conditions: ConditionFile[]
-}
 
 export function conditionInput(c: ConditionFile) {
   const signal: Record<string, unknown> = {
@@ -61,7 +36,7 @@ export function conditionInput(c: ConditionFile) {
     ],
     expiration: {
       expirationDuration: c.expirationDuration,
-      openViolationOnExpiration: false,
+      openViolationOnExpiration: c.openViolationOnExpiration ?? false,
       closeViolationsOnExpiration: true,
     },
     valueFunction: 'SINGLE_VALUE',

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ALLOWED_NOTIFICATION_EMAIL, type AlertsFile } from './alerts'
+import { ALLOWED_NOTIFICATION_EMAIL } from './alerts'
 import type { DashboardFile } from './dashboard'
 
 const HISTORY_SHAPE = /^SELECT earliest\(timestamp\) FROM /i
@@ -37,9 +37,10 @@ const condition = z
     aggregationWindow: positiveInt,
     aggregationMethod: z.enum(['EVENT_FLOW', 'EVENT_TIMER', 'CADENCE']),
     aggregationDelay: z.number().int().nonnegative(),
-    fillOption: z.enum(['NONE', 'STATIC', 'LAST_VALUE']),
+    fillOption: z.enum(['NONE', 'STATIC'], { error: 'must be NONE or STATIC (LAST_VALUE is not supported)' }),
     fillValue: z.number().optional(),
     expirationDuration: positiveInt,
+    openViolationOnExpiration: z.boolean().optional(),
   })
   .superRefine((c, ctx) => {
     if (c.thresholdDuration % c.aggregationWindow !== 0) {
@@ -48,7 +49,14 @@ const condition = z
     if (c.fillOption === 'STATIC' && c.fillValue === undefined) {
       ctx.addIssue({ code: 'custom', path: ['fillValue'], message: 'is required when fillOption is STATIC' })
     }
-    if (FORBIDDEN_NRQL.test(c.nrql)) {
+    if (c.openViolationOnExpiration && c.fillOption !== 'NONE') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['openViolationOnExpiration'],
+        message: 'requires fillOption NONE (gap filling stops a lost signal from being detected)',
+      })
+    }
+    if (FORBIDDEN_NRQL.test(withoutLiterals(c.nrql))) {
       ctx.addIssue({ code: 'custom', path: ['nrql'], message: 'must not contain FACET, SINCE or TIMESERIES' })
     }
     if (!HISTORY_SHAPE.test(c.historyQuery)) {
@@ -67,8 +75,22 @@ const alertsFile = z.strictObject({
     channelSubject: z.string().min(1),
     workflowName: z.string().min(1),
   }),
-  conditions: z.array(condition).min(1),
+  conditions: z
+    .array(condition)
+    .min(1)
+    .superRefine((conditions, ctx) => {
+      const seen = new Set<string>()
+      conditions.forEach((c, index) => {
+        if (seen.has(c.name)) {
+          ctx.addIssue({ code: 'custom', path: [index, 'name'], message: `duplicate condition name "${c.name}"` })
+        }
+        seen.add(c.name)
+      })
+    }),
 })
+
+export type AlertsFile = z.infer<typeof alertsFile>
+export type ConditionFile = AlertsFile['conditions'][number]
 
 const layout = z.strictObject({
   column: z.number().int(),
@@ -102,7 +124,7 @@ function parse<T>(schema: z.ZodType<T>, file: string, raw: unknown): T {
 }
 
 export function parseAlertsFile(raw: unknown): AlertsFile {
-  return parse(alertsFile, 'alerts.json', raw) as AlertsFile
+  return parse(alertsFile, 'alerts.json', raw)
 }
 
 export function parseDashboardFile(raw: unknown): DashboardFile {

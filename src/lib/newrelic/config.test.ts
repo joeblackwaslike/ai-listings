@@ -81,6 +81,29 @@ describe('parseAlertsFile', () => {
     expect(() => parseAlertsFile(withCondition({ fillOption: 'ZERO' }))).toThrow(/conditions\.0\.fillOption/)
   })
 
+  test('rejects LAST_VALUE fill, which backtest cannot model', () => {
+    expect(() => parseAlertsFile(withCondition({ fillOption: 'LAST_VALUE' }))).toThrow(/conditions\.0\.fillOption/)
+  })
+
+  test('rejects duplicate condition names and names the duplicate', () => {
+    const twice = { ...alerts, conditions: [condition, { ...condition }] }
+    expect(() => parseAlertsFile(twice)).toThrow(/duplicate condition name "c"/)
+  })
+
+  test('ignores FACET, SINCE and TIMESERIES inside quoted literals', () => {
+    const nrql = "SELECT count(*) FROM Transaction WHERE message NOT LIKE '%since%' AND note = 'a \\' facet'"
+    expect(parseAlertsFile(withCondition({ nrql })).conditions[0].nrql).toBe(nrql)
+  })
+
+  test('openViolationOnExpiration defaults off and requires fillOption NONE', () => {
+    expect(parseAlertsFile(alerts).conditions[0].openViolationOnExpiration).toBeUndefined()
+    const lossOfSignal = { fillOption: 'NONE', fillValue: undefined, openViolationOnExpiration: true }
+    expect(parseAlertsFile(withCondition(lossOfSignal)).conditions[0].openViolationOnExpiration).toBe(true)
+    expect(() => parseAlertsFile(withCondition({ openViolationOnExpiration: true }))).toThrow(
+      /conditions\.0\.openViolationOnExpiration/,
+    )
+  })
+
   test('rejects unknown keys in a condition', () => {
     expect(() => parseAlertsFile(withCondition({ webhook: 'x' }))).toThrow(/alerts\.json: conditions\.0/)
   })
