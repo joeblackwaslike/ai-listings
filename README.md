@@ -5,7 +5,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 [![Discord](https://img.shields.io/discord/1486035859747897414?logo=discord&label=Discord&color=5865F2)](https://discord.com/channels/1486035859747897414/1509515259864682628) [![Join Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/Fjc9zYHZyV)
 
 
-Tooling: [pnpm](https://pnpm.io) manages dependencies and the workspace, [Bun](https://bun.com) is the runtime (dev server, build, scripts, tests, and the production image). Versions are pinned in `package.json` (`packageManager`) and `.bun-version`.
+Tooling: [pnpm](https://pnpm.io) manages dependencies and the workspace, [Bun](https://bun.com) runs the dev server, scripts, tests and lint. The production build and image run on Node 22 on glibc. Versions are pinned in `package.json` (`packageManager`) and `.bun-version` (Bun only).
 
 All commands run from the repo root; never `cd` into a package. Use `pnpm --filter <name> <script>` for a single workspace package.
 
