@@ -66,6 +66,8 @@ describe('kubectlDuration', () => {
     expect(kubectlDuration('1 hour')).toBe('1h')
     expect(kubectlDuration('30 minutes')).toBe('30m')
     expect(kubectlDuration('2 days')).toBe('48h')
+    expect(kubectlDuration('1 day')).toBe('24h')
+    expect(kubectlDuration('1 minute')).toBe('1m')
   })
 
   test('rejects windows the logs query would reject', () => {

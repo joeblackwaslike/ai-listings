@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { auditDiff, logsQuery } from './nrql'
+import { auditDiff, logsQuery, SINCE_PATTERN } from './nrql'
 
 describe('logsQuery', () => {
   test('uses a one hour window and a limit of 50 by default', () => {
@@ -27,14 +27,30 @@ describe('logsQuery', () => {
     expect(logsQuery({})).not.toContain('proxy_check')
   })
 
-  test('doubles single quotes in grep text', () => {
-    const query = logsQuery({ grep: "it's" })
-    expect(query).toContain("it''s")
-    expect(query).not.toMatch(/[^']'s/)
+  test('backslash-escapes single quotes in grep text', () => {
+    expect(logsQuery({ grep: "it's" })).toContain("message LIKE '%it\\'s%'")
   })
 
-  test('doubles single quotes in the namespace', () => {
-    expect(logsQuery({ namespace: "a'b" })).toContain("namespace_name = 'a''b'")
+  test('doubles backslashes in grep text', () => {
+    expect(logsQuery({ grep: 'a\\' })).toContain("message LIKE '%a\\\\%'")
+  })
+
+  test('keeps an injection attempt inside the literal', () => {
+    expect(logsQuery({ grep: "x' OR 1=1 --" })).toContain("message LIKE '%x\\' OR 1=1 --%'")
+  })
+
+  test('backslash-escapes single quotes in the namespace', () => {
+    expect(logsQuery({ namespace: "a'b" })).toContain("namespace_name = 'a\\'b'")
+  })
+
+  test('grep alone does not add an RLIKE condition', () => {
+    expect(logsQuery({ grep: 'x' })).not.toContain('RLIKE')
+  })
+
+  test('combines namespace, grep and errorsOnly in one golden query', () => {
+    expect(logsQuery({ namespace: 'ns', grep: 'boom', errorsOnly: true })).toBe(
+      "SELECT timestamp, namespace_name, container_name, pod_name, message FROM Log WHERE namespace_name = 'ns' AND message LIKE '%boom%' AND message RLIKE '(?i).*(error|exception|fail|fatal).*' AND message NOT LIKE '%\"event\":\"proxy_check\"%' AND message NOT LIKE '%\"event\":\"proxy_redirect_to_login\"%' SINCE 1 hour ago LIMIT 50",
+    )
   })
 
   test('honors custom since and limit', () => {
@@ -65,12 +81,22 @@ describe('auditDiff', () => {
     expect(result.missing).toEqual([{ namespace: 'supabase', name: 'supabase-kong' }])
   })
 
-  test('treats a container name prefixed by the workload name as seen', () => {
+  test('treats an exactly named container as seen', () => {
     const result = auditDiff(expected, [
-      { namespace: 'ai-listings', container: 'ai-listings-7f9c' },
+      { namespace: 'ai-listings', container: 'ai-listings' },
       { namespace: 'supabase', container: 'supabase-kong' },
     ])
     expect(result.missing).toEqual([])
+  })
+
+  test('does not treat a container whose name is a prefix of the workload as seen', () => {
+    const workloads = [{ namespace: 'ns', name: 'auth-proxy' }]
+    expect(auditDiff(workloads, [{ namespace: 'ns', container: 'auth' }]).missing).toEqual(workloads)
+  })
+
+  test('does not treat a container prefixed by the workload name as seen', () => {
+    const workloads = [{ namespace: 'ns', name: 'auth' }]
+    expect(auditDiff(workloads, [{ namespace: 'ns', container: 'auth-proxy' }]).missing).toEqual(workloads)
   })
 
   test('does not match a row from a different namespace', () => {
@@ -84,10 +110,17 @@ describe('auditDiff', () => {
   test('marks every expected workload missing when nothing was seen', () => {
     expect(auditDiff(expected, []).missing).toEqual(expected)
   })
+})
 
-  test('applies no filtering of its own beyond namespace and container prefix', () => {
-    const workloads = [{ namespace: 'supabase', name: 'supabase-studio' }]
-    expect(auditDiff(workloads, []).missing).toEqual(workloads)
-    expect(auditDiff([], [{ namespace: 'x', container: 'y' }]).missing).toEqual([])
+describe('SINCE_PATTERN', () => {
+  test.each(['', '0 hours', '01 hour', '1hour', ' 1 hour', '1 hour\n', '1 week', '1 HOUR', '-1 hour', '10000 days'])(
+    'rejects %j',
+    (value: string) => {
+      expect(SINCE_PATTERN.test(value)).toBe(false)
+    },
+  )
+
+  test.each(['1 hour', '1 hours', '15 minutes', '2 days'])('accepts %j', (value: string) => {
+    expect(SINCE_PATTERN.test(value)).toBe(true)
   })
 })

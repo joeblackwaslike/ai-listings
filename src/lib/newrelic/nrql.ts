@@ -1,4 +1,4 @@
-export const SINCE_PATTERN = /^\d+ (minute|minutes|hour|hours|day|days)$/
+export const SINCE_PATTERN = /^[1-9]\d{0,3} (minute|minutes|hour|hours|day|days)$/
 const ERROR_PATTERN = "message RLIKE '(?i).*(error|exception|fail|fatal).*'"
 const AUTH_DIAGNOSTIC_EXCLUSIONS = ['proxy_check', 'proxy_redirect_to_login'].map(
   (event) => `message NOT LIKE '%"event":"${event}"%'`,
@@ -23,7 +23,7 @@ interface SeenContainer {
 }
 
 function escapeNrql(value: string): string {
-  return value.replaceAll("'", "''")
+  return value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")
 }
 
 export function logsQuery({
@@ -57,7 +57,7 @@ export function auditDiff(
     (workload) =>
       !seen.some(
         (row) =>
-          row.namespace === workload.namespace && row.container.startsWith(workload.name),
+          row.namespace === workload.namespace && row.container === workload.name,
       ),
   )
   return { missing }
