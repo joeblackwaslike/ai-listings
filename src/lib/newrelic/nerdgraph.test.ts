@@ -73,6 +73,13 @@ describe('parseMutationResult', () => {
     expect(() => parseMutationResult(200, body, 'make')).toThrow('make: no permission (FORBIDDEN)')
   })
 
+  test('throws with the description or details of a single error object', () => {
+    const described = { data: { make: { error: { description: 'bad email', type: 'INVALID' } } } }
+    expect(() => parseMutationResult(200, described, 'make')).toThrow('make: bad email (INVALID)')
+    const detailed = { data: { make: { error: { details: 'name taken' } } } }
+    expect(() => parseMutationResult(200, detailed, 'make')).toThrow('make: name taken')
+  })
+
   test('accepts an empty errors array', () => {
     expect(parseMutationResult(200, { data: { make: { errors: [], id: '1' } } }, 'make')).toEqual({
       errors: [],

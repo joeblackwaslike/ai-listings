@@ -35,21 +35,27 @@ export function parseNerdGraphResponse(status: number, body: unknown): unknown[]
   return results
 }
 
+interface MutationError {
+  description?: string
+  details?: string
+  type?: string
+}
+
+function describeError(error: MutationError): string {
+  return `${error.description ?? error.details ?? 'unknown error'}${error.type ? ` (${error.type})` : ''}`
+}
+
 export function parseMutationResult(
   status: number,
   body: unknown,
   field: string,
 ): Record<string, unknown> {
   const payload = parseGraphqlData(status, body)[field] as
-    | { errors?: { description?: string; type?: string }[] }
+    | { errors?: MutationError[]; error?: MutationError | null }
     | null
     | undefined
   if (!payload) throw new Error(`${field} returned nothing`)
-  if (payload.errors?.length) {
-    const details = payload.errors
-      .map((e) => `${e.description ?? 'unknown error'}${e.type ? ` (${e.type})` : ''}`)
-      .join('; ')
-    throw new Error(`${field}: ${details}`)
-  }
+  const errors = [...(payload.errors ?? []), ...(payload.error ? [payload.error] : [])]
+  if (errors.length) throw new Error(`${field}: ${errors.map(describeError).join('; ')}`)
   return payload as Record<string, unknown>
 }

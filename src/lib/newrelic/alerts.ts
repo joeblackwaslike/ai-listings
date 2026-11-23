@@ -105,6 +105,10 @@ export function destinationInput(name: string, email: string) {
   return { name, type: 'EMAIL', properties: [{ key: 'email', value: email }] }
 }
 
+export function destinationEmail(properties: { key: string; value: string }[]): string | undefined {
+  return ['email', 'link_sent_email'].map((key) => properties.find((p) => p.key === key)?.value).find(Boolean)
+}
+
 export function channelInput(name: string, destinationId: string, subject: string) {
   return {
     name,

@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { breachEpisodes, chunkWindows, formatSpan, seriesQuery, seriesStats } from './backtest'
+import { breachEpisodes, chunkWindows, formatSpan, seriesQuery, seriesStats, seriesValue, windowSeconds } from './backtest'
 
 describe('chunkWindows', () => {
   test('splits a range into windows of at most maxBuckets buckets', () => {
@@ -72,5 +72,29 @@ describe('formatSpan', () => {
     expect(formatSpan(5 * 3600 + 60)).toBe('5h 1m')
     expect(formatSpan(120)).toBe('2m')
     expect(formatSpan(20)).toBe('0m')
+  })
+})
+
+describe('windowSeconds', () => {
+  test('converts a SINCE style window to seconds', () => {
+    expect(windowSeconds('7 days')).toBe(604800)
+    expect(windowSeconds('90 minutes')).toBe(5400)
+    expect(windowSeconds('2 hours')).toBe(7200)
+  })
+
+  test('rejects anything else', () => {
+    expect(() => windowSeconds('a week')).toThrow('invalid window')
+    expect(() => windowSeconds('7 days ago; DROP')).toThrow('invalid window')
+  })
+})
+
+describe('seriesValue', () => {
+  test('takes the single value column of a timeseries row', () => {
+    expect(seriesValue({ beginTimeSeconds: 1, endTimeSeconds: 2, count: 4 })).toBe(4)
+  })
+
+  test('unwraps percentile objects and keeps null', () => {
+    expect(seriesValue({ beginTimeSeconds: 1, endTimeSeconds: 2, p95: { '95': 0.5 } })).toBe(0.5)
+    expect(seriesValue({ beginTimeSeconds: 1, endTimeSeconds: 2, p95: null })).toBeNull()
   })
 })

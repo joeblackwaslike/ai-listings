@@ -5,6 +5,7 @@ import {
   channelInput,
   conditionInput,
   conditionSpec,
+  destinationEmail,
   destinationInput,
   workflowInput,
   type ConditionFile,
@@ -123,5 +124,18 @@ describe('notification inputs', () => {
     expect(input.issuesFilter.predicates).toEqual([
       { attribute: 'labels.policyIds', operator: 'EXACTLY_MATCHES', values: ['123'] },
     ])
+  })
+})
+
+describe('destinationEmail', () => {
+  test('reads the address from email or, when New Relic blanks it, link_sent_email', () => {
+    expect(destinationEmail([{ key: 'email', value: 'a@b.c' }])).toBe('a@b.c')
+    expect(
+      destinationEmail([
+        { key: 'email', value: '' },
+        { key: 'link_sent_email', value: 'a@b.c' },
+      ]),
+    ).toBe('a@b.c')
+    expect(destinationEmail([])).toBeUndefined()
   })
 })
