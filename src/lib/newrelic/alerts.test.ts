@@ -62,10 +62,10 @@ describe('conditionInput', () => {
     expect(conditionSpec(conditionInput(condition)).openViolationOnExpiration).toBe(false)
   })
 
-  test('omits fillValue when there is no fill', () => {
+  test('clears a stored fillValue when there is no fill', () => {
     const input = conditionInput({ ...condition, fillOption: 'NONE', fillValue: undefined })
     expect(input.signal.fillOption).toBe('NONE')
-    expect('fillValue' in input.signal).toBe(false)
+    expect(input.signal.fillValue).toBeNull()
   })
 })
 

@@ -12,7 +12,7 @@ export function conditionInput(c: ConditionFile) {
     aggregationDelay: c.aggregationDelay,
     fillOption: c.fillOption,
   }
-  if (c.fillValue !== undefined) signal.fillValue = c.fillValue
+  signal.fillValue = c.fillOption === 'STATIC' ? c.fillValue : null
   return {
     name: c.name,
     description: c.description,
@@ -23,7 +23,7 @@ export function conditionInput(c: ConditionFile) {
       aggregationMethod: string
       aggregationDelay: number
       fillOption: string
-      fillValue?: number
+      fillValue?: number | null
     },
     terms: [
       {
