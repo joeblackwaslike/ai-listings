@@ -55,6 +55,13 @@ describe('conditionInput', () => {
     expect(input.valueFunction).toBe('SINGLE_VALUE')
   })
 
+  test('opens a violation on loss of signal only when the condition asks for it', () => {
+    const input = conditionInput({ ...condition, fillOption: 'NONE', fillValue: undefined, openViolationOnExpiration: true })
+    expect(input.expiration.openViolationOnExpiration).toBe(true)
+    expect(conditionSpec(input).openViolationOnExpiration).toBe(true)
+    expect(conditionSpec(conditionInput(condition)).openViolationOnExpiration).toBe(false)
+  })
+
   test('omits fillValue when there is no fill', () => {
     const input = conditionInput({ ...condition, fillOption: 'NONE', fillValue: undefined })
     expect(input.signal.fillOption).toBe('NONE')

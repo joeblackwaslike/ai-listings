@@ -268,9 +268,13 @@ async function runBacktest(argv: string[]): Promise<void> {
       threshold: condition.threshold,
       requiredPoints: condition.thresholdDuration / condition.aggregationWindow,
       fill: condition.fillOption === 'STATIC' ? (condition.fillValue ?? 0) : null,
+      expirationPoints: condition.openViolationOnExpiration
+        ? condition.expirationDuration / condition.aggregationWindow
+        : undefined,
     })
     const stats = seriesStats(series)
     console.log(`  rule: ${condition.operator} ${condition.threshold} for ${condition.thresholdDuration}s in ${condition.aggregationWindow}s windows`)
+    if (condition.openViolationOnExpiration) console.log(`  loss of signal: no data for ${condition.expirationDuration}s opens a violation`)
     console.log(`  data span tested: ${formatSpan(now - start)} (${series.length} windows)`)
     console.log(`  breaches: ${breaches}`)
     console.log(stats ? `  min ${stats.min} median ${stats.median} p95 ${stats.p95} max ${stats.max}` : '  no data points')

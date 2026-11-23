@@ -19,6 +19,7 @@ interface BreachRule {
   threshold: number
   requiredPoints: number
   fill: number | null
+  expirationPoints?: number
 }
 
 function breaches(value: number, operator: string, threshold: number): boolean {
@@ -29,8 +30,13 @@ function breaches(value: number, operator: string, threshold: number): boolean {
 
 export function breachEpisodes(series: (number | null)[], rule: BreachRule): number {
   let run = 0
+  let gap = 0
+  let seenData = false
   let episodes = 0
   for (const point of series) {
+    if (point !== null) seenData = true
+    gap = point === null && seenData ? gap + 1 : 0
+    if (rule.expirationPoints !== undefined && gap === rule.expirationPoints) episodes += 1
     const value = point ?? rule.fill
     run = value !== null && breaches(value, rule.operator, rule.threshold) ? run + 1 : 0
     if (run === rule.requiredPoints) episodes += 1

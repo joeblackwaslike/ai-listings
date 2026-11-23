@@ -29,7 +29,7 @@
     },
     {
       "name": "Log silence",
-      "description": "No log lines from container ai-listings for 10 minutes (app down or log shipping broken).",
+      "description": "No log lines from container ai-listings for 10 minutes (app down or log shipping broken), detected as loss of signal.",
       "enabled": false,
       "nrql": "SELECT count(*) FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings'",
       "historyQuery": "SELECT earliest(timestamp) FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings' SINCE 8 days ago",
@@ -39,9 +39,9 @@
       "aggregationWindow": 60,
       "aggregationMethod": "EVENT_FLOW",
       "aggregationDelay": 120,
-      "fillOption": "STATIC",
-      "fillValue": 0,
-      "expirationDuration": 900
+      "fillOption": "NONE",
+      "expirationDuration": 600,
+      "openViolationOnExpiration": true
     },
     {
       "name": "APM error rate",

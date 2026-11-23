@@ -98,3 +98,35 @@ describe('seriesValue', () => {
     expect(seriesValue({ beginTimeSeconds: 1, endTimeSeconds: 2, p95: null })).toBeNull()
   })
 })
+
+describe('breachEpisodes on loss of signal', () => {
+  const lossOfSignal = {
+    operator: 'BELOW',
+    threshold: 1,
+    requiredPoints: 10,
+    fill: null,
+    expirationPoints: 10,
+  }
+
+  test('counts a gap of null windows as long as the expiration', () => {
+    const series = [5, 5, ...Array(10).fill(null), 5]
+    expect(breachEpisodes(series, lossOfSignal)).toBe(1)
+  })
+
+  test('needs data before a gap can be a lost signal', () => {
+    expect(breachEpisodes([...Array(12).fill(null), 5], lossOfSignal)).toBe(0)
+  })
+
+  test('ignores a gap shorter than the expiration', () => {
+    expect(breachEpisodes([5, ...Array(9).fill(null), 5], lossOfSignal)).toBe(0)
+  })
+
+  test('counts one episode per gap however long it runs', () => {
+    expect(breachEpisodes([5, ...Array(25).fill(null), 5, ...Array(10).fill(null)], lossOfSignal)).toBe(2)
+  })
+
+  test('does nothing when expirationPoints is absent', () => {
+    const plain = { operator: 'BELOW', threshold: 1, requiredPoints: 10, fill: null }
+    expect(breachEpisodes([5, ...Array(30).fill(null), 5], plain)).toBe(0)
+  })
+})

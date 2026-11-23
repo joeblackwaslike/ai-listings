@@ -34,7 +34,7 @@ All conditions are CRITICAL only, require every window of the duration to breach
 | Condition | Watches | Threshold and why | Enabled |
 | --- | --- | --- | --- |
 | App error rate | Real error lines from container `ai-listings` per minute (auth `proxy_check` and `proxy_redirect_to_login` excluded) | Above 5 per minute for 10 minutes. Baseline is about 20 per hour (p95 of 3 per minute, max 8 over 4 days), and a sustained 10 minutes never occurred | No |
-| Log silence | Fewer than 1 log line per minute from `ai-listings` | Below 1 for 10 minutes, gaps count as 0. Median is 48 lines per minute | No |
+| Log silence | No log line from `ai-listings` for 10 minutes, as loss of signal | Signal lost after 600 seconds with no data opens a violation (no gap filling). Median is 48 lines per minute | No |
 | APM error rate | Count of failed transactions, 5 minute windows, gaps count as 0 | Above 5 for 10 minutes. Traffic is about 20 requests per 5 minutes, so a percentage with a 10 request minimum almost never had two qualifying windows in a row. An absolute count fires at that volume | No |
 | APM p95 latency | p95 duration in seconds, 5 minute windows, 3 request minimum | Placeholder 30 seconds. `PUT /api/inngest` averages about 4 seconds, so set the real value from history | No |
 | Inngest queue depth | `inngest_queue_depth` | Placeholder 100 for 15 minutes. It sits at 7 today | No |
@@ -42,45 +42,50 @@ All conditions are CRITICAL only, require every window of the duration to breach
 
 The dashboard error shapes widget facets on the first 45 characters of error lines. Today those characters stop before any user id. Recheck the widget if the log format changes, because a longer prefix could put ids in the facet labels.
 
+## Why log silence uses loss of signal
+
+With the EVENT_FLOW aggregation method a window only closes when a later data point arrives. During total silence nothing arrives, so a static zero fill never advances and a Below 1 threshold never evaluates. New Relic also stops filling a gap once it is longer than the expiration duration. The Log silence condition therefore uses fill option NONE and sets `openViolationOnExpiration` to true with `expirationDuration` 600: the timer resets on every log line, and 600 seconds without one opens the violation. Loss of signal needs a signal to be present first, so it cannot fire for a condition enabled while the app is already silent. Windows that do arrive with a count of 0 still breach the Below 1 rule. The backtest counts a run of empty windows as long as the expiration as a breach.
+
 ## Backtest
 
 Output of `bun scripts/nr.ts backtest` on 2026-11-23:
 
 ```text
 App error rate (enabled: false)
-  insufficient history: 4d 1h 46m
+  insufficient history: 4d 1h 57m
   rule: ABOVE 5 for 600s in 60s windows
-  data span tested: 4d 1h 46m (5866 windows)
+  data span tested: 4d 1h 57m (5877 windows)
   breaches: 0
   min 0 median 0 p95 3 max 8
 Log silence (enabled: false)
-  insufficient history: 4d 1h 46m
+  insufficient history: 4d 1h 57m
   rule: BELOW 1 for 600s in 60s windows
-  data span tested: 4d 1h 46m (5866 windows)
+  loss of signal: no data for 600s opens a violation
+  data span tested: 4d 1h 57m (5877 windows)
   breaches: 0
   min 0 median 48 p95 69 max 235
 APM error rate (enabled: false)
-  insufficient history: 24m
+  insufficient history: 35m
   rule: ABOVE 5 for 600s in 300s windows
-  data span tested: 24m (4 windows)
+  data span tested: 35m (7 windows)
   breaches: 0
-  min 0 median 0 p95 0 max 0
+  min 0 median 0 p95 1 max 1
 APM p95 latency (enabled: false)
-  insufficient history: 24m
+  insufficient history: 35m
   rule: ABOVE 30 for 600s in 300s windows
-  data span tested: 24m (4 windows)
+  data span tested: 35m (7 windows)
   breaches: 0
   no data points
 Inngest queue depth (enabled: false)
-  insufficient history: 21m
+  insufficient history: 32m
   rule: ABOVE 100 for 900s in 60s windows
-  data span tested: 21m (21 windows)
+  data span tested: 32m (32 windows)
   breaches: 0
   min 7 median 7 p95 7 max 7
 Inngest function failures (enabled: false)
-  insufficient history: 19m
+  insufficient history: 30m
   rule: ABOVE 0 for 900s in 900s windows
-  data span tested: 19m (1 windows)
+  data span tested: 30m (2 windows)
   breaches: 0
   min 0 median 0 p95 0 max 0
 ```
