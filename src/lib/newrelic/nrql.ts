@@ -1,5 +1,8 @@
 export const SINCE_PATTERN = /^\d+ (minute|minutes|hour|hours|day|days)$/
 const ERROR_PATTERN = "message RLIKE '(?i).*(error|exception|fail|fatal).*'"
+const AUTH_DIAGNOSTIC_EXCLUSIONS = ['proxy_check', 'proxy_redirect_to_login'].map(
+  (event) => `message NOT LIKE '%"event":"${event}"%'`,
+)
 
 interface LogsQueryOptions {
   namespace?: string
@@ -40,7 +43,7 @@ export function logsQuery({
   const conditions: string[] = []
   if (namespace) conditions.push(`namespace_name = '${escapeNrql(namespace)}'`)
   if (grep) conditions.push(`message LIKE '%${escapeNrql(grep)}%'`)
-  if (errorsOnly) conditions.push(ERROR_PATTERN)
+  if (errorsOnly) conditions.push(ERROR_PATTERN, ...AUTH_DIAGNOSTIC_EXCLUSIONS)
 
   const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''
   return `SELECT timestamp, namespace_name, container_name, pod_name, message FROM Log${where} SINCE ${since} ago LIMIT ${limit}`

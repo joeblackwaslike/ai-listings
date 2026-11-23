@@ -17,6 +17,16 @@ describe('logsQuery', () => {
     expect(query).toContain("message RLIKE '(?i).*(error|exception|fail|fatal).*'")
   })
 
+  test('excludes the auth proxy_check diagnostics that match the error pattern but are not errors', () => {
+    const query = logsQuery({ errorsOnly: true })
+    expect(query).toContain(`message NOT LIKE '%"event":"proxy_check"%'`)
+    expect(query).toContain(`message NOT LIKE '%"event":"proxy_redirect_to_login"%'`)
+  })
+
+  test('does not add the exclusion when errorsOnly is not set', () => {
+    expect(logsQuery({})).not.toContain('proxy_check')
+  })
+
   test('doubles single quotes in grep text', () => {
     const query = logsQuery({ grep: "it's" })
     expect(query).toContain("it''s")
