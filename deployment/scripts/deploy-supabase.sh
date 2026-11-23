@@ -101,11 +101,16 @@ envsubst < "${VALUES_TEMPLATE}" > "${VALUES_FILE}"
 echo "→ Creating namespace ${NAMESPACE}..."
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 
+POST_RENDERER="strip-studio-functions-mount"
+helm plugin list | grep -q "^${POST_RENDERER}[[:space:]]" \
+  || helm plugin install "$(git rev-parse --show-toplevel)/deployment/helm-plugins/${POST_RENDERER}"
+
 echo "→ Running helm upgrade --install..."
 helm upgrade --install "${CHART_RELEASE}" supabase/supabase \
   --namespace "${NAMESPACE}" \
   --values "${VALUES_FILE}" \
   --version 0.5.6 \
+  --post-renderer "${POST_RENDERER}" \
   --wait=false
 
 echo "→ Waiting for DB pod (up to 5 min)..."
@@ -120,30 +125,6 @@ kubectl patch deployment "${CHART_RELEASE}-supabase-minio" \
   -n "${NAMESPACE}" \
   --type=json \
   -p='[{"op":"add","path":"/spec/template/spec/securityContext","value":{"fsGroup":1000,"runAsUser":1000,"runAsNonRoot":true}}]'
-
-# ── Step 5b: Functions nodeName patch ────────────────────────────────────────
-echo "→ Detecting Studio node for Functions pin..."
-STUDIO_NODE=$(kubectl get pods -n "${NAMESPACE}" \
-  -l app.kubernetes.io/name=supabase-studio \
-  -o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null || echo "")
-
-if [[ -n "${STUDIO_NODE}" ]]; then
-  echo "→ Pinning Functions to ${STUDIO_NODE}..."
-  kubectl patch deployment "${CHART_RELEASE}-supabase-functions" \
-    -n "${NAMESPACE}" \
-    --type=json \
-    -p="[{\"op\":\"add\",\"path\":\"/spec/template/spec/nodeName\",\"value\":\"${STUDIO_NODE}\"}]"
-
-  # After the patch, the old ReplicaSet pod holds the RWO PVC that Studio also needs.
-  # Cycle replicas to 0→1 so the new (patched) pod gets clean PVC access.
-  echo "→ Cycling Functions replicas to release RWO PVC lock..."
-  kubectl scale deployment "${CHART_RELEASE}-supabase-functions" -n "${NAMESPACE}" --replicas=0
-  sleep 8
-  kubectl scale deployment "${CHART_RELEASE}-supabase-functions" -n "${NAMESPACE}" --replicas=1
-else
-  echo "⚠ Studio not scheduled yet — skipping Functions pin. Re-run after Studio is Running:"
-  echo "  bash deployment/scripts/deploy-supabase.sh patch-functions-only"
-fi
 
 # ── Step 5c: Wait for all pods ────────────────────────────────────────────────
 echo "→ Waiting up to 3 min for all pods to stabilize..."

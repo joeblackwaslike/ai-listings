@@ -36,11 +36,7 @@ persistence:
   storage: { enabled: true, storageClassName: longhorn, size: 10Gi, annotations: {} }
   minio:   { enabled: true, storageClassName: longhorn, size: 10Gi, annotations: {} }
 
-envs:
-  studio:
-    SUPABASE_URL:              "http://ai-listings-supabase-kong:8000"
-    STUDIO_PG_META_URL:        "http://ai-listings-supabase-meta:8080"
-    NEXT_PUBLIC_ENABLE_LOGS:   "false"
+environment:
   auth:
     # Codifies a manual `kubectl patch` applied directly to the live auth deployment at some
     # earlier point (field manager "kubectl-patch", predates this file tracking envs.auth at
