@@ -1,13 +1,18 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
 import {
+  ALLOWED_NOTIFICATION_EMAIL,
   assertEnableAllowed,
   channelInput,
+  channelSpec,
+  channelUpdateInput,
   conditionInput,
   conditionSpec,
   destinationEmail,
   destinationInput,
   workflowInput,
+  workflowSpec,
+  workflowUpdateInput,
   type ConditionFile,
 } from './alerts'
 
@@ -110,9 +115,13 @@ describe('notification inputs', () => {
   })
 
   test('builds an email channel bound to the destination', () => {
-    const input = channelInput('chan', 'dest-id', 'subject')
-    expect(input).toMatchObject({ name: 'chan', type: 'EMAIL', destinationId: 'dest-id', product: 'IINT' })
-    expect(input.properties).toContainEqual({ key: 'subject', value: 'subject' })
+    expect(channelInput('chan', 'dest-id', 'subject')).toEqual({
+      name: 'chan',
+      type: 'EMAIL',
+      destinationId: 'dest-id',
+      product: 'IINT',
+      properties: [{ key: 'subject', value: 'subject' }],
+    })
   })
 
   test('builds a workflow that notifies only on ACTIVATED for the policy', () => {
@@ -120,7 +129,7 @@ describe('notification inputs', () => {
     expect(input.destinationConfigurations).toEqual([
       { channelId: 'chan-id', notificationTriggers: ['ACTIVATED'] },
     ])
-    expect(input.mutingRulesHandling).toBe('NOTIFY_ALL_ISSUES')
+    expect(input.mutingRulesHandling).toBe('DONT_NOTIFY_FULLY_MUTED_ISSUES')
     expect(input.issuesFilter.predicates).toEqual([
       { attribute: 'labels.policyIds', operator: 'EXACTLY_MATCHES', values: ['123'] },
     ])
@@ -137,5 +146,70 @@ describe('destinationEmail', () => {
       ]),
     ).toBe('a@b.c')
     expect(destinationEmail([])).toBeUndefined()
+  })
+})
+
+describe('notification allowlist', () => {
+  test('only the owner address is allowed', () => {
+    expect(ALLOWED_NOTIFICATION_EMAIL).toBe('joeblackwaslike@gmail.com')
+  })
+})
+
+describe('channelSpec', () => {
+  test('reads the same spec from a built input and from API fields', () => {
+    const fromApi = { type: 'EMAIL', destinationId: 'd', properties: [{ key: 'subject', value: 's' }], id: '1' }
+    expect(channelSpec(fromApi)).toEqual(channelSpec(channelInput('c', 'd', 's')))
+    expect(channelSpec(fromApi)).toEqual({ type: 'EMAIL', destinationId: 'd', subject: 's' })
+  })
+})
+
+describe('channelUpdateInput', () => {
+  test('updates only the subject property', () => {
+    expect(channelUpdateInput('c', 's')).toEqual({ name: 'c', properties: [{ key: 'subject', value: 's' }] })
+  })
+})
+
+describe('workflowSpec', () => {
+  const api = {
+    workflowEnabled: true,
+    destinationsEnabled: true,
+    mutingRulesHandling: 'DONT_NOTIFY_FULLY_MUTED_ISSUES',
+    issuesFilter: {
+      id: 'f',
+      name: 'policy',
+      type: 'FILTER',
+      predicates: [{ attribute: 'labels.policyIds', operator: 'EXACTLY_MATCHES', values: ['123'] }],
+    },
+    destinationConfigurations: [
+      { channelId: 'c', type: 'EMAIL', notificationTriggers: ['ACTIVATED'], updateOriginalMessage: false },
+    ],
+  }
+
+  test('matches a built input and ignores API-only fields', () => {
+    expect(workflowSpec(api)).toEqual(workflowSpec(workflowInput('wf', '123', 'c')))
+  })
+
+  test('differs when the muting handling, triggers, policy or channel change', () => {
+    const base = workflowSpec(workflowInput('wf', '123', 'c'))
+    expect(workflowSpec({ ...api, mutingRulesHandling: 'NOTIFY_ALL_ISSUES' })).not.toEqual(base)
+    expect(
+      workflowSpec({
+        ...api,
+        destinationConfigurations: [{ channelId: 'c', notificationTriggers: ['ACTIVATED', 'CLOSED'] }],
+      }),
+    ).not.toEqual(base)
+    expect(workflowSpec(workflowInput('wf', '999', 'c'))).not.toEqual(base)
+    expect(workflowSpec(workflowInput('wf', '123', 'other'))).not.toEqual(base)
+  })
+})
+
+describe('workflowUpdateInput', () => {
+  test('targets the workflow and existing filter ids', () => {
+    const input = workflowUpdateInput('w1', 'f1', workflowInput('wf', '123', 'c'))
+    expect(input.id).toBe('w1')
+    expect(input.issuesFilter.id).toBe('f1')
+    expect(input.issuesFilter.filterInput.predicates[0].values).toEqual(['123'])
+    expect(input.mutingRulesHandling).toBe('DONT_NOTIFY_FULLY_MUTED_ISSUES')
+    expect(input).not.toHaveProperty('name')
   })
 })

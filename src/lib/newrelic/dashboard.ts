@@ -52,7 +52,7 @@ function widgetSpec(widget: ApiWidget) {
     title: widget.title,
     visualization: widget.visualization.id,
     layout: { column, row, width, height },
-    queries: (widget.rawConfiguration.nrqlQueries ?? []).map((q) => q.query),
+    queries: (widget.rawConfiguration.nrqlQueries ?? []).map((q) => ({ accountIds: q.accountIds ?? [], query: q.query })),
   }
 }
 

@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { parseGraphqlData, parseMutationResult, parseNerdGraphResponse } from './nerdgraph'
+import { parseGraphqlData, parseMutationResult, parseNerdGraphResponse, requireId } from './nerdgraph'
 
 const ok = (results: unknown[]) => ({ data: { actor: { account: { nrql: { results } } } } })
 
@@ -85,5 +85,21 @@ describe('parseMutationResult', () => {
       errors: [],
       id: '1',
     })
+  })
+})
+
+describe('requireId', () => {
+  test('returns the id as a string', () => {
+    expect(requireId({ id: 12 }, 'alertsPolicyCreate')).toBe('12')
+  })
+
+  test('reads another key such as guid', () => {
+    expect(requireId({ guid: 'g' }, 'dashboardCreate', 'guid')).toBe('g')
+  })
+
+  test('throws when the id is missing instead of using the string undefined', () => {
+    expect(() => requireId({ name: 'x' }, 'alertsPolicyCreate')).toThrow('alertsPolicyCreate returned no id')
+    expect(() => requireId(undefined, 'aiWorkflowsCreateWorkflow')).toThrow('aiWorkflowsCreateWorkflow returned no id')
+    expect(() => requireId({ id: '' }, 'x')).toThrow('x returned no id')
   })
 })

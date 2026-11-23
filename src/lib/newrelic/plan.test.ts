@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { planChanges } from './plan'
+import { findOrphans, planChanges } from './plan'
 
 const desired = (name: string, spec: unknown) => ({ name, spec })
 const existing = (name: string, id: string, spec: unknown) => ({ name, id, spec })
@@ -34,9 +34,29 @@ describe('planChanges', () => {
     expect(rows).toEqual([])
   })
 
+  test('refuses instead of updating a create-only resource that differs', () => {
+    const rows = planChanges('destination', [desired('a', { x: 2 })], [existing('a', '4', { x: 1 })], {
+      createOnly: true,
+    })
+    expect(rows).toEqual([{ kind: 'destination', name: 'a', action: 'refused', id: '4' }])
+  })
+
+  test('a create-only resource that matches is still a noop', () => {
+    const rows = planChanges('destination', [desired('a', 1)], [existing('a', '4', 1)], { createOnly: true })
+    expect(rows[0].action).toBe('noop')
+  })
+
   test('throws when two existing resources share a desired name', () => {
     expect(() =>
       planChanges('dashboard', [desired('a', 1)], [existing('a', '1', 1), existing('a', '2', 1)]),
     ).toThrow('dashboard "a" matches 2 existing resources')
+  })
+})
+
+describe('findOrphans', () => {
+  test('lists existing resources absent from the desired names, read only', () => {
+    expect(findOrphans('condition', ['a'], [existing('a', '1', 1), existing('old', '2', 1)])).toEqual([
+      { kind: 'condition', name: 'old', action: 'orphan', id: '2' },
+    ])
   })
 })

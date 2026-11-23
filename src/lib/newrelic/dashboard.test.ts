@@ -66,6 +66,12 @@ describe('dashboardSpec', () => {
     expect(titles).toEqual(['a', 'b'])
   })
 
+  test('differs when a widget points at another account', () => {
+    const moved = structuredClone(entity)
+    moved.pages[0].widgets[0].rawConfiguration.nrqlQueries[0].accountIds = [7]
+    expect(dashboardSpec(moved)).not.toEqual(dashboardSpec(dashboardInput(file, 42)))
+  })
+
   test('differs when a query changes', () => {
     const changed = structuredClone(entity)
     changed.pages[0].widgets[0].rawConfiguration.nrqlQueries[0].query = 'SELECT 9'

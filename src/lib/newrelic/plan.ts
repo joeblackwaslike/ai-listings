@@ -1,4 +1,4 @@
-export type Action = 'create' | 'update' | 'noop'
+export type Action = 'create' | 'update' | 'noop' | 'refused' | 'orphan'
 
 export interface DesiredResource {
   name: string
@@ -32,13 +32,21 @@ export function planChanges(
   kind: string,
   desired: DesiredResource[],
   existing: ExistingResource[],
+  options: { createOnly?: boolean } = {},
 ): PlanRow[] {
   return desired.map(({ name, spec }) => {
     const matches = existing.filter((resource) => resource.name === name)
     if (matches.length > 1) throw new Error(`${kind} "${name}" matches ${matches.length} existing resources`)
     const [match] = matches
     if (!match) return { kind, name, action: 'create' }
-    const action = canonical(match.spec) === canonical(spec) ? 'noop' : 'update'
+    const differs = canonical(match.spec) !== canonical(spec)
+    const action = !differs ? 'noop' : options.createOnly ? 'refused' : 'update'
     return { kind, name, action, id: match.id }
   })
+}
+
+export function findOrphans(kind: string, desiredNames: string[], existing: ExistingResource[]): PlanRow[] {
+  return existing
+    .filter((resource) => !desiredNames.includes(resource.name))
+    .map((resource) => ({ kind, name: resource.name, action: 'orphan', id: resource.id }))
 }

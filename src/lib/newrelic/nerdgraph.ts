@@ -59,3 +59,9 @@ export function parseMutationResult(
   if (errors.length) throw new Error(`${field}: ${errors.map(describeError).join('; ')}`)
   return payload as Record<string, unknown>
 }
+
+export function requireId(payload: Record<string, unknown> | null | undefined, field: string, key = 'id'): string {
+  const value = payload?.[key]
+  if (value === undefined || value === null || value === '') throw new Error(`${field} returned no id`)
+  return String(value)
+}

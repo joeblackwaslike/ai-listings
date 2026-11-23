@@ -1,4 +1,5 @@
 export const MIN_HISTORY_SECONDS = 7 * 86400
+export const ALLOWED_NOTIFICATION_EMAIL = 'joeblackwaslike@gmail.com'
 
 export interface ConditionFile {
   name: string
@@ -119,17 +120,69 @@ export function channelInput(name: string, destinationId: string, subject: strin
   }
 }
 
+export function channelSpec(channel: {
+  type: string
+  destinationId?: string | null
+  properties?: { key: string; value: string }[]
+}) {
+  return {
+    type: channel.type,
+    destinationId: channel.destinationId ?? null,
+    subject: channel.properties?.find((p) => p.key === 'subject')?.value ?? null,
+  }
+}
+
+export function channelUpdateInput(name: string, subject: string) {
+  return { name, properties: [{ key: 'subject', value: subject }] }
+}
+
 export function workflowInput(name: string, policyId: string, channelId: string) {
   return {
     name,
     workflowEnabled: true,
     destinationsEnabled: true,
-    mutingRulesHandling: 'NOTIFY_ALL_ISSUES',
+    mutingRulesHandling: 'DONT_NOTIFY_FULLY_MUTED_ISSUES',
     issuesFilter: {
       name: 'policy',
       type: 'FILTER',
       predicates: [{ attribute: 'labels.policyIds', operator: 'EXACTLY_MATCHES', values: [policyId] }],
     },
     destinationConfigurations: [{ channelId, notificationTriggers: ['ACTIVATED'] }],
+  }
+}
+
+interface WorkflowLike {
+  workflowEnabled?: boolean
+  destinationsEnabled?: boolean
+  mutingRulesHandling?: string
+  issuesFilter?: { predicates?: { attribute: string; operator: string; values: string[] }[] } | null
+  destinationConfigurations?: { channelId: string; notificationTriggers?: string[] }[]
+}
+
+export function workflowSpec(node: WorkflowLike) {
+  return {
+    enabled: node.workflowEnabled,
+    destinationsEnabled: node.destinationsEnabled,
+    mutingRulesHandling: node.mutingRulesHandling,
+    predicates: (node.issuesFilter?.predicates ?? []).map((p) => ({
+      attribute: p.attribute,
+      operator: p.operator,
+      values: [...p.values].sort(),
+    })),
+    destinations: (node.destinationConfigurations ?? []).map((d) => ({
+      channelId: d.channelId,
+      triggers: [...(d.notificationTriggers ?? [])].sort(),
+    })),
+  }
+}
+
+export function workflowUpdateInput(id: string, filterId: string, input: ReturnType<typeof workflowInput>) {
+  return {
+    id,
+    workflowEnabled: input.workflowEnabled,
+    destinationsEnabled: input.destinationsEnabled,
+    mutingRulesHandling: input.mutingRulesHandling,
+    issuesFilter: { id: filterId, filterInput: input.issuesFilter },
+    destinationConfigurations: input.destinationConfigurations,
   }
 }
