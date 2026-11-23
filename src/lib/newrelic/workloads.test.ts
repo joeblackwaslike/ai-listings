@@ -49,6 +49,18 @@ describe('expectedFromK8s', () => {
   })
 })
 
+describe('expectedFromK8s dedupe', () => {
+  test('yields one entry for two workloads sharing a namespace and container name', () => {
+    const list = { items: [workload('ns', 'one', 1, ['app']), workload('ns', 'two', 1, ['app'])] }
+    expect(expectedFromK8s(list)).toEqual([{ namespace: 'ns', name: 'app' }])
+  })
+
+  test('keeps the same container name in different namespaces', () => {
+    const list = { items: [workload('a', 'one', 1, ['app']), workload('b', 'two', 1, ['app'])] }
+    expect(expectedFromK8s(list)).toHaveLength(2)
+  })
+})
+
 describe('seenFromFacets', () => {
   test('maps NerdGraph facet rows to namespace and container', () => {
     const rows = [{ facet: ['media', 'nzbget'], count: 5 }]
@@ -96,5 +108,15 @@ describe('classifyMissing', () => {
 
   test('reports a missing container with no line count as unknown', () => {
     expect(classifyMissing([a], []).unknown).toEqual([{ ...a, error: 'no kubectl result' }])
+  })
+
+  test('reports a container found in no pod as unknown even with zero lines', () => {
+    expect(classifyMissing([a], [{ ...a, lines: 0, pods: 0 }]).unknown).toEqual([
+      { ...a, error: 'no running pod with this container' },
+    ])
+  })
+
+  test('reports a container with pods and zero lines as quiet', () => {
+    expect(classifyMissing([a], [{ ...a, lines: 0, pods: 2 }]).quiet).toEqual([a])
   })
 })

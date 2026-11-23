@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { auditDiff, logsQuery, SINCE_PATTERN } from './nrql'
+import { auditDiff, logsQuery, SINCE_PATTERN, truncateMessages } from './nrql'
 
 describe('logsQuery', () => {
   test('uses a one hour window and a limit of 50 by default', () => {
@@ -122,5 +122,28 @@ describe('SINCE_PATTERN', () => {
 
   test.each(['1 hour', '1 hours', '15 minutes', '2 days'])('accepts %j', (value: string) => {
     expect(SINCE_PATTERN.test(value)).toBe(true)
+  })
+})
+
+describe('truncateMessages', () => {
+  test('cuts a long message to max characters ending with an ellipsis', () => {
+    const [row] = truncateMessages([{ message: 'abcdefghij' }], 5)
+    expect(row.message).toBe('abcde…')
+  })
+
+  test('leaves a short message unchanged', () => {
+    expect(truncateMessages([{ message: 'abc' }], 5)).toEqual([{ message: 'abc' }])
+  })
+
+  test('leaves a message of exactly max characters unchanged', () => {
+    expect(truncateMessages([{ message: 'abcde' }], 5)).toEqual([{ message: 'abcde' }])
+  })
+
+  test('leaves a non-string message untouched', () => {
+    expect(truncateMessages([{ message: 12345678 }], 3)).toEqual([{ message: 12345678 }])
+  })
+
+  test('leaves rows without a message untouched', () => {
+    expect(truncateMessages([{ pod_name: 'abcdefghij' }], 3)).toEqual([{ pod_name: 'abcdefghij' }])
   })
 })

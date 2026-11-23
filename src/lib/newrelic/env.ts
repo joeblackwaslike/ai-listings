@@ -20,6 +20,10 @@ export function parseEnvFile(text: string): Record<string, string> {
   return parsed
 }
 
+export function envFileNeeded(env: EnvMap): boolean {
+  return !env.NEW_RELIC_API_KEY || !env.NEW_RELIC_ACCOUNT_ID
+}
+
 function pick(name: string, env: EnvMap, file: EnvMap): string {
   const value = env[name] || file[name]
   if (!value) throw new Error(`${name} not set`)

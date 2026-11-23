@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { parseEnvFile, resolveCredentials } from './env'
+import { envFileNeeded, parseEnvFile, resolveCredentials } from './env'
 
 describe('parseEnvFile', () => {
   test('reads KEY=value lines and ignores comments and blanks', () => {
@@ -18,12 +18,41 @@ describe('parseEnvFile', () => {
   })
 })
 
+describe('parseEnvFile edge cases', () => {
+  test('trims CRLF line endings', () => {
+    expect(parseEnvFile('NEW_RELIC_API_KEY=abc\r\nB=1\r\n')).toEqual({
+      NEW_RELIC_API_KEY: 'abc',
+      B: '1',
+    })
+  })
+
+  test('skips a line without an equals sign and a line starting with one', () => {
+    expect(parseEnvFile('NOEQUALS\n=orphan\nA=1')).toEqual({ A: '1' })
+  })
+})
+
+describe('envFileNeeded', () => {
+  test('is false when both variables are in the environment', () => {
+    expect(envFileNeeded({ NEW_RELIC_API_KEY: 'k', NEW_RELIC_ACCOUNT_ID: '1' })).toBe(false)
+  })
+
+  test('is true when either variable is missing or empty', () => {
+    expect(envFileNeeded({ NEW_RELIC_API_KEY: 'k' })).toBe(true)
+    expect(envFileNeeded({ NEW_RELIC_API_KEY: '', NEW_RELIC_ACCOUNT_ID: '1' })).toBe(true)
+  })
+})
+
 describe('resolveCredentials', () => {
   const file = { NEW_RELIC_API_KEY: 'file-key', NEW_RELIC_ACCOUNT_ID: '123' }
 
   test('prefers process env over the file', () => {
     const creds = resolveCredentials({ NEW_RELIC_API_KEY: 'env-key' }, file)
     expect(creds).toEqual({ apiKey: 'env-key', accountId: 123 })
+  })
+
+  test('prefers an env account id over the file one', () => {
+    const creds = resolveCredentials({ NEW_RELIC_ACCOUNT_ID: '999' }, file)
+    expect(creds).toEqual({ apiKey: 'file-key', accountId: 999 })
   })
 
   test('falls back to the file', () => {

@@ -12,14 +12,15 @@ export function expectedFromK8s(list: { items: K8sWorkload[] }): {
   namespace: string
   name: string
 }[] {
-  return list.items
-    .filter((item) => (item.spec.replicas ?? 1) > 0)
-    .flatMap((item) =>
-      item.spec.template.spec.containers.map((container) => ({
-        namespace: item.metadata.namespace,
-        name: container.name,
-      })),
-    )
+  const unique = new Map<string, { namespace: string; name: string }>()
+  for (const item of list.items) {
+    if ((item.spec.replicas ?? 1) <= 0) continue
+    for (const container of item.spec.template.spec.containers) {
+      const namespace = item.metadata.namespace
+      unique.set(`${namespace}/${container.name}`, { namespace, name: container.name })
+    }
+  }
+  return [...unique.values()]
 }
 
 export function seenFromFacets(
@@ -46,6 +47,7 @@ interface LineCount {
   namespace: string
   name: string
   lines?: number
+  pods?: number
   error?: string
 }
 
@@ -66,6 +68,8 @@ export function classifyMissing(
     const count = counts.find((c) => c.namespace === namespace && c.name === name)
     if (count?.lines === undefined) {
       result.unknown.push({ namespace, name, error: count?.error ?? 'no kubectl result' })
+    } else if (count.pods === 0) {
+      result.unknown.push({ namespace, name, error: 'no running pod with this container' })
     } else if (count.lines === 0) {
       result.quiet.push({ namespace, name })
     } else {

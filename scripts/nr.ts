@@ -2,15 +2,18 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { parseEnvFile, resolveCredentials } from '@/lib/newrelic/env'
-import { auditDiff, logsQuery } from '@/lib/newrelic/nrql'
+import { envFileNeeded, parseEnvFile, resolveCredentials } from '@/lib/newrelic/env'
+import { parseNerdGraphResponse } from '@/lib/newrelic/nerdgraph'
+import { auditDiff, logsQuery, truncateMessages } from '@/lib/newrelic/nrql'
 import { classifyMissing, expectedFromK8s, kubectlDuration, seenFromFacets } from '@/lib/newrelic/workloads'
 
 const ENDPOINT = 'https://api.newrelic.com/graphql'
 const GRAPHQL = 'query($a:Int!,$q:Nrql!){actor{account(id:$a){nrql(query:$q){results}}}}'
+const MESSAGE_MAX = 300
+const FACET_ROW_CAP = 5000
 const USAGE = `usage:
   bun scripts/nr.ts query "<NRQL>"
-  bun scripts/nr.ts logs [--errors] [--ns <namespace>] [--since "<n> hours"] [--grep <text>] [--limit <n>]
+  bun scripts/nr.ts logs [--errors] [--ns <namespace>] [--since "<n> hours"] [--grep <text>] [--limit <n>] [--full]
   bun scripts/nr.ts audit [--since "<n> hours"]`
 
 function git(args: string[]): string {
@@ -18,12 +21,17 @@ function git(args: string[]): string {
 }
 
 function envFileCandidates(): string[] {
-  const worktreeRoot = git(['rev-parse', '--show-toplevel'])
-  const mainRoot = join(git(['rev-parse', '--path-format=absolute', '--git-common-dir']), '..')
-  return [join(worktreeRoot, '.env.production.local'), join(mainRoot, '.env.production.local')]
+  try {
+    const worktreeRoot = git(['rev-parse', '--show-toplevel'])
+    const mainRoot = join(git(['rev-parse', '--path-format=absolute', '--git-common-dir']), '..')
+    return [join(worktreeRoot, '.env.production.local'), join(mainRoot, '.env.production.local')]
+  } catch {
+    return []
+  }
 }
 
 function loadEnvFile(): Record<string, string> {
+  if (!envFileNeeded(process.env)) return {}
   const path = envFileCandidates().find(existsSync)
   return path ? parseEnvFile(readFileSync(path, 'utf8')) : {}
 }
@@ -34,22 +42,17 @@ async function nrql(query: string): Promise<unknown[]> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'API-Key': apiKey },
     body: JSON.stringify({ query: GRAPHQL, variables: { a: accountId, q: query } }),
+    signal: AbortSignal.timeout(30_000),
   })
-  if (!response.ok) throw new Error(`NerdGraph HTTP ${response.status}`)
-  const body = (await response.json()) as {
-    errors?: { message: string }[]
-    data?: { actor: { account: { nrql: { results: unknown[] } } } }
-  }
-  if (body.errors?.length) throw new Error(body.errors.map((e) => e.message).join('; '))
-  if (!body.data) throw new Error('NerdGraph returned no data')
-  return body.data.actor.account.nrql.results
+  const body: unknown = await response.json().catch(() => null)
+  return parseNerdGraphResponse(response.status, body)
 }
 
 function print(value: unknown): void {
   console.log(JSON.stringify(value, null, 2))
 }
 
-function runLogs(argv: string[]): Promise<unknown[]> {
+async function runLogs(argv: string[]): Promise<unknown[]> {
   const { values } = parseArgs({
     args: argv,
     options: {
@@ -58,6 +61,7 @@ function runLogs(argv: string[]): Promise<unknown[]> {
       since: { type: 'string' },
       grep: { type: 'string' },
       limit: { type: 'string' },
+      full: { type: 'boolean' },
     },
   })
   const query = logsQuery({
@@ -67,7 +71,8 @@ function runLogs(argv: string[]): Promise<unknown[]> {
     errorsOnly: values.errors,
     limit: values.limit === undefined ? undefined : Number(values.limit),
   })
-  return nrql(query)
+  const rows = (await nrql(query)) as object[]
+  return values.full ? rows : truncateMessages(rows, MESSAGE_MAX)
 }
 
 function kubectl(args: string[]): string {
@@ -78,29 +83,56 @@ function kubectl(args: string[]): string {
   })
 }
 
+interface Pod {
+  metadata: { name: string }
+  spec: { containers: { name: string }[] }
+  status?: { phase?: string }
+}
+
+interface ContainerLineCount {
+  namespace: string
+  name: string
+  lines?: number
+  pods?: number
+  error?: string
+}
+
+function firstLine(error: unknown): string {
+  const stderr = (error as { stderr?: string }).stderr
+  const reason = (stderr || (error instanceof Error ? error.message : String(error))).trim()
+  return reason.split('\n')[0]
+}
+
 function countContainerLines(
   namespace: string,
   name: string,
   duration: string,
-  podsByNamespace: Map<string, { metadata: { name: string }; spec: { containers: { name: string }[] } }[]>,
-): { namespace: string; name: string; lines?: number; error?: string } {
+  podsByNamespace: Map<string, Pod[]>,
+): ContainerLineCount {
   try {
     if (!podsByNamespace.has(namespace)) {
-      podsByNamespace.set(namespace, JSON.parse(kubectl(['get', 'pods', '-n', namespace, '-o', 'json'])).items)
+      const list = JSON.parse(kubectl(['get', 'pods', '-n', namespace, '-o', 'json'])) as { items: Pod[] }
+      podsByNamespace.set(namespace, list.items)
     }
-    const pods = (podsByNamespace.get(namespace) ?? []).filter((pod) =>
-      pod.spec.containers.some((container) => container.name === name),
+    const pods = (podsByNamespace.get(namespace) ?? []).filter(
+      (pod) => pod.status?.phase === 'Running' && pod.spec.containers.some((c) => c.name === name),
     )
     let lines = 0
+    let succeeded = 0
+    let lastError = ''
     for (const pod of pods) {
-      const output = kubectl(['logs', '-n', namespace, pod.metadata.name, '-c', name, `--since=${duration}`])
-      lines += output === '' ? 0 : output.trimEnd().split('\n').length
+      try {
+        const output = kubectl(['logs', '-n', namespace, pod.metadata.name, '-c', name, `--since=${duration}`])
+        lines += output === '' ? 0 : output.trimEnd().split('\n').length
+        succeeded += 1
+      } catch (error) {
+        lastError = firstLine(error)
+      }
     }
-    return { namespace, name, lines }
+    if (pods.length > 0 && succeeded === 0) return { namespace, name, error: lastError }
+    return { namespace, name, lines, pods: pods.length }
   } catch (error) {
-    const stderr = (error as { stderr?: string }).stderr
-    const reason = (stderr || (error instanceof Error ? error.message : String(error))).trim()
-    return { namespace, name, error: reason.split('\n')[0] }
+    return { namespace, name, error: firstLine(error) }
   }
 }
 
@@ -113,8 +145,11 @@ async function runAudit(argv: string[]) {
   const rows = (await nrql(
     `SELECT count(*) FROM Log SINCE ${window} ago FACET namespace_name, container_name LIMIT MAX`,
   )) as { facet: (string | null)[] }[]
+  if (rows.length >= FACET_ROW_CAP) {
+    console.error(`warning: facet query returned ${rows.length} rows; coverage may be truncated`)
+  }
   const { missing } = auditDiff(expected, seenFromFacets(rows))
-  const podsByNamespace = new Map()
+  const podsByNamespace = new Map<string, Pod[]>()
   const counts = missing.map(({ namespace, name }) =>
     countContainerLines(namespace, name, duration, podsByNamespace),
   )
