@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Tooling
 
-- **pnpm** for dependencies and the workspace (`packages/*`); **Bun** as the runtime for the dev server, build, scripts, tests and the production image. Use `pnpm`/`bun`/`bunx` only -- never `npm`, `npx`, `yarn` or `tsx`.
+- **pnpm** for dependencies and the workspace (`packages/*`); **Bun** as the runtime for the dev server, scripts, tests and lint. The production image runs on Node 22 (glibc, `joeblackwaslike/debian:trixie`). Use `pnpm`/`bun`/`bunx` only -- never `npm`, `npx`, `yarn` or `tsx`.
 - Run every command from the repo root. Never `cd` into a package: use `pnpm --filter <name> <script>` or a root script (`pnpm build:sdk`, `pnpm typecheck:sdk`).
 - Scripts: `bun --env-file=.env.local scripts/<name>.ts`. Tests: `pnpm test` (`bun test ./src`).
 - `packages/poshmark-seller-sdk/dist` is committed (the app imports it); run `pnpm build:sdk` after changing the SDK source and commit the result.
@@ -29,6 +29,16 @@ Key production URLs (from `.env.production.local`):
 - Supabase (public): `https://sup-ai-listings.napoleon-catfish.ts.net`
 - Supabase (internal, server-side): `http://ai-listings-supabase-kong.sup-ai-listings.svc.cluster.local:8000`
 - Inngest (internal): `http://inngest.ai-listings.svc.cluster.local:8288`
+
+## Production observability (New Relic)
+
+Pod logs, Kubernetes state (restarts, replicas) and alerts for this app are in New Relic. For any question about prod behavior (errors, crashes, restarts, "did the deploy work"), query it first and read `.claude/skills/newrelic-observability/SKILL.md`:
+
+```bash
+bun scripts/nr.ts logs --errors --ns ai-listings --since "1 hour"
+```
+
+Wrong: looping `kubectl logs` over pods and grepping. It misses restarted pods and floods context with `[auth]` diagnostics, which are 96% of app log lines.
 
 ## Supabase
 

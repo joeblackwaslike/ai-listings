@@ -18,6 +18,7 @@ spec:
     metadata:
       labels:
         app: ai-listings
+        instrument: "true"
     spec:
       # 2026-08-23 incident: Inngest's SDK callbacks (including the pipeline's Claude
       # Vision calls, which can run well past the default 30s grace period) started

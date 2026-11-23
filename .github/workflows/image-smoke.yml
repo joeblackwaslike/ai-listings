@@ -9,7 +9,6 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
-      - '.bun-version'
       - 'next.config.ts'
       - 'tsconfig.json'
       - 'postcss.config.mjs'
@@ -35,7 +34,6 @@ jobs:
       - name: Tool versions
         id: versions
         run: |
-          echo "bun=$(cat .bun-version)" >> "$GITHUB_OUTPUT"
           echo "pnpm=$(jq -r '.packageManager | sub("^pnpm@"; "")' package.json)" >> "$GITHUB_OUTPUT"
 
       - name: Build image
@@ -47,7 +45,6 @@ jobs:
           load: true
           tags: ai-listings:smoke
           build-args: |
-            BUN_VERSION=${{ steps.versions.outputs.bun }}
             PNPM_VERSION=${{ steps.versions.outputs.pnpm }}
             NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
             NEXT_PUBLIC_SUPABASE_ANON_KEY=smoke-anon-key
