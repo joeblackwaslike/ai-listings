@@ -14,6 +14,8 @@ bun scripts/nr.ts logs --errors --ns ai-listings --since "1 hour"   # real error
 bun scripts/nr.ts logs --ns sup-ai-listings --grep "relation" --since "6 hours" --limit 20
 bun scripts/nr.ts query "SELECT count(*) FROM Log SINCE 1 hour ago FACET container_name"
 bun scripts/nr.ts audit --since "6 hours"                     # which workloads have logs; quiet vs dropped
+bun scripts/nr.ts backtest [--since "7 days"]                 # replay alert conditions from observability/alerts.json
+bun scripts/nr.ts apply [--yes]                               # dry run by default; --yes writes
 ```
 
 Flags: `--since "<n> minutes|hours|days"` with n 1 to 9999, `--limit` 1 to 2000 (default 50), `--grep` is a case-sensitive LIKE match, `audit` needs kubectl access.
@@ -40,6 +42,7 @@ Read `references/log-schema.md` for fields and the noisy `[auth]` lines, and `re
 - Start broad (`--since "1 hour"`), then narrow by container, then grep. Compare against a quiet baseline before calling something an incident.
 - The auth `proxy_check` and `proxy_redirect_to_login` diagnostics are most of the app volume and are not errors. `--errors` and the cookbook error recipes exclude exactly those two events, so real auth failures such as `proxy_unexpected_error` still show.
 - An empty result for a quiet container is normal. Use `audit` to tell quiet from dropped before claiming logs are missing.
-- This tool only reads. Never send NerdGraph mutations or create, change or delete dashboards or alerts; ask the owner first.
+- `apply --yes` creates dashboards and alerts from `observability/*.json`. It is a dry run by default and never deletes. Writes go only through `apply`; never send other NerdGraph mutations.
+- Enabling an alert condition needs the owner's go-ahead. Conditions are created disabled unless `backtest` shows 7 days of history and zero breaches; `apply` refuses to enable one without that history.
 - The API key is a full-rights user key, so this restraint is by convention, not enforced.
 - Lines logged before the logging agent was installed are not in New Relic. Use `kubectl logs` for the last few minutes or for a pod that just restarted.
