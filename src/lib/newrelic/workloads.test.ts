@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { classifyMissing, expectedFromK8s, kubectlDuration, seenFromFacets } from './workloads'
+import { classifyMissing, expectedFromK8s, kubectlDuration, seenFromFacets, sumPodCounts } from './workloads'
 
 function workload(
   namespace: string,
@@ -118,5 +118,27 @@ describe('classifyMissing', () => {
 
   test('reports a container with pods and zero lines as quiet', () => {
     expect(classifyMissing([a], [{ ...a, lines: 0, pods: 2 }]).quiet).toEqual([a])
+  })
+})
+
+describe('sumPodCounts', () => {
+  test('sums lines across pods that all succeeded', () => {
+    expect(sumPodCounts([{ lines: 2 }, { lines: 3 }])).toEqual({ lines: 5, pods: 2 })
+  })
+
+  test('returns zero pods for an empty result list', () => {
+    expect(sumPodCounts([])).toEqual({ lines: 0, pods: 0 })
+  })
+
+  test('returns the last error when every pod failed', () => {
+    expect(sumPodCounts([{ error: 'a' }, { error: 'b' }])).toEqual({ error: 'b' })
+  })
+
+  test('returns an error instead of zero lines when some pods failed and the rest had no lines', () => {
+    expect(sumPodCounts([{ lines: 0 }, { error: 'boom' }])).toEqual({ error: 'boom' })
+  })
+
+  test('keeps the line count when some pods failed but others had lines', () => {
+    expect(sumPodCounts([{ lines: 4 }, { error: 'boom' }])).toEqual({ lines: 4, pods: 2 })
   })
 })

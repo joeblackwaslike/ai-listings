@@ -13,7 +13,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-fail() { echo "SMOKE FAIL: $*" >&2; docker logs "$name" 2>&1 | tail -40 >&2 || true; exit 1; }
+fail() {
+  echo "SMOKE FAIL: $*" >&2
+  for container in "$name" "$name_req"; do
+    docker logs "$container" 2>&1 | tail -40 >&2 || true
+  done
+  exit 1
+}
 pass() { echo "ok  - $*"; }
 
 docker run -d --name "$name" -p "$port:3000" \
@@ -59,24 +65,24 @@ sharp({ create: { width: 64, height: 64, channels: 3, background: '#336' } }).re
 " || fail "sharp cannot encode webp"
 pass "sharp encodes webp"
 
-echo "process.env.NR_STUB_LOADED='1'" > "$stub_dir/nr-stub.js"
+echo "console.log('NR_STUB_LOADED')" > "$stub_dir/nr-stub.js"
 chmod 644 "$stub_dir/nr-stub.js"
-req_port="${SMOKE_REQUIRE_PORT:-3001}"
-docker run -d --name "$name_req" -p "$req_port:3000" \
+docker run -d --name "$name_req" -p 127.0.0.1::3000 \
   -v "$stub_dir/nr-stub.js:/tmp/nr-stub.js:ro" \
   -e NODE_OPTIONS="--require /tmp/nr-stub.js" \
   -e NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321 \
   -e NEXT_PUBLIC_SUPABASE_ANON_KEY=smoke-anon-key \
   "$image" >/dev/null
 
+req_port="$(docker port "$name_req" 3000/tcp | head -1 | sed 's/.*://')"
 for _ in $(seq 1 60); do
   curl -fsS --max-time 5 -o /dev/null "http://127.0.0.1:$req_port/login" 2>/dev/null && break
   sleep 1
 done
 
-name="$name_req"
-[ "$(docker inspect -f '{{.State.Running}}' "$name")" = true ] || fail "container with NODE_OPTIONS --require exited"
+[ "$(docker inspect -f '{{.State.Running}}' "$name_req")" = true ] || fail "container with NODE_OPTIONS --require exited"
 [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$req_port/login")" = 200 ] || fail "/login did not return 200 under NODE_OPTIONS --require"
+docker logs "$name_req" 2>&1 | grep -q NR_STUB_LOADED || fail "NODE_OPTIONS --require was not honored by the runtime"
 pass "starts under NODE_OPTIONS --require"
 
 echo "all smoke checks passed for $image"

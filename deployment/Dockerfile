@@ -1,8 +1,7 @@
-ARG NODE_VERSION=22
 ARG PNPM_VERSION=11.28.9
 
-# Pinned by digest for Node 22; update NODE_VERSION and the digest together.
-FROM node:${NODE_VERSION}-trixie-slim@sha256:68c76cfad89921b927eae28ba21407475e29d0ce450afcdbe70c1532db042b64 AS node
+# Pinned by digest; a digest overrides the tag, so bump the tag and digest together.
+FROM node:22-trixie-slim@sha256:68c76cfad89921b927eae28ba21407475e29d0ce450afcdbe70c1532db042b64 AS node
 
 FROM node AS builder
 ARG PNPM_VERSION

@@ -147,3 +147,11 @@ describe('truncateMessages', () => {
     expect(truncateMessages([{ pod_name: 'abcdefghij' }], 3)).toEqual([{ pod_name: 'abcdefghij' }])
   })
 })
+
+describe('truncateMessages surrogate safety', () => {
+  test('does not cut an emoji in half', () => {
+    const [row] = truncateMessages([{ message: 'ab😀cd' }], 3)
+    expect(row.message).toBe('ab😀…')
+  })
+})
+

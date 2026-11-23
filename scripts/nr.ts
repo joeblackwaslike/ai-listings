@@ -5,7 +5,13 @@ import { parseArgs } from 'node:util'
 import { envFileNeeded, parseEnvFile, resolveCredentials } from '@/lib/newrelic/env'
 import { parseNerdGraphResponse } from '@/lib/newrelic/nerdgraph'
 import { auditDiff, logsQuery, truncateMessages } from '@/lib/newrelic/nrql'
-import { classifyMissing, expectedFromK8s, kubectlDuration, seenFromFacets } from '@/lib/newrelic/workloads'
+import {
+  classifyMissing,
+  expectedFromK8s,
+  kubectlDuration,
+  seenFromFacets,
+  sumPodCounts,
+} from '@/lib/newrelic/workloads'
 
 const ENDPOINT = 'https://api.newrelic.com/graphql'
 const GRAPHQL = 'query($a:Int!,$q:Nrql!){actor{account(id:$a){nrql(query:$q){results}}}}'
@@ -117,20 +123,15 @@ function countContainerLines(
     const pods = (podsByNamespace.get(namespace) ?? []).filter(
       (pod) => pod.status?.phase === 'Running' && pod.spec.containers.some((c) => c.name === name),
     )
-    let lines = 0
-    let succeeded = 0
-    let lastError = ''
-    for (const pod of pods) {
+    const results = pods.map((pod) => {
       try {
         const output = kubectl(['logs', '-n', namespace, pod.metadata.name, '-c', name, `--since=${duration}`])
-        lines += output === '' ? 0 : output.trimEnd().split('\n').length
-        succeeded += 1
+        return { lines: output === '' ? 0 : output.trimEnd().split('\n').length }
       } catch (error) {
-        lastError = firstLine(error)
+        return { error: firstLine(error) }
       }
-    }
-    if (pods.length > 0 && succeeded === 0) return { namespace, name, error: lastError }
-    return { namespace, name, lines, pods: pods.length }
+    })
+    return { namespace, name, ...sumPodCounts(results) }
   } catch (error) {
     return { namespace, name, error: firstLine(error) }
   }
@@ -140,7 +141,12 @@ async function runAudit(argv: string[]) {
   const { values } = parseArgs({ args: argv, options: { since: { type: 'string' } } })
   const window = values.since ?? '6 hours'
   const duration = kubectlDuration(window)
-  const kube = kubectl(['get', 'deploy,statefulset', '-A', '-o', 'json'])
+  let kube: string
+  try {
+    kube = kubectl(['get', 'deploy,statefulset', '-A', '-o', 'json'])
+  } catch (error) {
+    throw new Error(`kubectl failed: ${firstLine(error)}`)
+  }
   const expected = expectedFromK8s(JSON.parse(kube))
   const rows = (await nrql(
     `SELECT count(*) FROM Log SINCE ${window} ago FACET namespace_name, container_name LIMIT MAX`,

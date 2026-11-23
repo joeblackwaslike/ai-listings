@@ -66,7 +66,9 @@ export function auditDiff(
 export function truncateMessages<T extends object>(rows: T[], max: number): T[] {
   return rows.map((row) => {
     const message = (row as { message?: unknown }).message
-    if (typeof message !== 'string' || message.length <= max) return row
-    return { ...row, message: `${message.slice(0, max)}…` }
+    if (typeof message !== 'string') return row
+    const characters = Array.from(message)
+    if (characters.length <= max) return row
+    return { ...row, message: `${characters.slice(0, max).join('')}…` }
   })
 }

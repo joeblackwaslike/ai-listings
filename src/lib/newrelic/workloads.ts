@@ -78,3 +78,13 @@ export function classifyMissing(
   }
   return result
 }
+
+export function sumPodCounts(
+  results: ({ lines: number } | { error: string })[],
+): { lines: number; pods: number } | { error: string } {
+  const failures = results.filter((result): result is { error: string } => 'error' in result)
+  const lines = results.reduce((total, result) => total + ('lines' in result ? result.lines : 0), 0)
+  if (failures.length > 0 && lines === 0) return { error: failures[failures.length - 1].error }
+  return { lines, pods: results.length }
+}
+
