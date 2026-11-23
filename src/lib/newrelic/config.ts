@@ -56,6 +56,13 @@ const condition = z
         message: 'requires fillOption NONE (gap filling stops a lost signal from being detected)',
       })
     }
+    if (c.openViolationOnExpiration && c.expirationDuration % c.aggregationWindow !== 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expirationDuration'],
+        message: 'must be a multiple of aggregationWindow when openViolationOnExpiration is true',
+      })
+    }
     if (FORBIDDEN_NRQL.test(withoutLiterals(c.nrql))) {
       ctx.addIssue({ code: 'custom', path: ['nrql'], message: 'must not contain FACET, SINCE or TIMESERIES' })
     }

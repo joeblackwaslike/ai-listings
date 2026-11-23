@@ -104,6 +104,16 @@ describe('parseAlertsFile', () => {
     )
   })
 
+  test('loss of signal requires expirationDuration to be a multiple of aggregationWindow', () => {
+    const lossOfSignal = { fillOption: 'NONE', fillValue: undefined, openViolationOnExpiration: true }
+    expect(() => parseAlertsFile(withCondition({ ...lossOfSignal, expirationDuration: 650 }))).toThrow(
+      /conditions\.0\.expirationDuration/,
+    )
+    expect(
+      parseAlertsFile(withCondition({ ...lossOfSignal, expirationDuration: 600 })).conditions[0].expirationDuration,
+    ).toBe(600)
+  })
+
   test('rejects unknown keys in a condition', () => {
     expect(() => parseAlertsFile(withCondition({ webhook: 'x' }))).toThrow(/alerts\.json: conditions\.0/)
   })
