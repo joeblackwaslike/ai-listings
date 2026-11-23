@@ -74,7 +74,7 @@ docker run -d --name "$name_req" -p 127.0.0.1::3000 \
   -e NEXT_PUBLIC_SUPABASE_ANON_KEY=smoke-anon-key \
   "$image" >/dev/null
 
-req_port="$(docker port "$name_req" 3000/tcp | head -1 | sed 's/.*://')"
+req_port="$(docker port "$name_req" 3000/tcp | head -1 | sed 's/.*://')" || fail "NODE_OPTIONS container has no published port"
 for _ in $(seq 1 60); do
   curl -fsS --max-time 5 -o /dev/null "http://127.0.0.1:$req_port/login" 2>/dev/null && break
   sleep 1
@@ -82,7 +82,8 @@ done
 
 [ "$(docker inspect -f '{{.State.Running}}' "$name_req")" = true ] || fail "container with NODE_OPTIONS --require exited"
 [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$req_port/login")" = 200 ] || fail "/login did not return 200 under NODE_OPTIONS --require"
-docker logs "$name_req" 2>&1 | grep -q NR_STUB_LOADED || fail "NODE_OPTIONS --require was not honored by the runtime"
+require_logs="$(docker logs "$name_req" 2>&1)"
+grep -q NR_STUB_LOADED <<<"$require_logs" || fail "NODE_OPTIONS --require was not honored by the runtime"
 pass "starts under NODE_OPTIONS --require"
 
 echo "all smoke checks passed for $image"
