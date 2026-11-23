@@ -38,7 +38,7 @@ Read `references/log-schema.md` for fields and the noisy `[auth]` lines, and `re
 ## Rules
 
 - Start broad (`--since "1 hour"`), then narrow by container, then grep. Compare against a quiet baseline before calling something an incident.
-- The auth `proxy_check` and `proxy_redirect_to_login` diagnostics are most of the app volume and are not errors. `--errors` already excludes them.
+- The auth `proxy_check` and `proxy_redirect_to_login` diagnostics are most of the app volume and are not errors. `--errors` and the cookbook error recipes exclude exactly those two events, so real auth failures such as `proxy_unexpected_error` still show.
 - An empty result for a quiet container is normal. Use `audit` to tell quiet from dropped before claiming logs are missing.
 - This tool only reads. Never send NerdGraph mutations or create, change or delete dashboards or alerts; ask the owner first.
 - The API key is a full-rights user key, so this restraint is by convention, not enforced.

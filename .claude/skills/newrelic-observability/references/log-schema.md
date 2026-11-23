@@ -26,5 +26,5 @@ Lines logged before the logging agent was installed are not in New Relic; `kubec
 ## Matching
 
 - Contains text: `message LIKE '%needle%'` (case sensitive). Regex: `message RLIKE '(?i).*pattern.*'`.
-- Escape a single quote in NRQL by doubling it.
+- Escape a single quote in NRQL with a backslash (`\'`). Doubling it (`''`) is a syntax error. `scripts/nr.ts` already escapes `--grep` and `--ns` for you.
 - Facet by a prefix to group repeated errors: `FACET substring(message, 0, 70)`.

@@ -35,7 +35,7 @@ Key production URLs (from `.env.production.local`):
 Pod logs, Kubernetes state (restarts, replicas) and alerts for this app are in New Relic. For any question about prod behavior (errors, crashes, restarts, "did the deploy work"), query it first and read `.claude/skills/newrelic-observability/SKILL.md`:
 
 ```bash
-bun scripts/nr.ts logs --errors --ns ai-listings --since "1 hours"
+bun scripts/nr.ts logs --errors --ns ai-listings --since "1 hour"
 ```
 
 Wrong: looping `kubectl logs` over pods and grepping. It misses restarted pods and floods context with `[auth]` diagnostics, which are 96% of app log lines.
