@@ -101,9 +101,10 @@ envsubst < "${VALUES_TEMPLATE}" > "${VALUES_FILE}"
 echo "→ Creating namespace ${NAMESPACE}..."
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 
-command -v yq >/dev/null || { echo "yq (mikefarah v4) is required by the Helm post-renderer" >&2; exit 1; }
+yq --version 2>&1 | grep -q mikefarah || { echo "yq (mikefarah v4) is required by the Helm post-renderer" >&2; exit 1; }
 POST_RENDERER="strip-studio-functions-mount"
-helm plugin uninstall "${POST_RENDERER}" >/dev/null 2>&1 || true
+PLUGINS_DIR="$(helm env HELM_PLUGINS)"
+rm -rf "${PLUGINS_DIR:?}/${POST_RENDERER}"
 helm plugin install "$(git rev-parse --show-toplevel)/deployment/helm-plugins/${POST_RENDERER}"
 
 echo "→ Running helm upgrade --install..."
