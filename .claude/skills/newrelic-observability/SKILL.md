@@ -42,7 +42,11 @@ Read `references/log-schema.md` for fields and the noisy `[auth]` lines, and `re
 - Start broad (`--since "1 hour"`), then narrow by container, then grep. Compare against a quiet baseline before calling something an incident.
 - The auth `proxy_check` and `proxy_redirect_to_login` diagnostics are most of the app volume and are not errors. `--errors` and the cookbook error recipes exclude exactly those two events, so real auth failures such as `proxy_unexpected_error` still show.
 - An empty result for a quiet container is normal. Use `audit` to tell quiet from dropped before claiming logs are missing.
-- `apply --yes` creates dashboards and alerts from `observability/*.json`. It is a dry run by default and never deletes. Writes go only through `apply`; never send other NerdGraph mutations.
-- Enabling an alert condition needs the owner's go-ahead. Conditions are created disabled unless `backtest` shows 7 days of history and zero breaches; `apply` refuses to enable one without that history.
-- The API key is a full-rights user key, so this restraint is by convention, not enforced.
+- The dry run (`apply`) is always allowed.
+- Never run `apply --yes` without the owner's explicit go-ahead in this session.
+- Edits to `observability/*.json` need the same review, because `apply` makes them live. That includes `notifications.email`, which must stay the owner's address.
+- Never enable a condition without the owner's go-ahead.
+- `apply` never deletes. Writes go only through `apply`; never send other NerdGraph mutations.
+- `apply` enforces the 7 day history length for enabled conditions. The zero breaches rule from `backtest` is a process step, not checked by `apply`.
+- The API key is a full rights user key, so this restraint is by convention, not enforced.
 - Lines logged before the logging agent was installed are not in New Relic. Use `kubectl logs` for the last few minutes or for a pod that just restarted.
