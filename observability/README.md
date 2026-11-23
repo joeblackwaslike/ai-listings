@@ -15,7 +15,7 @@ bun scripts/nr.ts backtest --since "3 days"
 
 | Resource | On a difference |
 | --- | --- |
-| Policy, conditions, channel, workflow, dashboard | Updated in place (`update`) |
+| Policy, conditions, channel, workflow, dashboard | Updated in place (`update`). The workflow is rewritten whole, so a destination or filter added to it by hand in New Relic is removed on the next `apply --yes` |
 | Email destination | Create only. A different address shows as `refused`, and `apply --yes` stops before any write |
 | Channel bound to a different destination | `refused`, since a channel cannot be rebound |
 

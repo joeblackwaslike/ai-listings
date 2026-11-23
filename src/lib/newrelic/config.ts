@@ -5,8 +5,12 @@ import type { DashboardFile } from './dashboard'
 const HISTORY_SHAPE = /^SELECT earliest\(timestamp\) FROM /i
 const FORBIDDEN_NRQL = /\b(FACET|SINCE|TIMESERIES)\b/i
 
+function withoutLiterals(nrql: string): string {
+  return nrql.replace(/'(?:[^'\\]|\\.)*'/g, "''")
+}
+
 function eventType(nrql: string): string | undefined {
-  return /\bFROM\s+(\w+)/i.exec(nrql)?.[1]?.toLowerCase()
+  return /\bFROM\s+`?(\w+)/i.exec(withoutLiterals(nrql))?.[1]?.toLowerCase()
 }
 
 export function historyTargetsMatch(conditionNrql: string, historyQuery: string): boolean {
@@ -14,7 +18,8 @@ export function historyTargetsMatch(conditionNrql: string, historyQuery: string)
   if (!type || type !== eventType(historyQuery)) return false
   if (type !== 'metric') return true
   const metric = /\bmetricName\s*=\s*'([^']+)'/i.exec(historyQuery)?.[1]
-  return metric !== undefined && new RegExp(`\\b${metric}\\b`).test(conditionNrql)
+  if (metric === undefined) return false
+  return withoutLiterals(conditionNrql).includes(metric)
 }
 
 const positiveInt = z.number().int().positive()
@@ -39,6 +44,9 @@ const condition = z
   .superRefine((c, ctx) => {
     if (c.thresholdDuration % c.aggregationWindow !== 0) {
       ctx.addIssue({ code: 'custom', path: ['thresholdDuration'], message: 'must be a multiple of aggregationWindow' })
+    }
+    if (c.fillOption === 'STATIC' && c.fillValue === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['fillValue'], message: 'is required when fillOption is STATIC' })
     }
     if (FORBIDDEN_NRQL.test(c.nrql)) {
       ctx.addIssue({ code: 'custom', path: ['nrql'], message: 'must not contain FACET, SINCE or TIMESERIES' })

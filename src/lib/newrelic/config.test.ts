@@ -100,6 +100,28 @@ describe('historyTargetsMatch', () => {
     expect(historyTargetsMatch(nrql, history("Metric WHERE metricName = 'inngest_function_run_started_total'"))).toBe(false)
     expect(historyTargetsMatch(nrql, history('Metric'))).toBe(false)
   })
+
+  test('ignores FROM inside a quoted string in the condition', () => {
+    const nrql = "SELECT filter(count(*), WHERE msg LIKE '% from Log%') FROM Transaction"
+    expect(historyTargetsMatch(nrql, history('Log'))).toBe(false)
+    expect(historyTargetsMatch(nrql, history('Transaction'))).toBe(true)
+  })
+
+  test('accepts a backticked event type', () => {
+    expect(historyTargetsMatch('SELECT count(*) FROM `Transaction`', history('Transaction'))).toBe(true)
+  })
+
+  test('does not throw on a metric name with regex characters and ignores names only inside literals', () => {
+    const nrql = "SELECT sum(other_metric) FROM Metric WHERE x = 'wanted_metric'"
+    expect(historyTargetsMatch(nrql, history("Metric WHERE metricName = 'wanted_metric'"))).toBe(false)
+    expect(() => historyTargetsMatch(nrql, history("Metric WHERE metricName = 'bad(metric'"))).not.toThrow()
+  })
+})
+
+describe('fillValue for STATIC fill', () => {
+  test('is required when fillOption is STATIC', () => {
+    expect(() => parseAlertsFile(withCondition({ fillOption: 'STATIC', fillValue: undefined }))).toThrow(/fillValue/)
+  })
 })
 
 describe('parseDashboardFile', () => {
