@@ -3,7 +3,20 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { envFileNeeded, parseEnvFile, resolveCredentials } from '@/lib/newrelic/env'
-import { parseNerdGraphResponse } from '@/lib/newrelic/nerdgraph'
+import { type ConditionFile, MIN_HISTORY_SECONDS } from '@/lib/newrelic/alerts'
+import { type Row, applyPlan, buildPlan } from '@/lib/newrelic/apply'
+import { parseAlertsFile, parseDashboardFile } from '@/lib/newrelic/config'
+import type { PlanRow } from '@/lib/newrelic/plan'
+import {
+  breachEpisodes,
+  chunkWindows,
+  formatSpan,
+  seriesQuery,
+  seriesStats,
+  seriesValue,
+  windowSeconds,
+} from '@/lib/newrelic/backtest'
+import { parseGraphqlData, parseMutationResult, parseNerdGraphResponse } from '@/lib/newrelic/nerdgraph'
 import { auditDiff, logsQuery, truncateMessages } from '@/lib/newrelic/nrql'
 import {
   classifyMissing,
@@ -20,7 +33,9 @@ const FACET_ROW_CAP = 5000
 const USAGE = `usage:
   bun scripts/nr.ts query "<NRQL>"
   bun scripts/nr.ts logs [--errors] [--ns <namespace>] [--since "<n> hours"] [--grep <text>] [--limit <n>] [--full]
-  bun scripts/nr.ts audit [--since "<n> hours"]`
+  bun scripts/nr.ts audit [--since "<n> hours"]
+  bun scripts/nr.ts apply [--yes]
+  bun scripts/nr.ts backtest [--since "<n> days"]`
 
 function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8' }).trim()
@@ -42,16 +57,37 @@ function loadEnvFile(): Record<string, string> {
   return path ? parseEnvFile(readFileSync(path, 'utf8')) : {}
 }
 
-async function nrql(query: string): Promise<unknown[]> {
-  const { apiKey, accountId } = resolveCredentials(process.env, loadEnvFile())
+let cachedCredentials: ReturnType<typeof resolveCredentials> | undefined
+
+function credentials() {
+  cachedCredentials ??= resolveCredentials(process.env, loadEnvFile())
+  return cachedCredentials
+}
+
+async function send(query: string, variables: Record<string, unknown>) {
   const response = await fetch(ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'API-Key': apiKey },
-    body: JSON.stringify({ query: GRAPHQL, variables: { a: accountId, q: query } }),
+    headers: { 'Content-Type': 'application/json', 'API-Key': credentials().apiKey },
+    body: JSON.stringify({ query, variables }),
     signal: AbortSignal.timeout(30_000),
   })
   const body: unknown = await response.json().catch(() => null)
-  return parseNerdGraphResponse(response.status, body)
+  return { status: response.status, body }
+}
+
+async function nrql(query: string): Promise<unknown[]> {
+  const { status, body } = await send(GRAPHQL, { a: credentials().accountId, q: query })
+  return parseNerdGraphResponse(status, body)
+}
+
+async function graphql(query: string, variables: Record<string, unknown> = {}) {
+  const { status, body } = await send(query, { a: credentials().accountId, ...variables })
+  return parseGraphqlData(status, body)
+}
+
+async function mutate(field: string, query: string, variables: Record<string, unknown>) {
+  const { status, body } = await send(query, { a: credentials().accountId, ...variables })
+  return parseMutationResult(status, body, field)
 }
 
 function print(value: unknown): void {
@@ -162,11 +198,96 @@ async function runAudit(argv: string[]) {
   return { window, missing, ...classifyMissing(missing, counts) }
 }
 
+function readObservability<T>(name: string, parse: (raw: unknown) => T): T {
+  const root = git(['rev-parse', '--show-toplevel'])
+  return parse(JSON.parse(readFileSync(join(root, 'observability', name), 'utf8')))
+}
+
+async function historySeconds(historyQuery: string): Promise<number | null> {
+  const [row] = (await nrql(historyQuery)) as Row[]
+  const earliest = row?.['earliest.timestamp']
+  return typeof earliest === 'number' ? Math.round((Date.now() - earliest) / 1000) : null
+}
+
+function printRow(row: PlanRow, suffix = ''): void {
+  console.log(`${row.kind.padEnd(12)} ${row.action.padEnd(7)} ${row.name}${suffix}`)
+}
+
+async function runApply(argv: string[]): Promise<void> {
+  const { values } = parseArgs({ args: argv, options: { yes: { type: 'boolean' } } })
+  const dashboard = readObservability('dashboard.json', parseDashboardFile)
+  const alerts = readObservability('alerts.json', parseAlertsFile)
+  const plan = await buildPlan(
+    { accountId: credentials().accountId, graphql, mutate, nrql },
+    alerts,
+    dashboard,
+  )
+  for (const { row } of plan.steps) printRow(row)
+  for (const row of plan.orphans) printRow(row)
+  if (!values.yes) return console.log('dry run: nothing written (use --yes to apply)')
+  await applyPlan(plan, (row, id) => printRow(row, ` ${id}`))
+}
+
+const BACKTEST_CONCURRENCY = 4
+const MAX_BUCKETS = 360
+
+async function conditionSeries(condition: ConditionFile, start: number, end: number) {
+  const windows = chunkWindows(start, end, condition.aggregationWindow, MAX_BUCKETS)
+  const chunks: Row[][] = []
+  for (let i = 0; i < windows.length; i += BACKTEST_CONCURRENCY) {
+    const batch = windows.slice(i, i + BACKTEST_CONCURRENCY)
+    chunks.push(
+      ...(await Promise.all(
+        batch.map(([from, to]) =>
+          nrql(seriesQuery(condition.nrql, from, to, condition.aggregationWindow)) as Promise<Row[]>,
+        ),
+      )),
+    )
+  }
+  return chunks.flat().sort((a, b) => a.beginTimeSeconds - b.beginTimeSeconds).map(seriesValue)
+}
+
+async function runBacktest(argv: string[]): Promise<void> {
+  const { values } = parseArgs({ args: argv, options: { since: { type: 'string' } } })
+  const window = windowSeconds(values.since ?? '7 days')
+  const alerts = readObservability('alerts.json', parseAlertsFile)
+  const now = Math.floor(Date.now() / 1000)
+  for (const condition of alerts.conditions) {
+    const span = await historySeconds(condition.historyQuery)
+    const start = now - Math.min(window, span ?? 0)
+    console.log(`${condition.name} (enabled: ${condition.enabled})`)
+    console.log(
+      span !== null && span >= MIN_HISTORY_SECONDS
+        ? `  history: ${formatSpan(span)}`
+        : `  insufficient history: ${span === null ? 'none' : formatSpan(span)}`,
+    )
+    if (span === null) continue
+    const series = await conditionSeries(condition, start, now)
+    const breaches = breachEpisodes(series, {
+      operator: condition.operator,
+      threshold: condition.threshold,
+      requiredPoints: condition.thresholdDuration / condition.aggregationWindow,
+      fill: condition.fillOption === 'STATIC' ? (condition.fillValue ?? 0) : null,
+      expirationPoints: condition.openViolationOnExpiration
+        ? condition.expirationDuration / condition.aggregationWindow
+        : undefined,
+    })
+    const stats = seriesStats(series)
+    console.log(`  rule: ${condition.operator} ${condition.threshold} for ${condition.thresholdDuration}s in ${condition.aggregationWindow}s windows`)
+    if (condition.openViolationOnExpiration) console.log(`  loss of signal: no data for ${condition.expirationDuration}s opens a violation`)
+    console.log(`  data span tested: ${formatSpan(now - start)} (${series.length} windows)`)
+    console.log(`  breaches: ${breaches}`)
+    console.log(stats ? `  min ${stats.min} median ${stats.median} p95 ${stats.p95} max ${stats.max}` : '  no data points')
+  }
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2)
   if (command === 'query' && rest.length === 1) return print(await nrql(rest[0]))
   if (command === 'logs') return print(await runLogs(rest))
   if (command === 'audit') return print(await runAudit(rest))
+  if (command === 'apply') return runApply(rest)
+  if (command === 'backtest') return runBacktest(rest)
   console.error(USAGE)
   process.exit(1)
 }

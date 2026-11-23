@@ -1,0 +1,311 @@
+{
+  "name": "ai-listings",
+  "pages": [
+    {
+      "name": "Logs and errors",
+      "widgets": [
+        {
+          "title": "Real errors, last hour",
+          "visualization": "viz.billboard",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "nrql": "SELECT count(*) AS 'errors' FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings' AND message RLIKE '(?i).*(error|exception|fail|fatal).*' AND message NOT LIKE '%\"event\":\"proxy_check\"%' AND message NOT LIKE '%\"event\":\"proxy_redirect_to_login\"%' SINCE 1 hour ago"
+        },
+        {
+          "title": "Real errors over time",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 5,
+            "row": 1,
+            "width": 8,
+            "height": 3
+          },
+          "nrql": "SELECT count(*) AS 'errors' FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings' AND message RLIKE '(?i).*(error|exception|fail|fatal).*' AND message NOT LIKE '%\"event\":\"proxy_check\"%' AND message NOT LIKE '%\"event\":\"proxy_redirect_to_login\"%' SINCE 24 hours ago TIMESERIES 30 minutes"
+        },
+        {
+          "title": "Log volume by container (ai-listings namespace)",
+          "visualization": "viz.area",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT count(*) FROM Log WHERE namespace_name = 'ai-listings' FACET container_name SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "Error shapes",
+          "visualization": "viz.table",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT count(*) FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings' AND message RLIKE '(?i).*(error|exception|fail|fatal).*' AND message NOT LIKE '%\"event\":\"proxy_check\"%' AND message NOT LIKE '%\"event\":\"proxy_redirect_to_login\"%' FACET substring(message, 0, 45) SINCE 24 hours ago LIMIT 20"
+        },
+        {
+          "title": "supabase-auth error-level lines",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 12,
+            "height": 3
+          },
+          "nrql": "SELECT count(*) AS 'auth errors' FROM Log WHERE namespace_name = 'sup-ai-listings' AND container_name = 'supabase-auth' AND message RLIKE '(?i).*(error|fatal).*' SINCE 24 hours ago TIMESERIES 30 minutes"
+        }
+      ]
+    },
+    {
+      "name": "Runtime and APM",
+      "widgets": [
+        {
+          "title": "Throughput (requests per minute)",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "nrql": "SELECT rate(count(*), 1 minute) FROM Transaction WHERE appName = 'ai-listings' SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "p95 duration (seconds)",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 5,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "nrql": "SELECT percentile(duration, 95) FROM Transaction WHERE appName = 'ai-listings' SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "Error rate (percent)",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 9,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "nrql": "SELECT percentage(count(*), WHERE error IS true) FROM Transaction WHERE appName = 'ai-listings' SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "Slowest transactions",
+          "visualization": "viz.table",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 12,
+            "height": 3
+          },
+          "nrql": "SELECT average(duration), percentile(duration, 95), count(*) FROM Transaction WHERE appName = 'ai-listings' FACET name SINCE 6 hours ago LIMIT 10"
+        },
+        {
+          "title": "Pod restarts",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT max(restartCount) FROM K8sContainerSample WHERE namespaceName IN ('ai-listings', 'sup-ai-listings') FACET podName SINCE 24 hours ago TIMESERIES 30 minutes"
+        },
+        {
+          "title": "Replicas available and missing",
+          "visualization": "viz.table",
+          "layout": {
+            "column": 7,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT latest(podsAvailable), latest(podsMissing) FROM K8sDeploymentSample WHERE namespaceName IN ('ai-listings', 'sup-ai-listings') FACET deploymentName SINCE 30 minutes ago LIMIT 20"
+        },
+        {
+          "title": "CPU cores per pod",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 10,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT average(cpuUsedCores) FROM K8sContainerSample WHERE namespaceName IN ('ai-listings', 'sup-ai-listings') FACET podName SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "Memory working set per pod",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 7,
+            "row": 10,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT average(memoryWorkingSetBytes) FROM K8sContainerSample WHERE namespaceName IN ('ai-listings', 'sup-ai-listings') FACET podName SINCE 6 hours ago TIMESERIES 10 minutes"
+        }
+      ]
+    },
+    {
+      "name": "Inngest",
+      "widgets": [
+        {
+          "title": "Queue depth",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 12,
+            "height": 3
+          },
+          "nrql": "SELECT latest(inngest_queue_depth) FROM Metric SINCE 6 hours ago TIMESERIES 5 minutes"
+        },
+        {
+          "title": "Function runs by function and status",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT sum(inngest_function_run_ended_total) FROM Metric FACET fn, status SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "Function failures (status not completed)",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT sum(inngest_function_run_ended_total) FROM Metric WHERE status != 'completed' FACET fn, status SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "Inngest CPU cores",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT average(cpuUsedCores) FROM K8sContainerSample WHERE namespaceName = 'ai-listings' AND containerName = 'inngest' FACET podName SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "Inngest memory working set",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 7,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT average(memoryWorkingSetBytes) FROM K8sContainerSample WHERE namespaceName = 'ai-listings' AND containerName = 'inngest' FACET podName SINCE 6 hours ago TIMESERIES 10 minutes"
+        }
+      ]
+    },
+    {
+      "name": "Supabase and runner",
+      "widgets": [
+        {
+          "title": "Log volume per Supabase container",
+          "visualization": "viz.area",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 12,
+            "height": 3
+          },
+          "nrql": "SELECT count(*) FROM Log WHERE namespace_name = 'sup-ai-listings' AND container_name IN ('supabase-kong', 'supabase-rest', 'supabase-auth', 'supabase-db', 'supabase-realtime', 'supabase-storage') FACET container_name SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "supabase-auth error-level lines",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT count(*) AS 'auth errors' FROM Log WHERE namespace_name = 'sup-ai-listings' AND container_name = 'supabase-auth' AND message RLIKE '(?i).*(error|fatal).*' SINCE 24 hours ago TIMESERIES 30 minutes"
+        },
+        {
+          "title": "sup-ai-listings pods ready",
+          "visualization": "viz.table",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT latest(isReady) FROM K8sPodSample WHERE namespaceName = 'sup-ai-listings' FACET podName SINCE 30 minutes ago LIMIT 30"
+        },
+        {
+          "title": "sup-ai-listings restarts",
+          "visualization": "viz.table",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT max(restartCount) FROM K8sContainerSample WHERE namespaceName = 'sup-ai-listings' FACET podName, containerName SINCE 1 hour ago LIMIT 30"
+        },
+        {
+          "title": "github-runner restarts",
+          "visualization": "viz.billboard",
+          "layout": {
+            "column": 7,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "nrql": "SELECT max(restartCount) FROM K8sContainerSample WHERE namespaceName = 'github-runner' SINCE 1 hour ago"
+        },
+        {
+          "title": "github-runner CPU cores",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 1,
+            "row": 10,
+            "width": 4,
+            "height": 3
+          },
+          "nrql": "SELECT average(cpuUsedCores) FROM K8sContainerSample WHERE namespaceName = 'github-runner' FACET podName SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "github-runner memory working set",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 5,
+            "row": 10,
+            "width": 4,
+            "height": 3
+          },
+          "nrql": "SELECT average(memoryWorkingSetBytes) FROM K8sContainerSample WHERE namespaceName = 'github-runner' FACET podName SINCE 6 hours ago TIMESERIES 10 minutes"
+        },
+        {
+          "title": "github-runner container logs",
+          "visualization": "viz.line",
+          "layout": {
+            "column": 9,
+            "row": 10,
+            "width": 4,
+            "height": 3
+          },
+          "nrql": "SELECT count(*) FROM Log WHERE namespace_name = 'github-runner' SINCE 24 hours ago TIMESERIES 30 minutes"
+        }
+      ]
+    }
+  ]
+}

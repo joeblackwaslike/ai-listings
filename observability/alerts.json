@@ -1,0 +1,109 @@
+{
+  "policy": {
+    "name": "ai-listings app",
+    "incidentPreference": "PER_CONDITION"
+  },
+  "notifications": {
+    "email": "joeblackwaslike@gmail.com",
+    "destinationName": "ai-listings email",
+    "channelName": "ai-listings app email",
+    "channelSubject": "[New Relic] {{ issueTitle }} ({{ priority }})",
+    "workflowName": "ai-listings app emails"
+  },
+  "conditions": [
+    {
+      "name": "App error rate",
+      "description": "Real error log lines from container ai-listings per minute, excluding auth proxy diagnostics, sustained for 10 minutes.",
+      "enabled": false,
+      "nrql": "SELECT count(*) FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings' AND message RLIKE '(?i).*(error|exception|fail|fatal).*' AND message NOT LIKE '%\"event\":\"proxy_check\"%' AND message NOT LIKE '%\"event\":\"proxy_redirect_to_login\"%'",
+      "historyQuery": "SELECT earliest(timestamp) FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings' SINCE 8 days ago",
+      "operator": "ABOVE",
+      "threshold": 5,
+      "thresholdDuration": 600,
+      "aggregationWindow": 60,
+      "aggregationMethod": "EVENT_FLOW",
+      "aggregationDelay": 120,
+      "fillOption": "STATIC",
+      "fillValue": 0,
+      "expirationDuration": 900
+    },
+    {
+      "name": "Log silence",
+      "description": "No log lines from container ai-listings for 10 minutes (app down or log shipping broken), detected as loss of signal.",
+      "enabled": false,
+      "nrql": "SELECT count(*) FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings'",
+      "historyQuery": "SELECT earliest(timestamp) FROM Log WHERE namespace_name = 'ai-listings' AND container_name = 'ai-listings' SINCE 8 days ago",
+      "operator": "BELOW",
+      "threshold": 1,
+      "thresholdDuration": 600,
+      "aggregationWindow": 60,
+      "aggregationMethod": "EVENT_FLOW",
+      "aggregationDelay": 120,
+      "fillOption": "NONE",
+      "expirationDuration": 600,
+      "openViolationOnExpiration": true
+    },
+    {
+      "name": "APM error rate",
+      "description": "Count of failed transactions per 5 minute window, sustained for 10 minutes. An absolute count fires at low traffic, where a percentage with a request minimum almost never has two qualifying windows.",
+      "enabled": false,
+      "nrql": "SELECT count(*) FROM Transaction WHERE appName = 'ai-listings' AND error IS true",
+      "historyQuery": "SELECT earliest(timestamp) FROM Transaction WHERE appName = 'ai-listings' SINCE 8 days ago",
+      "operator": "ABOVE",
+      "threshold": 5,
+      "thresholdDuration": 600,
+      "aggregationWindow": 300,
+      "aggregationMethod": "EVENT_FLOW",
+      "aggregationDelay": 120,
+      "fillOption": "STATIC",
+      "expirationDuration": 900,
+      "fillValue": 0
+    },
+    {
+      "name": "APM p95 latency",
+      "description": "p95 transaction duration in seconds over 5 minute windows, sustained for 10 minutes, with a 3 request minimum. Placeholder threshold, set from 7 days of history before enabling.",
+      "enabled": false,
+      "nrql": "SELECT if(count(*) >= 3, percentile(duration, 95), null) AS 'p95' FROM Transaction WHERE appName = 'ai-listings'",
+      "historyQuery": "SELECT earliest(timestamp) FROM Transaction WHERE appName = 'ai-listings' SINCE 8 days ago",
+      "operator": "ABOVE",
+      "threshold": 30,
+      "thresholdDuration": 600,
+      "aggregationWindow": 300,
+      "aggregationMethod": "EVENT_FLOW",
+      "aggregationDelay": 120,
+      "fillOption": "NONE",
+      "expirationDuration": 900
+    },
+    {
+      "name": "Inngest queue depth",
+      "description": "Inngest queue depth stays above the threshold for 15 minutes (queue not draining). Placeholder threshold, set from 7 days of history before enabling.",
+      "enabled": false,
+      "nrql": "SELECT latest(inngest_queue_depth) FROM Metric",
+      "historyQuery": "SELECT earliest(timestamp) FROM Metric WHERE metricName = 'inngest_queue_depth' SINCE 8 days ago",
+      "operator": "ABOVE",
+      "threshold": 100,
+      "thresholdDuration": 900,
+      "aggregationWindow": 60,
+      "aggregationMethod": "EVENT_FLOW",
+      "aggregationDelay": 120,
+      "fillOption": "NONE",
+      "expirationDuration": 900
+    },
+    {
+      "name": "Inngest function failures",
+      "description": "At least one Inngest function run ends with a status other than completed within a single 15 minute window, so bursty failures fire. Placeholder rule, tune from 7 days of history before enabling.",
+      "enabled": false,
+      "nrql": "SELECT sum(inngest_function_run_ended_total) FROM Metric WHERE status != 'completed'",
+      "historyQuery": "SELECT earliest(timestamp) FROM Metric WHERE metricName = 'inngest_function_run_ended_total' SINCE 8 days ago",
+      "operator": "ABOVE",
+      "threshold": 0,
+      "thresholdDuration": 900,
+      "aggregationWindow": 900,
+      "aggregationMethod": "EVENT_FLOW",
+      "aggregationDelay": 120,
+      "fillOption": "STATIC",
+      "fillValue": 0,
+      "expirationDuration": 900
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { parseNerdGraphResponse } from './nerdgraph'
+import { parseGraphqlData, parseMutationResult, parseNerdGraphResponse, requireId } from './nerdgraph'
 
 const ok = (results: unknown[]) => ({ data: { actor: { account: { nrql: { results } } } } })
 
@@ -39,5 +39,67 @@ describe('parseNerdGraphResponse', () => {
     expect(() => parseNerdGraphResponse(200, {})).toThrow(
       'NerdGraph returned no nrql results (check the account id)',
     )
+  })
+})
+
+describe('parseGraphqlData', () => {
+  test('returns the data object', () => {
+    expect(parseGraphqlData(200, { data: { x: 1 } })).toEqual({ x: 1 })
+  })
+
+  test('throws on HTTP failure and GraphQL errors', () => {
+    expect(() => parseGraphqlData(500, null)).toThrow('NerdGraph HTTP 500')
+    expect(() => parseGraphqlData(200, { errors: [{ message: 'denied' }] })).toThrow('denied')
+  })
+
+  test('throws when data is missing', () => {
+    expect(() => parseGraphqlData(200, {})).toThrow('NerdGraph returned no data')
+  })
+})
+
+describe('parseMutationResult', () => {
+  test('returns the mutation payload', () => {
+    expect(parseMutationResult(200, { data: { make: { id: '7' } } }, 'make')).toEqual({ id: '7' })
+  })
+
+  test('throws when the payload is null', () => {
+    expect(() => parseMutationResult(200, { data: { make: null } }, 'make')).toThrow(
+      'make returned nothing',
+    )
+  })
+
+  test('throws with the descriptions of payload errors', () => {
+    const body = { data: { make: { errors: [{ description: 'no permission', type: 'FORBIDDEN' }] } } }
+    expect(() => parseMutationResult(200, body, 'make')).toThrow('make: no permission (FORBIDDEN)')
+  })
+
+  test('throws with the description or details of a single error object', () => {
+    const described = { data: { make: { error: { description: 'bad email', type: 'INVALID' } } } }
+    expect(() => parseMutationResult(200, described, 'make')).toThrow('make: bad email (INVALID)')
+    const detailed = { data: { make: { error: { details: 'name taken' } } } }
+    expect(() => parseMutationResult(200, detailed, 'make')).toThrow('make: name taken')
+  })
+
+  test('accepts an empty errors array', () => {
+    expect(parseMutationResult(200, { data: { make: { errors: [], id: '1' } } }, 'make')).toEqual({
+      errors: [],
+      id: '1',
+    })
+  })
+})
+
+describe('requireId', () => {
+  test('returns the id as a string', () => {
+    expect(requireId({ id: 12 }, 'alertsPolicyCreate')).toBe('12')
+  })
+
+  test('reads another key such as guid', () => {
+    expect(requireId({ guid: 'g' }, 'dashboardCreate', 'guid')).toBe('g')
+  })
+
+  test('throws when the id is missing instead of using the string undefined', () => {
+    expect(() => requireId({ name: 'x' }, 'alertsPolicyCreate')).toThrow('alertsPolicyCreate returned no id')
+    expect(() => requireId(undefined, 'aiWorkflowsCreateWorkflow')).toThrow('aiWorkflowsCreateWorkflow returned no id')
+    expect(() => requireId({ id: '' }, 'x')).toThrow('x returned no id')
   })
 })
