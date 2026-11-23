@@ -30,6 +30,16 @@ Key production URLs (from `.env.production.local`):
 - Supabase (internal, server-side): `http://ai-listings-supabase-kong.sup-ai-listings.svc.cluster.local:8000`
 - Inngest (internal): `http://inngest.ai-listings.svc.cluster.local:8288`
 
+## Production observability (New Relic)
+
+Pod logs, Kubernetes state (restarts, replicas) and alerts for this app are in New Relic. For any question about prod behavior (errors, crashes, restarts, "did the deploy work"), query it first and read `.claude/skills/newrelic-observability/SKILL.md`:
+
+```bash
+bun scripts/nr.ts logs --errors --ns ai-listings --since "1 hours"
+```
+
+Wrong: looping `kubectl logs` over pods and grepping. It misses restarted pods and floods context with `[auth]` diagnostics, which are 96% of app log lines.
+
 ## Supabase
 
 Supabase is **self-hosted in Kubernetes** — it is always running. Never use `supabase.com`, the cloud dashboard, `supabase start`, or `supabase db push`.
