@@ -1,19 +1,19 @@
 # NRQL cookbook
 
-Run any of these with `bun scripts/nr.ts query "<NRQL>" | jq -c .`
+Run any of these with `bun scripts/nr.ts query "<NRQL>" | jq -c .` The recipes contain no double quotes, so they paste safely inside the double-quoted argument.
 
 ## Errors
 
 Real app errors grouped by shape. Results can contain user ids, so show only counts and patterns.
 
 ```sql
-SELECT count(*) FROM Log WHERE namespace_name='ai-listings' AND container_name='ai-listings' AND message NOT LIKE '%"event":"proxy_check"%' AND message NOT LIKE '%"event":"proxy_redirect_to_login"%' AND message RLIKE '(?i).*(error|exception|fail|fatal).*' SINCE 1 hour ago FACET substring(message, 0, 45) LIMIT 15
+SELECT count(*) FROM Log WHERE namespace_name='ai-listings' AND container_name='ai-listings' AND message NOT LIKE '%proxy_check%' AND message NOT LIKE '%proxy_redirect_to_login%' AND message RLIKE '(?i).*(error|exception|fail|fatal).*' SINCE 1 hour ago FACET substring(message, 0, 45) LIMIT 15
 ```
 
 Error trend.
 
 ```sql
-SELECT count(*) FROM Log WHERE namespace_name='ai-listings' AND message NOT LIKE '%"event":"proxy_check"%' AND message NOT LIKE '%"event":"proxy_redirect_to_login"%' AND message RLIKE '(?i).*(error|exception|fatal).*' SINCE 6 hours ago TIMESERIES 15 minutes
+SELECT count(*) FROM Log WHERE namespace_name='ai-listings' AND message NOT LIKE '%proxy_check%' AND message NOT LIKE '%proxy_redirect_to_login%' AND message RLIKE '(?i).*(error|exception|fatal).*' SINCE 6 hours ago TIMESERIES 15 minutes
 ```
 
 Supabase errors by container.
