@@ -1,7 +1,8 @@
 ARG NODE_VERSION=22
 ARG PNPM_VERSION=11.28.9
 
-FROM node:${NODE_VERSION}-trixie-slim AS node
+# Pinned by digest for Node 22; update NODE_VERSION and the digest together.
+FROM node:${NODE_VERSION}-trixie-slim@sha256:68c76cfad89921b927eae28ba21407475e29d0ce450afcdbe70c1532db042b64 AS node
 
 FROM node AS builder
 ARG PNPM_VERSION
@@ -37,7 +38,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Next's standalone output-file-tracing can miss optional, dynamically-resolved native-binary
-# packages -- the Agent SDK ships its platform binary as one (claude-agent-sdk-linux-<arch>[-musl],
+# packages -- the Agent SDK ships its platform binary as one (claude-agent-sdk-linux-<arch>,
 # whichever pnpm installed for this image). Copy the SDK and its platform package explicitly from
 # the builder's full install rather than trust tracing to have included them.
 COPY --from=builder --chown=nextjs:nodejs /agent-sdk/ ./node_modules/@anthropic-ai/
