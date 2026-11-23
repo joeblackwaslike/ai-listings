@@ -21,7 +21,7 @@ bun scripts/nr.ts backtest --since "3 days"
 
 `apply --yes` computes every step first and throws if any row is `refused`, so a plan that cannot finish writes nothing. The only notification address allowed is the owner's. `alerts.json` is validated with zod on load (dry run included), and any other address, a second destination, channel or workflow, an unknown key, a `thresholdDuration` that is not a multiple of `aggregationWindow`, a condition `nrql` containing FACET, SINCE or TIMESERIES, or a `historyQuery` that does not read the same event type or metric as the condition is rejected with the file and path of the bad field.
 
-`apply` refuses a condition with `"enabled": true` unless its `historyQuery` shows at least 7 days of data. That is the only part of the enabling rules `apply` enforces. It is a coarse check on the age of the earliest event of that type: it does not test density or the condition's own filters, so the backtest (rule 1 below) is what confirms the history is continuous. The zero breaches rule below is a process step.
+`apply` refuses a condition with `"enabled": true` unless its `historyQuery` shows at least 7 days of data. That is the only part of the enabling rules `apply` enforces. It is a coarse check on the age of the earliest event of that type: it does not test density or the condition's own filters, and neither does `backtest`, whose `history:` label uses the same earliest-event age. Continuity is a process step (rule 1 below). The zero breaches rule below is a process step.
 
 The `historyQuery` guards against mistakes, not malicious edits. `observability/*.json` is executable config: `apply` turns it into live alerts and email, so reviewers must read changes to it like code, including `notifications.email`.
 
@@ -96,7 +96,7 @@ None of the six conditions has 7 days of history, so all stay disabled. The two 
 
 Enable only with the owner's go-ahead, and only when all of these hold:
 
-1. `bun scripts/nr.ts backtest` prints `history:` (not `insufficient history`) for the condition, meaning 7 days of data.
+1. `bun scripts/nr.ts backtest` prints `history:` (not `insufficient history`) for the condition, meaning 7 days of data. Neither command checks that the data is continuous, so also confirm the printed window count is close to the span divided by the window size (7 days of 60 second windows is about 10,080), since missing windows are left out of the statistics.
 2. The same output shows `breaches: 0` over those 7 days. `apply` does not check this; it is a process step for whoever enables the condition.
 3. For the APM latency, Inngest queue depth and Inngest failure conditions, the placeholder threshold was replaced with a value above the observed p95 and max of the series, then backtested again.
 
