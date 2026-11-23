@@ -1,6 +1,6 @@
 // @ts-expect-error bun:test has no type declarations installed (@types/bun absent)
 import { describe, expect, test } from 'bun:test'
-import { expectedFromK8s, seenFromFacets } from './workloads'
+import { classifyMissing, expectedFromK8s, kubectlDuration, seenFromFacets } from './workloads'
 
 function workload(
   namespace: string,
@@ -57,5 +57,42 @@ describe('seenFromFacets', () => {
 
   test('drops rows with a null facet value', () => {
     expect(seenFromFacets([{ facet: ['media', null] }, { facet: [null, 'x'] }])).toEqual([])
+  })
+})
+
+describe('kubectlDuration', () => {
+  test('converts hours, minutes and days to kubectl durations', () => {
+    expect(kubectlDuration('6 hours')).toBe('6h')
+    expect(kubectlDuration('1 hour')).toBe('1h')
+    expect(kubectlDuration('30 minutes')).toBe('30m')
+    expect(kubectlDuration('2 days')).toBe('48h')
+  })
+
+  test('rejects windows the logs query would reject', () => {
+    expect(() => kubectlDuration('soon')).toThrow(/invalid since/)
+  })
+})
+
+describe('classifyMissing', () => {
+  const a = { namespace: 'ns', name: 'a' }
+  const b = { namespace: 'ns', name: 'b' }
+  const c = { namespace: 'ns', name: 'c' }
+
+  test('splits missing containers into quiet, dropped and unknown', () => {
+    const result = classifyMissing(
+      [a, b, c],
+      [
+        { ...a, lines: 0 },
+        { ...b, lines: 42 },
+        { ...c, error: 'pods not found' },
+      ],
+    )
+    expect(result.quiet).toEqual([a])
+    expect(result.dropped).toEqual([{ ...b, lines: 42 }])
+    expect(result.unknown).toEqual([{ ...c, error: 'pods not found' }])
+  })
+
+  test('reports a missing container with no line count as unknown', () => {
+    expect(classifyMissing([a], []).unknown).toEqual([{ ...a, error: 'no kubectl result' }])
   })
 })

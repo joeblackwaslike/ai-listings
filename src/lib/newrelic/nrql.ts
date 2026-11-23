@@ -1,4 +1,4 @@
-const SINCE_PATTERN = /^\d+ (minute|minutes|hour|hours|day|days)$/
+export const SINCE_PATTERN = /^\d+ (minute|minutes|hour|hours|day|days)$/
 const ERROR_PATTERN = "message RLIKE '(?i).*(error|exception|fail|fatal).*'"
 
 interface LogsQueryOptions {

@@ -94,3 +94,15 @@ Existing data: `newrelic-prometheus-agent` is running (low data mode, annotation
 - Next.js standalone under operator injection may yield incomplete transactions (fallback in B5).
 - Runtime change Bun -> Node can surface behavior differences; smoke test plus a post-deploy check of login and one pipeline run.
 - A user key has broad account rights; skill says writes only through `apply`, never print the key.
+
+## Audit results (2026-11-23)
+
+The first 24h audit flagged 12 containers as missing from New Relic: home-assistant/matter-server, kubernetes-dashboard/{kubernetes-dashboard-api,kubernetes-dashboard-auth,kubernetes-dashboard-web,proxy}, longhorn-system/{longhorn-driver-deployer,longhorn-ui}, newrelic/ksm, reloader/reloader-reloader, sup-ai-listings/{supabase-minio,supabase-storage}, traefik/traefik.
+
+No ongoing drop exists. kubectl and New Relic line counts matched over 100 minutes for kube-state-metrics, traefik and dashboard-api, and the app log is current to the second.
+
+Traefik has a historical gap from 2026-11-22T05:08Z until the New Relic bundle upgrades at 2026-11-23T15:41Z and 15:48Z (Helm revisions 10 and 11). That gap cannot be backfilled.
+
+The 3 earlier lines from supabase-storage predate the logging agent.
+
+The audit now classifies each missing container as quiet (no kubectl lines in the window) or dropped (kubectl lines present but nothing in New Relic), with kubectl failures reported as unknown.
