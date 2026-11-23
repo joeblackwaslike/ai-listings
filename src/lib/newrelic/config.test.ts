@@ -57,7 +57,7 @@ describe('parseAlertsFile', () => {
     )
   })
 
-  test.each(['FACET', 'since', 'Timeseries'])('rejects %s in a condition nrql', (word) => {
+  test.each(['FACET', 'since', 'Timeseries'])('rejects %s in a condition nrql', (word: string) => {
     expect(() => parseAlertsFile(withCondition({ nrql: `${condition.nrql} ${word} 1 hour` }))).toThrow(
       /conditions\.0\.nrql/,
     )
