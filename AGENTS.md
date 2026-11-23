@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Tooling
 
-- **pnpm** for dependencies and the workspace (`packages/*`); **Bun** as the runtime for the dev server, build, scripts, tests and the production image. Use `pnpm`/`bun`/`bunx` only -- never `npm`, `npx`, `yarn` or `tsx`.
+- **pnpm** for dependencies and the workspace (`packages/*`); **Bun** as the runtime for the dev server, scripts, tests and lint. The production image runs on Node 22 (glibc, `joeblackwaslike/debian:trixie`). Use `pnpm`/`bun`/`bunx` only -- never `npm`, `npx`, `yarn` or `tsx`.
 - Run every command from the repo root. Never `cd` into a package: use `pnpm --filter <name> <script>` or a root script (`pnpm build:sdk`, `pnpm typecheck:sdk`).
 - Scripts: `bun --env-file=.env.local scripts/<name>.ts`. Tests: `pnpm test` (`bun test ./src`).
 - `packages/poshmark-seller-sdk/dist` is committed (the app imports it); run `pnpm build:sdk` after changing the SDK source and commit the result.

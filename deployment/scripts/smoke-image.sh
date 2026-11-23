@@ -27,10 +27,16 @@ pass "/login returns 200"
 [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/dashboard")" = 307 ] || fail "unauthenticated /dashboard did not redirect"
 pass "unauthenticated /dashboard redirects"
 
-docker exec "$name" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q '^bun ' || fail "PID 1 is not bun"
-pass "runtime is bun"
+docker exec "$name" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q 'node server.js' || fail "PID 1 does not launch node server.js"
+pass "runtime is node"
 
-docker exec "$name" bun -e "import('@anthropic-ai/claude-agent-sdk').then(() => process.exit(0), (e) => { console.error(e); process.exit(1); })" \
+docker exec "$name" sh -c 'ldd --version 2>&1 | head -1' | grep -Eqi 'gnu libc|glibc' || fail "not a glibc runtime"
+pass "glibc runtime"
+
+[ "$(docker exec "$name" id -u)" = 1001 ] || fail "container does not run as uid 1001"
+pass "non-root"
+
+docker exec "$name" node --input-type=module -e "import('@anthropic-ai/claude-agent-sdk').then(() => process.exit(0), (e) => { console.error(e); process.exit(1); })" \
   || fail "claude-agent-sdk does not import"
 pass "claude-agent-sdk imports"
 
@@ -38,7 +44,7 @@ docker exec "$name" sh -c 'set -e; found=0; for bin in node_modules/@anthropic-a
   || fail "claude-agent-sdk native binary missing or does not run on this image"
 pass "claude-agent-sdk native binary runs"
 
-docker exec "$name" bun -e "
+docker exec "$name" node -e "
 const sharp = require('sharp');
 sharp({ create: { width: 64, height: 64, channels: 3, background: '#336' } }).resize(32).webp().toBuffer()
   .then((b) => process.exit(b.length > 0 ? 0 : 1), (e) => { console.error(e); process.exit(1); });

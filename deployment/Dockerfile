@@ -1,16 +1,11 @@
-ARG BUN_VERSION=1.4.4
 ARG NODE_VERSION=22
 ARG PNPM_VERSION=11.28.9
 
-FROM oven/bun:${BUN_VERSION}-alpine AS bun
+FROM node:${NODE_VERSION}-trixie-slim AS node
 
-# Builder is Node only because pnpm 11 itself runs on Node (bootstrapped with the npm bundled in
-# the base image). Bun is copied in so the build and every package script run on Bun, matching
-# the production runtime.
-FROM node:${NODE_VERSION}-alpine AS builder
+FROM node AS builder
 ARG PNPM_VERSION
-RUN apk add --no-cache libgcc libstdc++ && npm install -g pnpm@${PNPM_VERSION}
-COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN npm install -g pnpm@${PNPM_VERSION}
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/poshmark-seller-sdk/package.json ./packages/poshmark-seller-sdk/package.json
@@ -25,13 +20,17 @@ RUN pnpm run build
 # pnpm keeps these as symlinks into node_modules/.pnpm; dereference so the runner gets real files.
 RUN mkdir /agent-sdk && cp -rL node_modules/@anthropic-ai/claude-agent-sdk* /agent-sdk/
 
-FROM oven/bun:${BUN_VERSION}-alpine AS runner
+# Pinned by digest so a base-image republish cannot change production unreviewed.
+FROM joeblackwaslike/debian:trixie@sha256:f15486ca8bf38bda35713e6e166384d121a23f0215947793e49d595ccc04362b AS runner
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-certificates passwd && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
@@ -45,11 +44,11 @@ COPY --from=builder --chown=nextjs:nodejs /agent-sdk/ ./node_modules/@anthropic-
 
 # Build-time smoke test -- fail the build if the SDK (ESM-only) can't actually be resolved from
 # the final image, instead of discovering it at first real request in production.
-RUN bun -e "import('@anthropic-ai/claude-agent-sdk').then(() => console.log('claude-agent-sdk: OK')).catch((e) => { console.error(e); process.exit(1); })"
+RUN node --input-type=module -e "import('@anthropic-ai/claude-agent-sdk').then(() => console.log('claude-agent-sdk: OK')).catch((e) => { console.error(e); process.exit(1); })"
 
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-CMD ["bun", "server.js"]
+CMD ["node", "server.js"]
