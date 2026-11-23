@@ -88,7 +88,7 @@ function fake(world: World) {
       }
       if (query.includes('workflows(')) return acct({ aiWorkflows: { workflows: page(world.workflows ?? []) } })
       if (query.includes('entitySearch'))
-        return { actor: { entitySearch: { results: page((world.dashboards ?? []).map((d) => ({ guid: d.guid, name: d.name }))) } } }
+        return { actor: { entitySearch: { results: page((world.dashboards ?? []).map((d) => ({ guid: d.guid, name: d.name, accountId: d.accountId ?? 42 }))) } } }
       if (query.includes('entity(guid'))
         return { actor: { entity: (world.dashboards ?? []).find((d) => d.guid === variables.g) } }
       throw new Error(`unexpected query ${query}`)
@@ -262,3 +262,30 @@ describe('escapeEntityName', () => {
     expect(escapeEntityName("it's")).toBe("it\\'s")
   })
 })
+
+describe('dashboard discovery', () => {
+  test('scopes the entity search to the configured account', async () => {
+    const { variables } = await capturedSearchVariables()
+    expect(variables.q).toContain('AND accountId = 42')
+  })
+
+  test('never selects a dashboard of the same name from another account', async () => {
+    const foreign = { ...syncedWorld().dashboards?.[0], guid: 'FOREIGN', accountId: 99 }
+    const { plan } = await run(syncedWorld({ dashboards: [foreign] }))
+    const row = plan.steps.find((step) => step.row.kind === 'dashboard')?.row
+    expect(row?.action).toBe('create')
+    expect(row?.id).toBeUndefined()
+  })
+})
+
+async function capturedSearchVariables() {
+  const env = fake(syncedWorld())
+  const seen: Record<string, string>[] = []
+  const graphql = env.deps.graphql
+  env.deps.graphql = async (query, variables = {}) => {
+    if (query.includes('entitySearch')) seen.push(variables as Record<string, string>)
+    return graphql(query, variables)
+  }
+  await buildPlan(env.deps, alerts, dashboard)
+  return { variables: seen[0] }
+}

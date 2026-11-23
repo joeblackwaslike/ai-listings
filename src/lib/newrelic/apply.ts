@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import {
   type AlertsFile,
   type ConditionFile,
@@ -101,17 +102,18 @@ async function listConditions(deps: ApplyDeps, policyId: string): Promise<Existi
 }
 
 async function listDashboards(deps: ApplyDeps, name: string): Promise<ExistingResource[]> {
+  const accountId = z.number().int().positive().parse(deps.accountId)
   const entities = await allPages<Row>('dashboards', async (cursor) => {
     const data = await deps.graphql(
-      'query($q:String!,$c:String){actor{entitySearch(query:$q){results(cursor:$c){entities{guid name} nextCursor}}}}',
-      { q: `type = 'DASHBOARD' AND name = '${escapeEntityName(name)}'`, c: cursor },
+      'query($q:String!,$c:String){actor{entitySearch(query:$q){results(cursor:$c){entities{guid name accountId} nextCursor}}}}',
+      { q: `type = 'DASHBOARD' AND name = '${escapeEntityName(name)}' AND accountId = ${accountId}`, c: cursor },
     )
     const results = data.actor.entitySearch.results
     return { items: results.entities, nextCursor: results.nextCursor }
   })
   return Promise.all(
     entities
-      .filter((entity) => entity.name === name)
+      .filter((entity) => entity.name === name && entity.accountId === accountId)
       .map(async (entity) => {
         const detail = await deps.graphql(
           `query($g:EntityGuid!){actor{entity(guid:$g){... on DashboardEntity{${DASHBOARD_FIELDS}}}}}`,
