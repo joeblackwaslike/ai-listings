@@ -14,8 +14,10 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_SENTRY_DSN
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 RUN pnpm run build
 # pnpm keeps these as symlinks into node_modules/.pnpm; dereference so the runner gets real files.
 RUN mkdir /agent-sdk && cp -rL node_modules/@anthropic-ai/claude-agent-sdk* /agent-sdk/

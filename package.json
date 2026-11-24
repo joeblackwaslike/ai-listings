@@ -19,6 +19,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hendt/ebay-api": "^6.0.1",
     "@local/poshmark-seller-sdk": "workspace:*",
+    "@sentry/nextjs": "^11.17.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
     "@tailwindcss/typography": "^0.5.20",
