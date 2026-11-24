@@ -65,6 +65,11 @@ jobs:
         run: |
           echo "pnpm=$(jq -r '.packageManager | sub("^pnpm@"; "")' package.json)" >> "$GITHUB_OUTPUT"
 
+      - name: Require Sentry DSN
+        env:
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+        run: test -n "$NEXT_PUBLIC_SENTRY_DSN" || { echo "::error::NEXT_PUBLIC_SENTRY_DSN secret is not set"; exit 1; }
+
       - name: Build image for smoke test
         uses: docker/build-push-action@v5
         with:
@@ -77,6 +82,7 @@ jobs:
             PNPM_VERSION=${{ steps.versions.outputs.pnpm }}
             NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -96,6 +102,7 @@ jobs:
             PNPM_VERSION=${{ steps.versions.outputs.pnpm }}
             NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

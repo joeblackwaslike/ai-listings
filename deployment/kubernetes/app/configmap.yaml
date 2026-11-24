@@ -12,6 +12,7 @@ data:
   # Where the user's browser actually lives (Tailscale-only) — use for every redirect meant to
   # land the user back in the app itself, e.g. after a platform-connect OAuth flow completes.
   APP_URL: "https://ai-listings.napoleon-catfish.ts.net"
+  SENTRY_DSN: "https://3f9e1caae267f14261fcba82c4ac5897@o279715.ingest.us.sentry.io/4512488418115584"
   REGISTRATION_MODE: "whitelist"
   NODE_ENV: "production"
   INNGEST_BASE_URL: "http://inngest.ai-listings.svc.cluster.local:8288"

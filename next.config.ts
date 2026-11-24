@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next'
+import { withSentryConfig } from '@sentry/nextjs/config'
 
 const nextConfig: NextConfig = {
   output: 'standalone',
@@ -36,4 +37,9 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default nextConfig
+export default withSentryConfig(nextConfig, {
+  org: 'joeblackwaslike',
+  project: 'ai-listings',
+  silent: !process.env.CI,
+  telemetry: false,
+})
