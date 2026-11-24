@@ -41,4 +41,5 @@ export default withSentryConfig(nextConfig, {
   org: 'joeblackwaslike',
   project: 'ai-listings',
   silent: !process.env.CI,
+  telemetry: false,
 })

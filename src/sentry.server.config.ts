@@ -1,6 +1,4 @@
 import * as Sentry from '@sentry/nextjs'
+import { sharedSentryOptions } from './sentry-options'
 
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  tracesSampleRate: process.env.NODE_ENV === 'development' ? 1.0 : 0.1,
-})
+Sentry.init({ ...sharedSentryOptions, dsn: process.env.SENTRY_DSN })

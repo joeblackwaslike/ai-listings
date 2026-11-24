@@ -13,6 +13,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 SUPABASE_URL=$(kubectl get configmap ai-listings-config -n ai-listings -o jsonpath='{.data.NEXT_PUBLIC_SUPABASE_URL}')
 SUPABASE_ANON_KEY=$(kubectl get secret ai-listings-secret -n ai-listings -o jsonpath='{.data.NEXT_PUBLIC_SUPABASE_ANON_KEY}' | base64 -d)
+SENTRY_DSN=$(kubectl get configmap ai-listings-config -n ai-listings -o jsonpath='{.data.SENTRY_DSN}')
 
 echo "Building ${IMAGE}:${TAG} for linux/arm64..."
 docker buildx build \
@@ -21,6 +22,7 @@ docker buildx build \
   --tag "${IMAGE}:${TAG}" \
   --build-arg "NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}" \
   --build-arg "NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" \
+  --build-arg "NEXT_PUBLIC_SENTRY_DSN=${SENTRY_DSN}" \
   --push \
   .
 
